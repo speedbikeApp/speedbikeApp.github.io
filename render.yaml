@@ -18,6 +18,6 @@ services:
       - key: FIREBASE_PROJECT_ID
         value: speedbike-9a552
       - key: ALLOWED_ORIGINS
-        sync: false # set to https://<github-user>.github.io once the repo exists
+        value: https://speedbikeapp.github.io
       - key: FIREBASE_SERVICE_ACCOUNT
         sync: false # secret: paste the service-account JSON in the dashboard
