@@ -212,6 +212,60 @@
   #mpModes .mbtn small { font-size: 9px; letter-spacing: 1px; line-height: 1.3; }
   #mpModes .mbtn.feat { border-color: #fc3; box-shadow: 0 0 10px #fc3, inset 0 0 8px rgba(255,200,0,.2); } #mpModes .mbtn.feat small { color: #fc3; }
   #mpMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; text-align: center; }
+  /* ---- friends ---- */
+  .fi { width: 10px; height: 12px; flex: none; color: #3aa0ff; filter: drop-shadow(0 0 3px #3aa0ff); vertical-align: middle; margin: 0 2px; }
+  .hrow .fi { width: 9px; height: 11px; margin: 0; }
+  #mFriends { position: fixed; left: 14px; bottom: 14px; min-width: 0; min-height: 40px; padding: 6px 14px; font-size: 14px; letter-spacing: 2px; display: flex; align-items: center; gap: 8px; z-index: 2; }
+  #mFriends .fi { width: 14px; height: 16px; }
+  .fbadge { min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; background: #f33; color: #fff; font-size: 11px; font-weight: 800; letter-spacing: 0; text-align: center; box-shadow: 0 0 8px #f33; }
+  .fbadge[hidden] { display: none; }
+  /* ---- party ---- */
+  #mDock { position: fixed; left: 14px; right: 14px; bottom: 14px; display: flex; flex-direction: row; flex-wrap: wrap-reverse; align-items: center; gap: 8px; z-index: 2; pointer-events: none; }
+  #mDock > * { pointer-events: auto; }
+  #mDock #mFriends { position: static; }
+  #mParty { position: relative; display: flex; align-items: center; gap: 6px; min-height: 40px; box-sizing: border-box; padding: 3px 6px; max-width: 100%; min-width: 0; font-size: 13px; letter-spacing: 1px; }
+  #mParty[hidden], #pMenu[hidden], #pInv[hidden] { display: none; }
+  .crown { width: 14px; height: 10px; flex: none; color: #fc3; filter: drop-shadow(0 0 3px #fc3); }
+  #pRow { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 1 1 auto; overflow-x: auto; scrollbar-width: none; }
+  #pRow::-webkit-scrollbar { display: none; }
+  .pm { display: inline-flex; align-items: center; gap: 4px; flex: none; max-width: 110px; padding: 5px 8px; border: 1px solid #357; font: inherit; font-size: 13px; letter-spacing: 1px; color: #fff; background: rgba(0,20,30,.5); white-space: nowrap; box-sizing: border-box; }
+  .pm span.n { overflow: hidden; text-overflow: ellipsis; } .pm.off { color: #789; border-style: dashed; } .pm.me { border-color: var(--neon); }
+  .pm.lead { border-color: #fc3; } button.pm { cursor: pointer; touch-action: manipulation; } button.pm:hover, button.pm.open { background: rgba(0,255,255,.2); border-color: var(--neon); }
+  #pLeave { min-width: 0; min-height: 32px; padding: 3px 10px; font-size: 12px; letter-spacing: 1px; flex: none; border: 1px solid #f55; color: #f88; background: rgba(40,0,0,.4); }
+  #pMenu { position: absolute; left: 0; bottom: calc(100% + 6px); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; z-index: 3; font-size: 12px; letter-spacing: 1px; white-space: nowrap; }
+  #pMenu .q { color: #fc3; width: 100%; } #pMenu .mbtn { min-width: 0; min-height: 32px; padding: 3px 10px; font-size: 12px; letter-spacing: 1px; }
+  #pInv { position: fixed; top: 12px; right: 12px; width: min(300px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 6px; z-index: 3; pointer-events: none; }
+  #pInv > * { pointer-events: auto; }
+  .pInvRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12px; letter-spacing: 1px; border-color: #fc3; box-shadow: 0 0 10px #fc3; background: rgba(20,14,0,.85); }
+  .pInvRow .t { flex: 1 1 100%; color: #fff; } .pInvRow .t b { color: #fc3; } .pInvRow .t small { color: #fc3; margin-left: 6px; }
+  .pInvRow .mbtn { min-width: 0; min-height: 32px; padding: 3px 12px; font-size: 12px; letter-spacing: 1px; } .pInvRow .note { font-size: 10px; opacity: .7; flex: 1 1 100%; }
+  @media (max-height: 460px), (max-width: 520px) {
+    #mDock { left: 8px; right: 8px; bottom: 8px; gap: 6px; } #mParty { min-height: 34px; padding: 2px 4px 2px 8px; gap: 4px; } .pm { font-size: 12px; padding: 3px 6px; max-width: 88px; } #pLeave { min-height: 28px; padding: 2px 8px; font-size: 11px; }
+    #mDock #mFriends { left: auto; bottom: auto; }
+  }
+  #scrFriends { width: min(560px, 94vw); gap: 8px; }
+  #frStatus { font-size: 11px; letter-spacing: 2px; margin-top: -6px; } #frStatus.ok { color: #7f7; } #frStatus.bad { color: #f88; } #frStatus.wait { color: #fc3; }
+  #frNeed { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 14px; letter-spacing: 2px; }
+  #frMain { width: 100%; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+  #frTabs .mbtn { padding: 6px 8px; font-size: 13px; letter-spacing: 2px; min-height: 38px; white-space: nowrap; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .frPane { display: flex; flex-direction: column; gap: 4px; max-height: calc(94dvh - 250px); min-height: 60px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
+  .frPane[hidden] { display: none; }
+  .frEmpty { font-size: 12px; letter-spacing: 2px; opacity: .65; padding: 14px 0; text-align: center; }
+  .frRow { display: flex; align-items: center; gap: 8px; padding: 3px 8px; min-height: 34px; box-sizing: border-box; border: 1px solid #357; font-size: 14px; letter-spacing: 1px; text-align: left; }
+  .frRow .st { font-size: 10px; letter-spacing: 1px; width: 70px; flex: none; color: #789; } .frRow.on .st { color: #7f7; text-shadow: 0 0 6px #3f3; }
+  .frRow .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font: inherit; background: none; border: 0; padding: 6px 0; text-align: left; cursor: pointer; touch-action: manipulation; }
+  .frRow.off .nm { color: #9ab; } .frRow .rb { font-size: 14px; flex: none; }
+  .frRow .mbtn { min-width: 0; min-height: 32px; padding: 3px 10px; font-size: 12px; letter-spacing: 1px; flex: none; }
+  .frRow.open { border-color: var(--neon); background: rgba(0,255,255,.08); }
+  .frAct { display: flex; gap: 6px; padding: 4px 0 6px; justify-content: flex-end; flex-wrap: wrap; align-items: center; font-size: 12px; letter-spacing: 1px; }
+  .frAct .mbtn { min-height: 34px; padding: 4px 12px; font-size: 12px; letter-spacing: 1px; }
+  .frAct .q { margin-right: auto; color: #fc3; }
+  #frForm { display: flex; gap: 6px; } #frForm .fld { flex: 1; } #frForm .mbtn { min-width: 0; padding: 4px 14px; font-size: 13px; }
+  #frMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; text-align: center; }
+  @media (max-height: 460px) {
+    #scrFriends { gap: 4px; padding: 6px 16px; } .frPane { max-height: calc(94dvh - 170px); } .frRow { min-height: 30px; font-size: 13px; } #frTabs .mbtn { min-height: 30px; font-size: 12px; }
+    #mFriends { min-height: 34px; padding: 3px 10px; font-size: 12px; left: 8px; bottom: 8px; }
+  }
   #scrQueue, #scrLobby { min-width: min(420px, 92vw); }
   .bigtxt { font-size: 18px; letter-spacing: 3px; color: #fff; text-shadow: 0 0 10px #0ff; text-align: center; }
   .bigtxt.pulse { animation: kblink 1.4s infinite; }
@@ -293,6 +347,7 @@
   </div>
 </div>
 <div id="menu" data-ui>
+  <div id="pInv" hidden></div>
   <div id="scrMain" class="screen">
     <h1 id="logo">SPEED<span>BIKE</span></h1>
     <div id="tagline">NEON LIGHT-CYCLE ARENA</div>
@@ -308,6 +363,14 @@
     <button id="mAccount" class="mbtn frame" type="button">ACCOUNT</button>
     <div id="coinLine"><span class="coins">SBCOINS <b id="mCoins">0</b></span> &nbsp; <span id="mName"></span></div>
     <div id="mAcct"></div>
+    <div id="mDock">
+      <button id="mFriends" class="mbtn frame" type="button"><svg class="fi" viewBox="0 0 12 14" aria-hidden="true"><circle cx="6" cy="4" r="3" fill="currentColor"/><path d="M0.5 14c0-3.6 2.4-5.6 5.5-5.6s5.5 2 5.5 5.6z" fill="currentColor"/></svg>FRIENDS<b id="mFrBadge" class="fbadge" hidden></b></button>
+      <div id="mParty" class="frame" hidden>
+        <div id="pRow"></div>
+        <button id="pLeave" class="mbtn" type="button" title="Leave the party">LEAVE</button>
+        <div id="pMenu" class="frame" hidden></div>
+      </div>
+    </div>
   </div>
   <div id="scrMode" class="screen frame">
     <h2>SELECT MODE</h2>
@@ -347,6 +410,26 @@
     </div>
     <div id="mpMsg"></div>
     <button id="mpBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrFriends" class="screen frame">
+    <h2>FRIENDS</h2>
+    <div id="frStatus" class="wait">CONNECTING...</div>
+    <div id="frNeed" hidden><b>SIGN IN TO USE FRIENDS</b><button id="frAccount" class="mbtn frame primary" type="button">ACCOUNT</button></div>
+    <div id="frMain" hidden>
+      <div id="frTabs" class="mrow">
+        <button class="mbtn frame sel" type="button" data-tab="list">FRIENDS</button>
+        <button class="mbtn frame" type="button" data-tab="req">REQUESTS <b id="frReqN" class="fbadge" hidden></b></button>
+        <button class="mbtn frame" type="button" data-tab="add">ADD</button>
+      </div>
+      <div id="frList" class="frPane"></div>
+      <div id="frReq" class="frPane" hidden></div>
+      <div id="frAdd" class="frPane" hidden>
+        <form id="frForm" novalidate><label class="fld"><span>SEARCH BY USERNAME</span><input id="frQ" type="text" maxlength="12" autocomplete="off" spellcheck="false" autocapitalize="off"></label><button class="mbtn frame" type="submit">SEARCH</button></form>
+        <div id="frRes"></div>
+      </div>
+    </div>
+    <div id="frMsg"></div>
+    <button id="frBack" class="mbtn frame" type="button">BACK</button>
   </div>
   <div id="scrQueue" class="screen frame">
     <h2 id="qMode">STANDARD</h2>

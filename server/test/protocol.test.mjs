@@ -37,6 +37,13 @@ bad({ t: 'hello', token: 't'.repeat(5000) }, 'too_large');
   now += 100; assert.ok(rl.take()); assert.ok(rl.take()); assert.ok(rl.take()); assert.ok(!rl.take(), '0.1 s = 3 tokens');
 }
 
+// party intents
+for (const t of ['pinvite', 'paccept', 'pdecline', 'pkick', 'ptransfer']) {
+  assert.deepEqual(parse(JSON.stringify({ t, uid: 'abc_1', junk: 1 })).msg, { t, uid: 'abc_1' });
+  assert.equal(parse(JSON.stringify({ t })).code, 'bad_message'); assert.equal(parse(JSON.stringify({ t, uid: 'a b' })).code, 'bad_message');
+}
+assert.deepEqual(parse('{"t":"pleave","x":1}').msg, { t: 'pleave' }); assert.deepEqual(parse('{"t":"plist"}').msg, { t: 'plist' });
+
 // auth helpers
 assert.equal(sanitizeName('  Bob<script>  '), 'Bobscript'); assert.equal(sanitizeName(''), 'PLAYER'); assert.equal(sanitizeName('x'.repeat(40)).length, 12);
 assert.equal(resolveAuthMode({}), 'dev'); assert.equal(resolveAuthMode({ GOOGLE_APPLICATION_CREDENTIALS: 'k.json' }), 'firebase');

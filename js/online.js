@@ -15,24 +15,30 @@ import * as audio from './audio.js';
 import { setHudPlayers, resetHudPlayers, setOnlineResult, flashTurn, showAnnounce } from './hud.js';
 import { DEFAULT_PARTS, glowHex, colorDist, CLASH_DIST } from './parts.js';
 import { getSave, addCoins, coinsForPlacement } from './save.js';
+import { social } from './social.js';
+import { party } from './party.js';
 
 // ---------------------------------------------------------------- presence (menus)
 export const net = createNet({ url: () => serverUrl(globalThis.location ? globalThis.location.search : ''), getHello: () => buildHello(auth) });
 export const mp = { rank: null, online: null, featured: null, nextRotation: 0 };
-net.on('welcome', (m) => { mp.rank = m.rank || null; mp.online = m.online ?? null; mp.featured = m.featured || null; mp.nextRotation = m.nextRotation || 0; });
+net.on('welcome', (m) => { party.setMe(m.uid); mp.rank = m.rank || null; mp.online = m.online ?? null; mp.featured = m.featured || null; mp.nextRotation = m.nextRotation || 0; });
 net.on('online', (m) => { mp.online = m.online; });
 net.on('rotation', (m) => { mp.featured = m.featured; mp.nextRotation = m.nextRotation; });
 net.on('rank', (m) => { mp.rank = m.rank; });
 net.on('announce', (m) => showAnnounce(m.text, m.kind));
-net.on('status', (s) => { if (s.state !== 'online') { mp.online = null; } });
+net.on('status', (s) => { if (s.state !== 'online') { mp.online = null; } if (s.state === 'idle' || s.state === 'denied') { social.reset(); party.reset(); } });
+// Social (friends) mirror: the same persistent socket carries friend lists + presence (server/social.js). Extra listeners: friends-ui.js ('fres', 'fresults', 'fevent').
+for (const t of ['friends', 'fpresence', 'frank', 'fname']) net.on(t, (m) => social.apply(m));
+// Party mirror (server/party.js): `party` snapshots + `pinvites`; the UI (party-ui.js) also listens for 'pres' / 'pevent'. The server pulls members into the queue / match.
+for (const t of ['party', 'pinvites']) net.on(t, (m) => party.apply(m));
 
 /** Keep the socket in step with the account: connect when signed in, drop when signed out / switched user. */
 export function watchAuth() {
-  let uid = null;
+  let uid = null, name = '';
   auth.onAuthChange((u) => {
     const id = u ? u.uid : null;
-    if (id === uid) return;
-    uid = id;
+    if (id === uid) { if (u && u.username !== name) { name = u.username; net.send({ t: 'frefresh', username: name }); } return; } // renamed: friends see the new name live
+    uid = id; name = u ? u.username : '';
     if (id) net.reconnect(); else net.disconnect();
   });
 }
@@ -85,12 +91,12 @@ export function begin(msg, st, bikes0, exitCb) {
   const useGlow = others.every((c) => colorDist(c, mine) >= CLASH_DIST);
   state.bikes = players.map((p) => {
     const b = createBike(p.id, p.id === youId && useGlow ? mine : colorOf(p), 0, 0, 0, -1);
-    b.name = p.username; b.rank = p.rank;
+    b.name = p.username; b.rank = p.rank; b.uid = p.uid;
     return b;
   });
   state.playerId = youId; state.tick = 0; state.time = 0;
   for (const b of state.bikes) setBikeStyle(b, DEFAULT_PARTS); // default parts for everybody (known limitation: garage parts are not synced)
-  setHudPlayers(state.bikes.map((b) => ({ id: b.id, name: b.name, color: b.color, rank: b.rank })), youId);
+  setHudPlayers(state.bikes.map((b) => ({ id: b.id, name: b.name, color: b.color, rank: b.rank, uid: b.uid })), youId);
   sim = createSim(state, 0); tc.reset();
   Object.assign(match, {
     mode, phase: 'countdown', cd: CFG.match.countdown, timeLeft: mode.roundTime, elapsed: 0, runTime: 0, round: 0,

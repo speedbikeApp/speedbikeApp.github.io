@@ -54,6 +54,7 @@ The Firebase service account must be allowed to sign custom tokens (a normal ser
 | `DEV_AUTH` | auto | `1` force dev auth, `0` forbid it (fail without credentials); unset = dev only when no credentials |
 | `FIREBASE_PROJECT_ID` | speedbike-9a552 | project for token verification |
 | `RANKS_FILE` | server/data/ranks.json | JSON rank file (dev mode) |
+| `SOCIAL_FILE` | server/data/social.json | JSON friends file + dev user directory (dev mode) |
 | `ALLOWED_ORIGINS` | any (websocket) / none (login CORS in production) | comma-separated browser origins allowed to connect; also the CORS allow-list of `/auth/login` |
 | `FIREBASE_WEB_API_KEY` | public key from `js/firebase-config.js` | web API key for the Auth REST password check (public by design) |
 | `LOBBY_COUNTDOWN_MS` | 30000 | lobby countdown (tests) |
@@ -63,7 +64,7 @@ The Firebase service account must be allowed to sign custom tokens (a normal ser
 ## Files
 
 `index.js` http + ws + glue, shared 16 ms loop (rooms, lobby timers, rotation, heartbeat) | `protocol.js` message validation + rate limiter |
-`auth.js` dev / Firebase auth | `login.js` `POST /auth/login` (username login) | `store.js` ranks (atomic JSON file or Firestore) | `ranking.js` applies results + announcements |
+`auth.js` dev / Firebase auth | `login.js` `POST /auth/login` (username login) | `store.js` ranks (atomic JSON file or Firestore) | `ranking.js` applies results + announcements | `social.js` + `social-store.js` friends, presence, search (Firestore `friends/{uid}`, Admin SDK only) | `party.js` parties (in memory) |
 `matchmaker.js` queues and lobbies (clock-injected, no timers) | `room.js` one match | `test/` (`npm test`; `e2e.test.mjs` plays full matches over real sockets).
 
 ## How a room runs

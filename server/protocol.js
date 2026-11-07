@@ -6,6 +6,14 @@ export const INPUT_KINDS = ['turn', 'boost', 'jump', 'ability', 'swap'];
 
 const isStr = (v, max) => typeof v === 'string' && v.length <= max;
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+export const isUid = (v) => typeof v === 'string' && /^[\w-]{1,128}$/.test(v); // Firebase uids are <= 128 alphanumerics; dev uids <= 40 [\w-]
+
+// Username search text: same charset as usernames (letters, digits, space, _ -), 2..12 chars after trimming. -> lowercase key prefix or null.
+export function normalizeQuery(v) {
+  if (typeof v !== 'string' || v.length > 40) return null;
+  const s = v.trim().replace(/\s+/g, ' ').toLowerCase();
+  return /^[a-z0-9 _-]{2,12}$/.test(s) ? s : null;
+}
 
 // Returns { ok:true, msg } with a sanitized message, or { ok:false, code, message }.
 export function parseClientMessage(raw) {
@@ -35,6 +43,23 @@ export function parseClientMessage(raw) {
       if (o.ctick !== undefined && isNum(o.ctick)) m.ctick = o.ctick; // client tick when pressed: the server rewinds the bike to it (lag compensation, capped by CFG.net.maxRewindMs)
       return ok(m);
     }
+    case 'fsearch': {
+      const q = normalizeQuery(o.q);
+      if (!q) return bad('bad_query', 'search needs 2-12 letters, numbers, space, _ or -');
+      return ok({ t: 'fsearch', q });
+    }
+    case 'fadd': case 'faccept': case 'fdecline': case 'fcancel': case 'fremove':
+      if (!isUid(o.uid)) return bad('bad_message', 'bad uid');
+      return ok({ t: o.t, uid: o.uid });
+    case 'flist':
+      return ok({ t: 'flist' });
+    case 'pinvite': case 'paccept': case 'pdecline': case 'pkick': case 'ptransfer': // party intents (server/party.js)
+      if (!isUid(o.uid)) return bad('bad_message', 'bad uid');
+      return ok({ t: o.t, uid: o.uid });
+    case 'pleave': case 'plist':
+      return ok({ t: o.t });
+    case 'frefresh': // after a username change; `username` is only honoured in dev-auth mode (index.js)
+      return ok(isStr(o.username, 40) ? { t: 'frefresh', username: o.username } : { t: 'frefresh' });
     case 'ping':
       if (!(isNum(o.c) || isStr(o.c, 32))) return bad('bad_message', 'bad ping');
       return ok({ t: 'ping', c: o.c });

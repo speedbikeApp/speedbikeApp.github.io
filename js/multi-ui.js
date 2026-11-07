@@ -6,14 +6,17 @@ import { isSignedIn } from './account-ui.js';
 import { featuredMode, nextRotation } from './rotation.js';
 import { defaultRank } from './ranks.js';
 import { badgeHtml, badgeInfo, fmtCountdown } from './rankview.js';
+import { party, PARTY_ERR } from './party.js';
 
 const $ = (id) => document.getElementById(id);
 let show = () => {}, openAccountScreen = () => {};
-let flow = null;            // null | 'queue' | 'lobby'  (set when WE queued; late server messages are ignored otherwise)
+let flow = null;            // null | 'queue' | 'lobby'  (set when WE queued, or when the party leader queued for us; late server messages are ignored otherwise)
 let flowMode = null;
 let lobbyDeadline = 0;      // local performance.now() when the lobby countdown ends
 
-const ERR = { busy: 'ALREADY QUEUED OR IN A MATCH', bad_mode: 'MODE NOT AVAILABLE RIGHT NOW', not_authed: 'NOT SIGNED IN TO THE SERVER', rank_failed: 'COULD NOT SAVE RANKS', replaced: 'SIGNED IN FROM ANOTHER PLACE' };
+const LEADER_ONLY = 'ONLY THE PARTY LEADER CAN START A GAME';
+const menuShown = () => $('menu').style.display === 'flex';
+const ERR = { ...PARTY_ERR, busy: 'ALREADY QUEUED OR IN A MATCH', bad_mode: 'MODE NOT AVAILABLE RIGHT NOW', not_authed: 'NOT SIGNED IN TO THE SERVER', rank_failed: 'COULD NOT SAVE RANKS', replaced: 'SIGNED IN FROM ANOTHER PLACE' };
 const on = (name) => { const el = document.querySelector('.screen.on'); return !!el && el.id === name; };
 
 function serverClockNow() { return net.state === 'online' ? net.serverNow() : Date.now(); }
@@ -39,13 +42,14 @@ export function renderMulti() {
   $('mpOnline').textContent = mp.online == null ? '-- ONLINE' : `${mp.online} ONLINE`;
   const [txt, cls] = statusInfo();
   $('mpStatus').textContent = txt; $('mpStatus').className = cls;
-  const ready = net.state === 'online';
-  for (const btn of $('mpModes').children) btn.disabled = !ready;
+  const ready = net.state === 'online', lead = party.canStartGame();
+  for (const btn of $('mpModes').children) btn.disabled = !ready || !lead;
   const f = featuredId();
   $('mpFeat').firstChild.nodeValue = MODE_LABEL[f] || f.toUpperCase();
   $('mpFeat').querySelector('small').textContent = `FEATURED - ROTATES IN ${fmtCountdown(rotationMs())}`;
   if (net.state === 'offline') $('mpMsg').textContent = 'SERVER OFFLINE - RETRYING. SINGLEPLAYER STILL WORKS.';
   else if (net.state === 'denied') $('mpMsg').textContent = '';
+  else if (!lead) $('mpMsg').textContent = LEADER_ONLY;
   else if ($('mpMsg').dataset.keep !== '1') $('mpMsg').textContent = '';
 }
 function msg(text) { $('mpMsg').textContent = text; $('mpMsg').dataset.keep = text ? '1' : ''; }
@@ -72,6 +76,7 @@ export function onScreen(name) {
 /** Queue for a mode id ('standard' | 'deathmatch' | 'hyper' | '3d'). Returns false if not connected. */
 export function queueMode(modeId) {
   if (net.state !== 'online') { show('scrMulti'); msg('NOT CONNECTED TO THE SERVER'); return false; }
+  if (!party.canStartGame()) { show('scrMulti'); msg(LEADER_ONLY); return false; }
   net.send({ t: 'queue', mode: modeId });
   flow = 'queue'; flowMode = modeId;
   $('qMode').textContent = MODE_LABEL[modeId] || modeId.toUpperCase();
@@ -79,8 +84,9 @@ export function queueMode(modeId) {
   show('scrQueue');
   return true;
 }
+const syncCancel = () => { const m = party.inParty() && !party.isLeader(); $('qCancel').textContent = m ? 'LEAVE PARTY' : 'CANCEL'; $('lLeave').textContent = m ? 'LEAVE PARTY' : 'LEAVE'; };
 function cancelFlow() {
-  if (flow) net.send({ t: 'leaveQueue' });
+  if (flow) net.send(party.inParty() && !party.isLeader() ? { t: 'pleave' } : { t: 'leaveQueue' }); // a pulled-in member can only leave the party; the leader's leaveQueue cancels for everybody
   flow = null; lobbyDeadline = 0;
   show('scrMulti');
 }
@@ -122,15 +128,23 @@ export function initMultiUi(h) {
     const b = e.target.closest('button[data-mp]'); if (!b || b.disabled) return;
     queueMode(b.dataset.mp === 'featured' ? featuredId() : b.dataset.mp);
   });
+  // The party leader queued: members are put into the same queue / lobby by the server and follow it on their own screens.
+  const follow = () => { if (flow) return true; if (!party.inParty() || !menuShown()) return false; flow = 'queue'; return true; };
   net.on('queued', (m) => {
-    if (!flow) return;
-    flow = 'queue'; flowMode = m.mode;
+    if (!follow()) return;
+    syncCancel(); flow = 'queue'; flowMode = m.mode;
     $('qMode').textContent = MODE_LABEL[m.mode] || String(m.mode).toUpperCase();
     $('qSub').textContent = `${m.inQueue} IN QUEUE`;
     if (!on('scrQueue')) show('scrQueue');
   });
-  net.on('lobby', (m) => { if (!flow) return; flow = 'lobby'; renderLobby(m); if (!on('scrLobby')) show('scrLobby'); });
+  net.on('lobby', (m) => { if (!follow()) return; syncCancel(); flow = 'lobby'; renderLobby(m); if (!on('scrLobby')) show('scrLobby'); });
   net.on('start', () => { flow = null; lobbyDeadline = 0; });
+  net.on('unqueued', (m) => { // the leader cancelled / we were removed from the party while searching
+    if (!flow) return;
+    flow = null; lobbyDeadline = 0; show('scrMulti');
+    msg(m.reason === 'leader' ? 'THE LEADER CANCELLED THE SEARCH' : 'YOU LEFT THE SEARCH');
+  });
+  party.onChange(() => { if (on('scrMulti')) renderMulti(); });
   net.on('error', (m) => {
     if (!flow && !on('scrMulti')) return;
     if (flow) { flow = null; show('scrMulti'); }

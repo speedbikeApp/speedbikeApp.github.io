@@ -5,6 +5,7 @@ import { MAPS } from './maps.js';
 import { getAchievement } from './achievements.js';
 import { getPart } from './parts.js';
 import { badgeHtml, badgeInfo, rankChange } from './rankview.js';
+import { social } from './social.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (c) => '#' + c.toString(16).padStart(6, '0');
@@ -14,6 +15,9 @@ function setHtml(id, html) { if (cache[id] !== html) { cache[id] = html; $(id).i
 
 let bikes = [], mapCtx = null, mapFrame = 0, reward = null;
 let baseBikes = [], meId = 0, onlineHud = false, onlineResult = null; // online: bikes carry {rank}, meId = our bike id
+// Blue person icon next to the name of one of OUR friends (online matches: scoreboard + results). Only the viewer's friends get it.
+export const FRIEND_ICON = '<svg class="fi" viewBox="0 0 12 14" aria-label="friend"><title>Friend</title><circle cx="6" cy="4" r="3" fill="currentColor"/><path d="M0.5 14c0-3.6 2.4-5.6 5.5-5.6s5.5 2 5.5 5.6z" fill="currentColor"/></svg>';
+const friendIcon = (uid) => (uid && social.isFriend(uid) ? FRIEND_ICON : '');
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Player's display name (HUD + results). textContent only.
@@ -171,14 +175,14 @@ export function setScoreboard(state, match, dm) {
   for (let i = 0; i < bikes.length; i++) {
     const b = bikes[i], r = scoreRow(dm, b.id, match, state.bikes[b.id].alive);
     const rk = b.rank ? `${b.rank.tier}${b.rank.div}${b.rank.wins}` : '';
-    const key = `${b.name}|${b.color}|${r.n}|${r.segs}|${r.out}|${r.dim}|${rk}`;
+    const fr = friendIcon(b.uid), key = `${b.name}|${b.color}|${r.n}|${r.segs}|${r.out}|${r.dim}|${rk}|${fr ? 1 : 0}`;
     if (cache['sb' + b.id] === key) continue;
     cache['sb' + b.id] = key;
     const el = rowEls[i], c = css(b.color);
     el.style.setProperty('--c', c);
     el.classList.toggle('dim', r.dim);
     let segs = ''; for (let k = 0; k < r.segs; k++) segs += k < r.n ? '<i class="on"></i>' : '<i></i>';
-    el.innerHTML = `${BIKE_SVG}<span class="hn">${esc(b.name)}</span>${b.rank ? badgeHtml(b.rank) : ''}<span class="hp">${segs}</span><span class="hv">${r.out ? 'OUT' : r.n}</span>`;
+    el.innerHTML = `${BIKE_SVG}<span class="hn">${esc(b.name)}</span>${fr}${b.rank ? badgeHtml(b.rank) : ''}<span class="hp">${segs}</span><span class="hv">${r.out ? 'OUT' : r.n}</span>`;
   }
 }
 // Small centred status line under the timer (Death Match: respawn countdown / eliminated). '' hides it.
@@ -216,11 +220,12 @@ function onlineResultHtml(match) {
   const R = onlineResult, dm = match.mode.kind === 'deathmatch';
   const rows = R.rows.slice().sort((a, b) => a.place - b.place || a.id - b.id);
   const me = R.rows.find((r) => r.id === R.meId);
-  const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${badgeHtml(r.rankAfter || r.rankBefore)} ${colored(r.id, esc(r.username))} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
+  const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${badgeHtml(r.rankAfter || r.rankBefore)} ${colored(r.id, esc(r.username))}${friendIcon(r.uid)} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
   const first = rows.filter((r) => r.place === 1);
   const title = me && me.won ? 'YOU WIN!' : me && me.place === 1 ? 'TIED FOR 1ST' : first.length === 1 ? `${esc(first[0].username).toUpperCase()} WINS` : 'DRAW';
   let rank = '';
-  if (me && me.rankBefore && me.rankAfter) {
+  if (me && me.party) rank = '<div class="rkbox"><div class="rkd">PARTY MATCH - UNRANKED</div></div>'; // party games never change rank
+  else if (me && me.rankBefore && me.rankAfter) {
     const c = rankChange(me.rankBefore, me.rankAfter, me.change);
     const delta = c.banner ? '' : c.pipDelta > 0 ? '<div class="rkd up">+1 WIN PIP</div>' : c.pipDelta < 0 ? '<div class="rkd down">-1 WIN PIP</div>' : '';
     const banner = c.banner ? `<div class="rkbanner ${c.banner === 'PROMOTED' ? 'up' : 'down'}">${c.banner}<small>${esc(badgeLabel(me.rankAfter))}</small></div>` : '';

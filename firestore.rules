@@ -28,6 +28,8 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // friends/{uid} (friendships) is written and read ONLY by the game server (Admin SDK); there is deliberately no client rule, so it is denied by default.
+
     // Reserved for later (leaderboards etc.): add new collections here. Everything else is denied by default.
   }
 }

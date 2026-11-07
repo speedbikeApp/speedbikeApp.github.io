@@ -10,14 +10,16 @@ import * as audio from './audio.js';
 import { setPlayerName } from './hud.js';
 import { initAccountUi, openAccount, accountEsc, isSignedIn } from './account-ui.js';
 import { initMultiUi, onScreen as multiScreen, multiBack } from './multi-ui.js';
+import { initFriendsUi, onScreen as friendsScreen } from './friends-ui.js';
+import { initPartyUi } from './party-ui.js';
 import { ACTIONS, ACTION_LABEL, groups, codeLabel, rebind, defaultKeys, setBindings, getBindings, captureNextKey, GAMEPAD_LAYOUT } from './input.js';
 
 const $ = (id) => document.getElementById(id);
 let current = null;      // visible screen id or null
 let settingsFrom = null; // 'main' | 'pause'
 
-const SCREENS = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrSettings', 'scrControls'];
-const FULL_MENU = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount']; // screens shown over the empty arena (HUD hidden)
+const SCREENS = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrSettings', 'scrControls'];
+const FULL_MENU = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount']; // screens shown over the empty arena (HUD hidden)
 export function showScreen(name, backdrop = 'home') {
   current = name;
   $('menu').style.display = name ? 'flex' : 'none';
@@ -32,6 +34,7 @@ export function showScreen(name, backdrop = 'home') {
   if (name === 'scrStats') renderStats();
   if (name === 'scrAccount') openAccount();
   if (name === 'scrMulti' || name === 'scrQueue' || name === 'scrLobby') multiScreen(name);
+  if (name === 'scrFriends') friendsScreen();
   if (name === 'scrSettings') syncSettingsUi();
   if (name !== 'scrControls') cancelCapture();
   if (name === 'scrControls') renderControls('');
@@ -140,6 +143,8 @@ export function initMenu(h) {
   on('playBack', () => showScreen('scrMain'));
   on('modeBack', () => showScreen('scrPlay'));
   initMultiUi({ show: showScreen, openAccount: () => showScreen('scrAccount') });
+  initFriendsUi({ show: showScreen, openAccount: () => showScreen('scrAccount') });
+  initPartyUi();
   on('mAbilities', () => showScreen('scrAbilities'));
   on('mGarage', () => showScreen('scrGarage'));
   on('mStats', () => showScreen('scrStats'));
@@ -206,7 +211,7 @@ export function closeSettings() {
 export function menuBack() {
   if (current === 'scrMode' || current === 'scrMulti') { showScreen('scrPlay'); return true; }
   if (current === 'scrQueue' || current === 'scrLobby') return multiBack(current);
-  if (current === 'scrPlay' || current === 'scrAbilities' || current === 'scrGarage' || current === 'scrStats') { showScreen('scrMain'); return true; }
+  if (current === 'scrPlay' || current === 'scrFriends' || current === 'scrAbilities' || current === 'scrGarage' || current === 'scrStats') { showScreen('scrMain'); return true; }
   return false;
 }
 export const inSettings = () => current === 'scrSettings' || current === 'scrControls';
