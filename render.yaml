@@ -6,6 +6,7 @@ services:
     name: speedbike-server
     runtime: node
     plan: free
+    autoDeploy: false # pushes to GitHub (website updates) never redeploy the server; deploy it manually from the dashboard
     rootDir: server
     buildCommand: npm ci
     startCommand: npm start
