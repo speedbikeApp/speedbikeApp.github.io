@@ -1,0 +1,23 @@
+# Render Blueprint for the SpeedBike multiplayer game server (free plan; sleeps after ~15 min idle).
+# The Firebase service-account key is NOT in the repo: add it in the Render dashboard as the secret
+# environment variable FIREBASE_SERVICE_ACCOUNT (paste the whole JSON). See server/README.md.
+services:
+  - type: web
+    name: speedbike-server
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEV_AUTH
+        value: "0"
+      - key: FIREBASE_PROJECT_ID
+        value: speedbike-9a552
+      - key: ALLOWED_ORIGINS
+        sync: false # set to https://<github-user>.github.io once the repo exists
+      - key: FIREBASE_SERVICE_ACCOUNT
+        sync: false # secret: paste the service-account JSON in the dashboard

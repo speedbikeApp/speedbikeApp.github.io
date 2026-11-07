@@ -71,7 +71,8 @@ export const CFG = {
   ],
   // Multiplayer client (docs/MULTIPLAYER.md). url = game server (override with ?server=ws://host:port). Never used by singleplayer.
   net: {
-    url: 'ws://localhost:8787',
+    // Local dev server when the page itself is served from localhost; the hosted Render server everywhere else.
+    url: (typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) ? 'ws://localhost:8787' : 'wss://speedbike-server.onrender.com',
     pingMs: 2000,                 // ping interval (clock offset + RTT)
     reconnectMs: [1000, 2000, 4000, 8000, 15000, 30000], // backoff while in menus
     helloTimeoutMs: 8000,
