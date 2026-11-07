@@ -109,6 +109,20 @@ initHud(CFG.players.map((p, i) => ({ id: i, name: p.name, color: p.color })), {
 initMenu({ onPlay: (id) => startGame(id), onResume: () => setPaused(false), onRestart: () => startGame(), onQuit: quitToMenu });
 initInput();
 audio.initAudio();
+// Phones: first tap (a user gesture) goes fullscreen and tries to lock landscape; failures are ignored.
+if (matchMedia('(pointer: coarse)').matches) {
+  const goFull = () => {
+    const d = document, el = d.documentElement;
+    if (d.fullscreenElement || d.webkitFullscreenElement) { off(); return; }
+    try {
+      const r = el.requestFullscreen ? el.requestFullscreen({ navigationUI: 'hide' }) : el.webkitRequestFullscreen && el.webkitRequestFullscreen();
+      if (r && r.then) r.then(() => { try { screen.orientation.lock('landscape').catch(() => {}); } catch {} off(); }, () => {});
+    } catch {}
+    try { screen.orientation.lock('landscape').catch(() => {}); } catch {}
+  };
+  const off = () => { removeEventListener('pointerup', goFull, true); removeEventListener('touchend', goFull, true); };
+  addEventListener('pointerup', goFull, true); addEventListener('touchend', goFull, true);
+}
 applySettings();
 setOnPause(() => {
   if (screen === 'menu') { // Esc backs out of menu screens

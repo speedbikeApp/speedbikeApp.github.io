@@ -2,15 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>SpeedBike</title>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800&display=swap" rel="stylesheet">
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; touch-action: none; user-select: none; -webkit-user-select: none; font-family: 'Orbitron', monospace; color: #0ff; }
+  html, body { margin: 0; height: 100%; height: 100dvh; overflow: hidden; background: #000; touch-action: none; user-select: none; -webkit-user-select: none; font-family: 'Orbitron', monospace; color: #0ff; }
   canvas:not(#minimap) { display: block; position: fixed; inset: 0; }
-  :root { --neon: #0ff; }
+  /* --hud (0.62..1) is set from JS on resize (min(w/1000, h/560)); --hudb keeps buttons >= ~56px, --hudp is the gentler panel scale */
+  :root { --neon: #0ff; --hud: 1; --hudb: max(var(--hud), .68); --hudp: max(var(--hud), .7); }
   .frame { border: 2px solid var(--neon); box-shadow: 0 0 10px var(--neon), inset 0 0 8px rgba(0,255,255,.25); background: rgba(0,20,30,.55); }
-  #hudTL { position: fixed; top: 10px; left: 10px; padding: 5px 7px; display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
+  #hudTL { position: fixed; top: calc(10px * var(--hud)); left: calc(10px * var(--hud)); transform: scale(var(--hud)); transform-origin: top left; padding: 5px 7px; display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
   #hudTL .row { display: flex; align-items: center; gap: 8px; font-size: 14px; letter-spacing: 1px; }
   .hrow { display: flex; align-items: center; gap: 5px; font-size: 11px; letter-spacing: .5px; line-height: 1; padding: 2px 3px; border: 1px solid transparent; }
   .hrow.me { border-color: var(--neon); background: rgba(0,255,255,.10); font-size: 12px; }
@@ -23,19 +30,19 @@
   .hrow .hp i.on { background: var(--c); box-shadow: 0 0 5px var(--c); }
   .hrow .hv { min-width: 16px; text-align: right; }
   #shieldTag { display: none; font-size: 11px; letter-spacing: 2px; color: #bff; text-shadow: 0 0 8px #0ff; }
-  #top { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  #top { position: fixed; top: calc(10px * var(--hud)); left: 50%; transform: translateX(-50%) scale(var(--hud)); transform-origin: top center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
   #timer { font-size: 28px; padding: 4px 16px; pointer-events: none; min-width: 7ch; text-align: center; }
   button.neon { font: inherit; color: var(--neon); cursor: pointer; padding: 4px 18px; letter-spacing: 2px; font-size: 14px; }
   button.neon:active { background: rgba(0,255,255,.25); }
-  #minimap { position: fixed; top: 10px; right: 10px; width: 140px; height: 140px; pointer-events: none; }
-  .abtn { position: fixed; bottom: 16px; width: 92px; height: 92px; padding: 0; font: inherit; color: var(--neon); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; touch-action: none; -webkit-tap-highlight-color: transparent; z-index: 2;
+  #minimap { position: fixed; top: calc(10px * var(--hud)); right: calc(10px * var(--hud)); width: calc(140px * var(--hud)); height: calc(140px * var(--hud)); pointer-events: none; }
+  .abtn { position: fixed; bottom: calc(16px * var(--hud)); transform: scale(var(--hudb)); width: 92px; height: 92px; padding: 0; font: inherit; color: var(--neon); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; touch-action: none; -webkit-tap-highlight-color: transparent; z-index: 2;
     background: linear-gradient(to top, rgba(0,255,255,.5) calc(var(--f, 100) * 1%), rgba(0,20,30,.55) 0); }
-  #boostBtn { left: 16px; } #jumpBtn { right: 16px; }
+  #boostBtn { left: calc(16px * var(--hud)); transform-origin: bottom left; } #jumpBtn { right: calc(16px * var(--hud)); transform-origin: bottom right; }
   .abtn b { font-size: 20px; font-weight: 800; letter-spacing: 1px; } .abtn small { font-size: 11px; letter-spacing: 2px; }
   .abtn.ready { background: rgba(0,255,255,.3); } .abtn.ready b { color: #fff; text-shadow: 0 0 10px #0ff; }
   .abtn.active { border-color: #fff; box-shadow: 0 0 18px #fff, inset 0 0 10px rgba(255,255,255,.5); }
   /* ---- ability hexagon (bottom centre) + turn chevrons ---- */
-  #abBar { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; pointer-events: none; z-index: 2; }
+  #abBar { position: fixed; bottom: calc(16px * var(--hud)); left: 50%; transform: translateX(-50%) scale(var(--hudb)); transform-origin: bottom center; display: flex; align-items: center; gap: 8px; pointer-events: none; z-index: 2; }
   #abWrap { width: 94px; height: 82px; filter: drop-shadow(0 0 7px #0ff); }
   #abilityBtn { pointer-events: auto; position: relative; width: 100%; height: 100%; padding: 0; border: 0; font: inherit; color: var(--neon); cursor: pointer; background: #0ff; touch-action: none; -webkit-tap-highlight-color: transparent;
     clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; }
@@ -64,7 +71,7 @@
   #menu { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; touch-action: pan-y; }
   #menu.dim { background: rgba(0,0,0,.6); }
   #menu.home { background: radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, rgba(0,0,0,.65) 100%); }
-  .screen { display: none; flex-direction: column; align-items: center; gap: 10px; padding: 16px 28px; box-sizing: border-box; max-height: 94vh; max-width: 96vw; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin; }
+  .screen { display: none; flex-direction: column; align-items: center; gap: 10px; padding: 16px 28px; box-sizing: border-box; max-height: 94vh; max-height: 94dvh; max-width: 96vw; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin; }
   .screen.on { display: flex; }
   .screen { overflow-x: hidden; }
   .screen h2 { margin: 0 0 4px; font-size: 22px; font-weight: 800; letter-spacing: 3px; text-shadow: 0 0 10px #0ff; }
@@ -94,7 +101,6 @@
     #logo { font-size: 15vh; } #tagline { margin-bottom: 2px; }
     .mbtn { min-height: 40px; padding: 5px 14px; font-size: 14px; } .mbtn.primary { font-size: 17px; }
     .setrow input[type=range] { height: 28px; } .panel { padding: 10px 22px; gap: 6px; }
-    #countdown { font-size: 80px; }
   }
   /* ---- account screen ---- */
   [hidden] { display: none !important; }
@@ -165,14 +171,20 @@
   .achRow small { font-size: 10px; opacity: .8; font-family: sans-serif; letter-spacing: 0; } .achRow .tag { float: right; font-size: 10px; opacity: .85; }
   .achRow .bar { height: 6px; border: 1px solid var(--neon); } .achRow .bar i { display: block; height: 100%; background: var(--neon); box-shadow: 0 0 6px var(--neon); }
   .achRow.done { border-color: #fc3; } .achRow.done .bar i { background: #fc3; box-shadow: 0 0 6px #fc3; } .achRow.done .tag { color: #fc3; }
-  #toasts { position: fixed; top: 100px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
+  #toasts { position: fixed; top: calc(100px * var(--hud)); left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
   .toast { padding: 6px 18px; font-size: 15px; font-weight: 800; letter-spacing: 3px; color: #fff; text-align: center; border-color: #fc3; box-shadow: 0 0 14px #fc3; background: rgba(20,14,0,.8); animation: toastIn .3s ease-out, toastOut .5s ease-in 4.2s forwards; }
   .toast small { display: block; font-size: 10px; font-weight: 500; letter-spacing: 1px; color: #fc3; margin-top: 2px; }
   @keyframes toastIn { from { opacity: 0; transform: translateY(-14px); } } @keyframes toastOut { to { opacity: 0; } }
   @media (max-height: 460px) {
     #gCanvas { height: 120px; } #gMain { gap: 8px; } #gList { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
     .gcard { min-height: 40px !important; } #stGrid { grid-template-columns: repeat(5, minmax(0, 1fr)); } .stCell b { font-size: 14px; }
-    #gTabs .mbtn { min-height: 30px; } .toast { padding: 4px 12px; font-size: 12px; } #toasts { top: 96px; }
+    #gTabs .mbtn { min-height: 30px; } .toast { padding: 4px 12px; font-size: 12px; } #toasts { top: calc(96px * var(--hud)); }
+  }
+  @media (max-height: 380px) {
+    .screen { padding: 6px 14px; gap: 4px; } #gCanvas { height: 84px; } #gMain { gap: 8px; width: min(780px, 94vw); } #gLeft { gap: 2px; } #gRight { gap: 4px; }
+    #gTabs .mbtn { min-height: 28px; font-size: 11px; } #gList { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; } .gcard { min-height: 34px !important; }
+    #gAct { min-height: 34px; font-size: 14px; } #gInfo { min-height: 0; font-size: 10px; } .mbtn { min-height: 34px; } .setrow { gap: 6px; } .setrow input[type=range] { height: 22px; }
+    #logo { font-size: 14vh; } #stAch { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
   }
   /* ---- multiplayer: rank badge, play / multiplayer / queue / lobby screens, online HUD bits, rank results ---- */
   .rb { display: inline-flex; align-items: center; gap: 3px; color: var(--rc, #fff); vertical-align: middle; white-space: nowrap; font-weight: 800; letter-spacing: 0; }
@@ -220,13 +232,13 @@
     #scrPlay { gap: 6px; } .bigtxt { font-size: 15px; } .lrow { padding: 2px 8px; font-size: 12px; } .lrow .rb { font-size: 13px; } .rb.big { font-size: 20px; }
     .panel .orow { font-size: 13px; } .panel h2 { font-size: 20px; margin: 0; } .rkbanner { font-size: 17px; }
   }
-  .overlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; font-size: 28px; text-shadow: 0 0 12px currentColor; }
+  .overlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; font-size: calc(28px * var(--hudp)); text-shadow: 0 0 12px currentColor; }
   .overlay.modal { pointer-events: auto; background: rgba(0,0,0,.45); }
-  .panel { padding: 18px 32px; min-width: 260px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .panel { transform: scale(var(--hudp)); padding: 18px 32px; min-width: 260px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
   .panel h2 { margin: 0 0 6px; font-size: 26px; font-weight: 800; }
   .panel .line { font-size: 18px; }
-  #status { inset: auto; top: 96px; left: 50%; transform: translateX(-50%); font-size: 18px; letter-spacing: 3px; color: #fff; white-space: nowrap; padding: 4px 14px; background: rgba(0,20,30,.55); border: 1px solid var(--neon); }
-  #countdown { font-size: 120px; font-weight: 800; color: #fff; text-shadow: 0 0 24px #0ff; }
+  #status { inset: auto; top: calc(96px * var(--hud)); left: 50%; transform: translateX(-50%) scale(var(--hud)); transform-origin: top center; font-size: 18px; letter-spacing: 3px; color: #fff; white-space: nowrap; padding: 4px 14px; background: rgba(0,20,30,.55); border: 1px solid var(--neon); }
+  #countdown { font-size: calc(120px * var(--hudp)); font-weight: 800; color: #fff; text-shadow: 0 0 24px #0ff; }
   #rotate { background: #000; color: #0ff; z-index: 40; pointer-events: auto; }
   @media (pointer: coarse) and (orientation: portrait) { #rotate { display: flex; } }
 </style>
@@ -458,6 +470,18 @@
 </div>
 <div id="toasts"></div>
 <div id="rotate" class="overlay">Rotate your phone to landscape</div>
+<script>
+// HUD scale: one number drives every HUD size (see --hud in CSS). visualViewport accounts for the mobile address bar.
+(function () {
+  var r = document.documentElement;
+  function fit() {
+    var v = window.visualViewport, w = v ? v.width : innerWidth, h = v ? v.height : innerHeight;
+    r.style.setProperty('--hud', Math.max(0.62, Math.min(1, w / 1000, h / 560)).toFixed(3));
+  }
+  fit(); addEventListener('resize', fit); addEventListener('orientationchange', fit);
+  if (window.visualViewport) visualViewport.addEventListener('resize', fit);
+})();
+</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

@@ -417,10 +417,14 @@ function updateChase(b, px, pz, dt, k) {
   // Falling off an edge: the camera sinks only slowly (hovers near the platform) and looks down at the falling bike.
   cam.y += ((b.falling && b.y < cam.y - 0.5 ? b.y * 0.25 : b.y) - cam.y) * damp(b.falling ? 6 : 14, dt);
   cam.fall += ((b.falling ? 1 : 0) - cam.fall) * damp(8, dt);
+  // Short/wide screens (phones in landscape): the HUD buttons eat the bottom of the view, so look closer to the bike
+  // (smaller look-ahead) which lifts it up the screen. Desktop (aspect <= 1.8) is unchanged.
+  const wide = Math.min(1, Math.max(0, (camera.aspect - 1.8) / 0.9));
+  const la = c.lookAhead * (1 - c.wideLook * wide);
   const fx = Math.sin(cam.yaw), fz = Math.cos(cam.yaw);
   camera.position.set(cam.fx - fx * c.back, c.up + cam.y * 0.6, cam.fz - fz * c.back);
   const ly = c.lookY + cam.y * 0.5;
-  look.set(cam.fx + fx * c.lookAhead * (1 - 0.6 * cam.fall), ly + (b.y - ly) * cam.fall, cam.fz + fz * c.lookAhead * (1 - 0.6 * cam.fall));
+  look.set(cam.fx + fx * la * (1 - 0.6 * cam.fall), ly + (b.y - ly) * cam.fall, cam.fz + fz * la * (1 - 0.6 * cam.fall));
   camera.lookAt(look);
   const tf = c.fov + (b.speed > b.baseSpeed * 1.01 ? c.fovBoost : 0);
   cam.fov += (tf - cam.fov) * damp(c.fovLerp, dt);
