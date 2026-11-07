@@ -12,26 +12,28 @@ Owner: PM. Server and client are built in parallel against THIS document. If som
 
 ## Modes & rotation (shared pure module `js/rotation.js`)
 - Multiplayer modes always available: `standard`, `deathmatch`. Plus one **featured** mode rotating **hourly**: `featuredMode(now) = ['hyper','3d'][Math.floor(now / 3600000) % 2]`; `nextRotation(now)` = ms timestamp of the next hour boundary. Server is authoritative on time; it sends `serverNow` so clients can correct clock skew.
-- All multiplayer matches are 4 slots, humans only, no bots. Standard/Hyper/3D: rounds to 5 points with the existing rules (`rules.js resolveTick`, NOT the single-player `resolvePlayerOut` instant-round-end rule). Death Match: existing lives rules.
+- All multiplayer matches have 4 bikes: 2-4 humans plus **bots** that fill the empty slots (see "Bots"). Abilities are enabled in every mode (see "Abilities (online)"). Standard/Hyper/3D: rounds to 5 points with the existing rules (`rules.js resolveTick`, NOT the single-player `resolvePlayerOut` instant-round-end rule). Death Match: existing lives rules.
 
 ## Ranks (shared pure module `js/ranks.js`)
-- Tiers in order: `He` (Helium), `Ne` (Neon), `Xe` (Xenon). Divisions per tier: `3`, `2`, `1` (3 is lowest). Ladder (index 0..8): He3, He2, He1, Ne3, Ne2, Ne1, Xe3, Xe2, Xe1.
-- Record: `{ tier:'He', div:3, wins:0, matches:0, totalWins:0, updatedAt }`. Default for new players: He3, wins 0.
+- Tiers in order: `He` (Helium), `Ne` (Neon), `Xe` (Xenon). Divisions per tier: `1`, `2`, `3` (**1 is lowest**; you promote 1 -> 2 -> 3, then into the next tier's 1). Ladder (index 0..8): He1, He2, He3, Ne1, Ne2, Ne3, Xe1, Xe2, Xe3 (labels "HELIUM I" .. "XENON III").
+- Record: `{ v:2, tier:'He', div:1, wins:0, matches:0, totalWins:0, updatedAt }`. Default for new players: He1, wins 0. `v` = numbering version (`RANK_VERSION`).
+- **Migration** (`migrateRank`, used by every stored read in `server/store.js`, JSON file and Firestore `ranks/{uid}`): the first release numbered divisions backwards (div 3 lowest) and stored no `v`. A record without `v >= 2` is converted `div -> 4 - div`, which is the SAME ladder position (old He3 = new He1, old Xe1 = new Xe3), so nobody is promoted or demoted. The converted record is written back with `v:2` by the next `setRank` (reads never write). `normalizeRank` (wire data, in-memory ranks, `pubRank` copies in friends/party snapshots) never converts.
 - After each ranked match, per player: **1st place (sole winner) → wins+1; any other result (2nd–4th, shared 1st, disconnect/leave) → wins−1.**
-  - wins reaches 2 → promote one division (ladder index+1), wins=0. At the top (Xe1) wins is capped at 1... i.e. stays max 1.
-  - wins drops below 0 → demote one division, wins=1. At the bottom (He3) wins floors at 0.
-- Function API: `applyResult(rank, won) -> {rank, change: 'promote'|'demote'|'none', tierChange: bool}`, `ladderIndex(rank)`, `rankLabel(rank)` (e.g. "NEON II" / short "Ne II"), `isTierPoint(rank)` = true when one more win promotes into a new tier (div 1 and wins 1, not Xe1), `TIERS` with display name + color: He = soft orange-pink `#ff9a76` (helium discharge), Ne = neon red-orange `#ff4d2e`, Xe = violet-blue `#8f7bff`.
+  - wins reaches 2 → promote one division (ladder index+1), wins=0. At the top (Xe3) wins is capped at 1... i.e. stays max 1.
+  - wins drops below 0 → demote one division, wins=1. At the bottom (He1) wins floors at 0.
+- **Bots never have a rank and affect nobody's rank except by being opponents**: a human who finishes 1st alone (bots count as opponents) wins; a human who loses to bots loses a win like in any other match.
+- Function API: `applyResult(rank, won) -> {rank, change: 'promote'|'demote'|'none', tierChange: bool}`, `ladderIndex(rank)`, `rankLabel(rank)` (e.g. "NEON II" / short "Ne II"), `isTierPoint(rank)` = true when one more win promotes into a new tier (div 3 and wins 1, not Xe3), `migrateRank(raw)` (stored record -> current), `TIERS` with display name + color: He = soft orange-pink `#ff9a76` (helium discharge), Ne = neon red-orange `#ff4d2e`, Xe = violet-blue `#8f7bff`.
 - **Announcements**: server broadcasts to **everyone connected** (all lobbies, menus, matches): when a player reaches tier point (`isTierPoint` becomes true) → `"<name> is one win from NEON!"`; when a player is promoted into a new tier → `"<name> reached NEON!"`.
 
 ## Queue & lobby (global, per mode)
 - One global queue per mode (`standard`, `deathmatch`, featured). A player is in at most one queue/lobby/match.
-- When a mode has ≥2 queued players → open a **lobby** with them (up to 4). Lobby state "WAITING FOR OTHER PLAYERS" with a **30 s countdown**; each new player joining **resets** the countdown to 30 s. Start at 4 players immediately, or when the countdown hits 0 with whoever is in (≥2). If players leave and <2 remain → lobby dissolves back to queue.
+- When a mode has ≥2 queued players → open a **lobby** with them (up to 4). Lobby state "WAITING FOR OTHER PLAYERS" with a **30 s countdown**; each new player joining **resets** the countdown to 30 s. Start at 4 players immediately, or when the countdown hits 0 with whoever is in (≥2 humans minimum); **the empty slots are then filled with bots** (also for parties). If players leave and <2 remain → lobby dissolves back to queue.
 - Further queued players join an open lobby of that mode before a new one is created.
 - If the featured mode rotates while a player is queued/in lobby for the old featured mode, that queue keeps working until matched (don't strand people); new joins use the new featured mode.
 
 ## Netcode
 - Server sim runs at `CFG.tickHz` (120). Movement is deterministic, so the server broadcasts **inputs as events** and periodic state; clients run the same sim locally.
-- Client→server inputs are sent immediately on press with the client's estimated server tick `ctick`. The server applies each at `ctick` (**lag compensation**, below) and broadcasts the authoritative event `{t:'ev', tick, id, kind:'turn'|'boost'|'jump'|'ability'|'swap', side?, x, z, y, dx, dz}`: `tick` = the tick it was applied at (= `ctick` when within the cap), x/z/dx/dz = the exact bike state after applying it at that tick.
+- Client→server inputs are sent immediately on press with the client's estimated server tick `ctick`. The server applies each at `ctick` (**lag compensation**, below) and broadcasts the authoritative event `{t:'ev', tick, id, kind:'turn'|'boost'|'jump'|'ability', side?, ability?, dj?, x, z, y, dx, dz}`: `tick` = the tick it was applied at (= `ctick` when within the cap), x/z/dx/dz = the exact bike state after applying it at that tick.
 - Own bike: client predicts the input locally immediately. The authoritative event carries the same tick and (deterministic sim) the same state, so the correction is ~0. Any residual correction (event rounding, clamp past the cap, tick-estimate drift) is shown smoothly: the sim/trail are corrected at once, the bike MESH and camera keep a render-only offset (`vox`/`voz`) that decays over `CFG.net.blendMs` (120 ms, ~95% gone). Errors above `blendOwnMax` (3 units) or with a different heading are snapped.
 - Other bikes: client applies authoritative events at their tick (rewind that bike to the tick, replay to now: trail geometry is exact), and blends the visual position error out the same way (also across the heading change of a late turn, up to `blendRemoteMax` = 10 units, else snap). The trail head follows the part of the offset along the bike's heading so the mesh stays attached to its trail. All bikes are rendered at the estimated *current* server tick (no interpolation delay).
 
@@ -44,24 +46,42 @@ Owner: PM. Server and client are built in parallel against THIS document. If som
 - Fairness trade-offs: the turner is favoured (it acts at its own time, up to 150 ms in the past) at the expense of the other player, who may see a bike "turn away" from a collision course that already looked decided on their screen, or die to a turn that appears 150 ms later. Abuse is bounded: a client can only move the turn point back by at most the cap (2.25 u at base speed, 3.75 u Hyper), cannot undo a crash, cannot send positions (only the tick), and the input rate limit is unchanged. Beyond the cap the part past 150 ms is not compensated (the bike is pulled back by the excess x speed, smoothed on the client).
 - Stats per room in `/health` (`roomStats[].lagComp`): inputs, rewound, clamped, future, fallback, ignored, average / max rewind in ticks.
 
+## Abilities (online)
+- Server-authoritative, same pure code as singleplayer (`js/abilities.js` + `physics.js`), so client prediction (`js/netsim.js`) matches. The client reports its loadout in `queue.loadout` / `loadout` (validated: known ids, unique, <= `CFG.abilities.maxSlots`; the server cannot verify ownership/charges, coins are client-side - accepted). At match start (`start`) the client spends its passive charges (`spendPassives`), keeps only the actives that still have a charge and sends the final list with `{t:'loadout'}` during the first countdown; the server applies it (`Room.setLoadout`, only in round 1's countdown) and broadcasts `loadout` so every client sets the same abilities on the bike (passives = `airTurn`, `doubleJump`, `fastCharge` mods in the shared sim).
+- Activation: `{t:'in', kind:'ability', ability:'turbo', ctick}`. The server needs the id in that bike's loadout, an ACTIVE ability, `canUse` (cooldown / once per round) and runs `useAbilityId`. On success it broadcasts `ev {kind:'ability', ability, dj?, x,z,y,dx,dz}` (state right before the tick, like boost/jump). Refusals send nothing. The client predicts (`predictInput` kind `ability`) only when `abilityCharges(id) >= 1`, and calls `spendAbility(id)` when the server's `ev` for its own bike arrives (turbo is unlimited; a refused activation costs nothing). `swap` is purely local (the hexagon's selected slot).
+- Lag compensation: ability timers (`cd`, `active`, `used`) are part of the per-bike history ring, so a press is rewound/replayed exactly like a turn. `allBoost` / `allJump` (they force every other bike) are applied "now" (never rewound); each affected bike then gets its own `boost` / `jump` `ev`, and clients apply the ability itself without touching the others. `dj:true` marks a jump / Rocket Jump pressed in the air (double jump): clients continue the arc instead of starting a fresh one.
+- Remote effects: the client sim runs every bike's ability state, so the shield shell (`protectLeft`), Turbo speed, Slow Down and Stealth (`b.stealth` hides the dot from the viewer's minimap) show for other bikes exactly as in singleplayer. Snapshots carry `ab:{ac:{id:secLeft}, cd:{id:secLeft}, us:[onceIdsUsed], sl}` for bikes with a loadout; `applySnap` resyncs the timers when they drift by > 0.12 s (e.g. a refused prediction), so cooldowns/shields never stay wrong.
+- Bots use abilities too: Hard bots carry `CFG.ai.loadouts[2]` (Turbo + Protector) via `aiUseAbilities`; their activations are broadcast as `ev` like any player's.
+
+## Bots
+- When a lobby starts (30 s countdown over, or full) with fewer than 4 humans, `server/index.js onStart` adds `4 - humans` bots (`server/bots.js makeBots`). The minimum to start stays 2 human players. Parties get bots too.
+- Bots are `Room` players with `bot:true`: they run the singleplayer AI (`js/ai.js`: `aiThink`, `aiAbilities`, `aiUseAbilities`) on the server, staggered think ticks per level (`CFG.ai.levels[level].every`), seeded rng. Every decision (turn / jump / boost / ability) is applied on the authoritative state and broadcast as a normal `ev`, so clients simulate them exactly like remote humans. Bot ids come after the humans.
+- Difficulty: **medium (level 1)** for lobbies whose humans average below Neon 1 (ladder index < 3, i.e. Helium); **hard (level 2, with the Turbo + Protector loadout)** when the average human rank is Neon 1 or higher. Party/unranked lobbies use the same rule.
+- Names: `BOT <Nova|Pulse|Flux|Volt|Arc|Echo|Zap|Orbit|Quark|Ion|Photon|Vector|Comet|Prism>` (no repeats inside a match), colours = the free lobby colours.
+- Bots appear in the scoreboard and in `end.ranks` (`bot:true`, `uid:null`, `rankBefore/rankAfter:null`, `change:'none'`; the results screen shows no badge). They are never settled and never stored. They count as opponents in placement: 1st among everyone who stayed wins, whether the rest are bots or humans.
+- Leaving: when a human leaves, only humans count for the forfeit rule - the last remaining human keeps playing against the bots (a lobby WITHOUT bots still ends in `forfeit` when fewer than 2 humans are left); the room closes when no human is left.
+- Cost: AI thinking is the only extra work (flood fill on Hard). Measured via `/health` (2-3 rooms x 2 humans + 2 bots, real time): `cpuPct` about 2% (medium) / 7% (hard) on a dev laptop, room `avgMs` ~0.1-0.25 ms per wake-up, `behindMax` 4. `roomStats[].bots` shows the bot count.
+
 ## Server loop
 - One shared `setInterval` of 16 ms (`loopMs`) drives all rooms (each wake-up runs the ticks that are due: ~2 at 120 Hz), lobby timers, rotation and the heartbeat. Snapshots stay at 10 Hz. `/health` reports per-room tick timing (avg/max ms, ticks behind) and the loop's own wake-up spacing / CPU share, to spot CPU starvation on small hosts.
 - Hosting region: Frankfurt (`render.yaml`). Netcode targets 50-250 ms RTT.
 - Server sends `{t:'snap', tick, bikes:[{id,x,z,y,dx,dz,speed,alive,lives,boostMeter,jumpMeter,...}]}` at 10 Hz for drift correction; trails are reconstructed on clients from events (turn points) + head position; crashes come as events.
-- Crash/round/match flow comes from the server: `{t:'crash', tick, victim, killer, cause}`, `{t:'round', phase, scores, lastResult, roundTime}`, `{t:'end', ranks:[{id, uid, place, won, rankBefore, rankAfter, change}]}`.
+- Crash/round/match flow comes from the server: `{t:'crash', tick, victim, killer, cause}`, `{t:'round', phase, scores, lastResult, roundTime}`, `{t:'end', ranks:[{id, uid, place, won, rankBefore, rankAfter, change, bot?}]}`.
 
 ## Messages (JSON over WebSocket)
 Client → server:
 - `{t:'hello', token}` or dev `{t:'hello', dev:true, uid, username}`
-- `{t:'queue', mode}` / `{t:'leaveQueue'}`
-- `{t:'in', kind, side?, ctick}` (game inputs during a match; `ctick` = the client's estimated server tick when the key was pressed, used for lag compensation)
+- `{t:'queue', mode, loadout?:[abilityId]}` / `{t:'leaveQueue'}`
+- `{t:'loadout', abilities:[abilityId]}` (ability ids for the next match, e.g. a party member who never sent `queue`; DURING the first countdown of a match it is the final loadout: the server applies it and relays `loadout` to everybody)
+- `{t:'in', kind, side?, ability?, ctick}` (game inputs during a match; `kind` = turn | boost | jump | ability (needs `ability:<id>`) | swap (accepted, ignored: the selected slot is local); `ctick` = the client's estimated server tick when the key was pressed, used for lag compensation)
 - `{t:'leave'}` (leave match = counts as loss)
 - `{t:'ping', c}`
 Server → client:
 - `{t:'welcome', uid, username, rank, serverNow, featured, nextRotation, online}`
 - `{t:'queued', mode, position, inQueue}`
 - `{t:'lobby', mode, players:[{uid,username,rank,colorIdx}], countdownEndsAt, serverNow}` (sent on every change)
-- `{t:'start', mode, mapId, seed, tick0, you:<bikeId>, players:[{id,uid,username,rank,colorIdx,loadout}], cfgOverrides}`
+- `{t:'start', mode, mapId, seed, tick0, you:<bikeId>, players:[{id,uid,username,rank,colorIdx,bot,loadout:[abilityId]}], cfgOverrides}` (bots: `bot:true`, `uid:null`, `rank:null`; `loadout` = provisional, from the queue)
+- `{t:'loadout', id, abilities}` (first countdown only: a player's final loadout)
 - `ev` / `snap` / `crash` / `round` / `end` (above)
 - `{t:'announce', text, kind:'tierPoint'|'tierUp'}`
 - `{t:'rotation', featured, nextRotation}` (on change)
@@ -136,7 +156,7 @@ Client UI: party row on the main menu next to the FRIENDS button (member names, 
 - In match: same HUD (scoreboard shows rank badges next to names), pause button shows a small menu (Resume / Leave match — warns it counts as a loss); the game never actually pauses online.
 - Match end: placements + rank change animation (pip gained/lost, PROMOTED / DEMOTED banner).
 - Announcements: toast at top for every `announce` message, anywhere in the app while connected.
-- Equipped garage parts (glow color etc.) and abilities are sent with `queue` later — **for now: everyone uses default parts but their own glow color; abilities disabled online** (keep the hex button hidden in online matches). Note this as a known limitation.
+- Equipped garage parts (glow color etc.) are not synced: everyone uses default parts but their own glow color (known limitation). Abilities ARE synced, see "Abilities (online)".
 
 ## Dev / test
 - `cd server && npm install && npm start` → listens on `PORT` (default 8787). `npm test` runs server tests.

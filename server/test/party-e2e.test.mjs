@@ -109,7 +109,7 @@ await D.next('queued');
 B.send({ t: 'queue', mode: 'standard' });
 const [sb, sc, sd] = await Promise.all([B.next('start'), C.next('start'), D.next('start')]);
 assert.ok(C.msgs.some((m) => m.t === 'queued' || m.t === 'lobby'), 'the member was pulled into the queue without asking');
-assert.deepEqual(sb.players.map((p) => p.uid).sort(), ['uidB', 'uidC', 'uidD']); assert.equal(sb.seed, sc.seed); assert.equal(sc.seed, sd.seed);
+assert.deepEqual(sb.players.filter((p) => !p.bot).map((p) => p.uid).sort(), ['uidB', 'uidC', 'uidD']); assert.equal(sb.players.filter((p) => p.bot).length, 1, 'one bot fills the 4th slot'); assert.equal(sb.seed, sc.seed); assert.equal(sc.seed, sd.seed);
 // leader cannot queue again while in the match; the party survives the game
 B.send({ t: 'queue', mode: 'deathmatch' }); assert.equal((await B.next('error')).code, 'busy');
 for (const c of [B, C, D]) c.play();

@@ -5,7 +5,7 @@ import { TIERS, defaultRank, normalizeRank, ladderIndex, LADDER } from './ranks.
 const ROMAN = { 1: 'I', 2: 'II', 3: 'III' };
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-/** {sym, roman, wins, pips:[bool,bool], color, tierName, label, shortLabel, top, index} for a rank record (garbage -> default He III). */
+/** {sym, roman, wins, pips:[bool,bool], color, tierName, label, shortLabel, top, index} for a rank record (garbage -> default He I). */
 export function badgeInfo(rank) {
   const r = normalizeRank(rank || defaultRank()), t = TIERS[r.tier];
   const top = ladderIndex(r) === LADDER.length - 1;

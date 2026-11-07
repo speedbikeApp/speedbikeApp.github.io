@@ -11,8 +11,9 @@ import { createJsonStore, createFirestoreStore } from './store.js';
 import { createJsonSocialStore, createFirestoreSocialStore } from './social-store.js';
 import { Social } from './social.js';
 import { Parties } from './party.js';
-import { Matchmaker } from './matchmaker.js';
+import { Matchmaker, LOBBY_MAX } from './matchmaker.js';
 import { Room } from './room.js';
+import { makeBots } from './bots.js';
 import { settleMatch } from './ranking.js';
 import { createLoginHandler, createFirebaseLoginDeps } from './login.js';
 
@@ -56,13 +57,15 @@ export function createGameServer(opts) {
     countdownMs: opts.countdownMs,
     allowed: (mode, now) => isMultiplayerMode(mode, now),
     onStart: (lobby) => {
+      // The lobby starts with 2..4 humans (countdown over, or full): free slots are filled with bots (server/bots.js).
+      const humans = lobby.players.map((s) => ({ uid: s.uid, username: s.username, rank: s.rank, colorIdx: s.colorIdx, send: s.send, session: s, party: s.group != null, loadout: s.loadout }));
       const room = new Room({
         id: ++nextRoomId, mode: lobby.mode, timeScale,
-        players: lobby.players.map((s) => ({ uid: s.uid, username: s.username, rank: s.rank, colorIdx: s.colorIdx, send: s.send, session: s, party: s.group != null })),
+        players: [...humans, ...makeBots(humans, LOBBY_MAX)],
         onLeave: handleLeave, onEnd: handleEnd,
       });
       rooms.set(room.id, room);
-      for (const p of room.players) { p.session.room = room; p.session.bikeId = p.id; p.session.group = null; }
+      for (const p of room.players) if (!p.bot) { p.session.room = room; p.session.bikeId = p.id; p.session.group = null; }
       log(`[room ${room.id}] ${lobby.mode} started: ${room.players.map((p) => p.username).join(', ')}`);
     },
   });
@@ -82,19 +85,20 @@ export function createGameServer(opts) {
 
   async function handleEnd(room, { reason, results }) {
     try {
-      const stay = results.filter((r) => !r.left && !room.players[r.id].party); // party members are unranked
+      const stay = results.filter((r) => !r.left && !r.bot && !room.players[r.id].party); // party members are unranked
       const { ranks, announcements } = await settleMatch(store, stay);
       const byId = new Map(ranks.map((r) => [r.id, r]));
       const out = [];
       for (const r of results) {
         const p = room.players[r.id];
+        if (r.bot) { out.push({ id: r.id, uid: null, username: r.username, place: r.place, won: r.won, left: false, scores: r.scores, rankBefore: null, rankAfter: null, change: 'none', bot: true }); continue; }
         let entry = byId.get(r.id);
         if (!entry) { const l = p.leavePromise && await p.leavePromise; entry = { id: r.id, uid: r.uid, rankBefore: l?.rankBefore || p.rank, rankAfter: l?.rankAfter || p.rank, change: l?.change || 'none' }; }
         out.push({ id: r.id, uid: r.uid, username: r.username, place: r.place, won: r.won, left: r.left, scores: r.scores, rankBefore: entry.rankBefore, rankAfter: entry.rankAfter, change: entry.change, ...(p.party ? { party: true } : {}) });
       }
       for (const p of room.players) {
         const s = p.session;
-        if (p.left) continue;
+        if (p.left || p.bot) continue;
         s.room = null; s.where = null;
         s.rank = out[p.id].rankAfter; social.noteRank(p.uid, s.rank);
         s.send({ t: 'end', mode: room.mode, reason, ranks: out });
@@ -103,7 +107,7 @@ export function createGameServer(opts) {
       log(`[room ${room.id}] ended (${reason}): ${out.map((r) => `${r.username}#${r.place}${r.change !== 'none' ? ' ' + r.change : ''}`).join(' ')}`);
     } catch (e) {
       log(`[room ${room.id}] rank update failed:`, e.message);
-      for (const p of room.players) if (!p.left) { p.session.room = null; p.session.where = null; p.session.send({ t: 'error', code: 'rank_failed', message: 'could not save ranks' }); }
+      for (const p of room.players) if (!p.left && !p.bot) { p.session.room = null; p.session.where = null; p.session.send({ t: 'error', code: 'rank_failed', message: 'could not save ranks' }); }
     } finally { rooms.delete(room.id); }
   }
 
@@ -150,7 +154,8 @@ export function createGameServer(opts) {
     if (!s.authed) return s.send({ t: 'error', code: 'not_authed', message: 'send hello first' });
     switch (msg.t) {
       case 'ping': return s.send({ t: 'pong', c: msg.c, serverNow: Date.now() });
-      case 'queue': return void onQueue(s, msg.mode);
+      case 'queue': if (msg.loadout) s.loadout = msg.loadout; return void onQueue(s, msg.mode);
+      case 'loadout': if (s.room) s.room.setLoadout(s.bikeId, msg.abilities); else s.loadout = msg.abilities; return;
       case 'leaveQueue': return void onLeaveQueue(s);
       case 'leave':
         if (s.room) { s.room.leave(s.bikeId); s.room = null; s.where = null; } else mm.leave(s);
@@ -242,7 +247,7 @@ export function createGameServer(opts) {
   wss.on('connection', (ws) => {
     const s = {
       ws, uid: null, username: '', rank: null, where: null, authed: false, helloPending: false, dead: false, alive: true, violations: 0,
-      room: null, bikeId: -1, colorIdx: 0, group: null,
+      room: null, bikeId: -1, colorIdx: 0, group: null, loadout: [],
       limiter: new RateLimiter(20, 30), searchLimiter: new RateLimiter(0.7, 5), socialLimiter: new RateLimiter(1, 10), partyLimiter: new RateLimiter(2, 12), inLimiter: new RateLimiter(30, 30),
       send: (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); },
     };

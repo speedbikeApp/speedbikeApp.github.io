@@ -6,9 +6,9 @@ import { render, burst, resetCamera, resetEffects, setBikeStyle } from './render
 import * as audio from './audio.js';
 import { initHud, setTimer, setPing, setScoreboard, setStatus, showPause, showLeave, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks, showAnnounce } from './hud.js';
 import { createAI, updateAIs } from './ai.js';
-import { useAbility, cycleAbility, setLoadout } from './abilities.js';
+import { useAbility, cycleAbility, setLoadout, activeDef, ABILITIES } from './abilities.js';
 import { createMatch, MODES } from './modes.js';
-import { getSave, addSessionStats, recordMatch, recordRound, flushSave } from './save.js';
+import { getSave, addSessionStats, recordMatch, recordRound, flushSave, abilityCharges, spendAbility, spendPassives } from './save.js';
 import { glowHex, DEFAULT_PARTS, resolveAiColors } from './parts.js';
 import { initMenu, showScreen, applySettings, closeSettings, inSettings, currentScreen, menuBack } from './menu.js';
 import * as online from './online.js';
@@ -59,7 +59,10 @@ function startGame(id) {
   ais.clear();
   for (let i = 1; i < state.bikes.length; i++) ais.set(i, createAI(diff, i * 2)); // staggered thinking
   // loadouts (kept across rounds; resetBike only clears timers): player's equipped slots, AI per difficulty (Hard only)
-  setLoadout(state.bikes[state.playerId], getSave().equipped.abilities);
+  { // consumables: passives cost 1 charge per match; equipped actives stay (unusable at 0 charges)
+    const eq = getSave().equipped.abilities, on = spendPassives(eq);
+    setLoadout(state.bikes[state.playerId], eq.filter((id) => ABILITIES[id].type === 'active' || on.includes(id)));
+  }
   for (const b of state.bikes) if (b.id !== state.playerId) setLoadout(b, CFG.ai.loadouts[diff] || []);
   // looks: player's equipped parts + glow colour; AIs get a colour that does not clash with it
   const eq = getSave().equipped.parts, pc = glowHex(eq.glow);
@@ -147,7 +150,7 @@ function tick() {
     const now = performance.now();
     const act = popAction(now);
     if (act === 'boost') { if (startBoost(me)) { audio.boost(); session.boosts++; roundCnt.boosts++; } } else if (act === 'jump') { if (startJump(me)) { audio.jump(); session.jumps++; roundCnt.jumps++; } }
-    else if (act === 'ability') { if (useAbility(me, state)) audio.boost(); } else if (act === 'swap') cycleAbility(me);
+    else if (act === 'ability') { { const def = activeDef(me); if (def && abilityCharges(def.id) >= 1 && useAbility(me, state)) { spendAbility(def.id); audio.boost(); } } } else if (act === 'swap') cycleAbility(me);
     if (isAirborne(me) && !me.airTurn) popTurn(now, true); // mid-air: buffered turns are dropped
     else { const t = popTurn(now, canTurn(me)); if (t) { turnBike(me, t); audio.turn(); flashTurn(t); } }
   }

@@ -1,7 +1,7 @@
 # SpeedBike game server
 
 Authoritative multiplayer server (Node >= 20, ES modules, `ws`). It imports the game's pure modules from `../js/` (config, state,
-physics, rules, modes, maps, ranks, rotation) and runs 4-human matches. Protocol: [`../docs/MULTIPLAYER.md`](../docs/MULTIPLAYER.md).
+physics, rules, modes, maps, abilities, ai, ranks, rotation) and runs matches of 2-4 humans plus server-side bots filling the empty slots (`bots.js`). Protocol: [`../docs/MULTIPLAYER.md`](../docs/MULTIPLAYER.md).
 
 ## Run locally (dev auth)
 
@@ -77,7 +77,7 @@ tick by rewinding + replaying that one bike, see docs/MULTIPLAYER.md "Lag compen
 turn gap, like the offline input buffer), `step()`, feed crashes to `match.onTick` (`resolveTick`, never
 `resolvePlayerOut`: `state.playerId = -1`), broadcast. `ev` = authoritative state right before server tick `tick`; `crash`/`round`/`snap`
 carry the tick counter after the iteration. Snapshots go out at 10 Hz. Leaving or dropping a socket crashes the bike and charges
-a rank loss immediately; fewer than 2 humans left ends the match (the remaining player wins).
+a rank loss immediately; in a room WITHOUT bots fewer than 2 humans left ends the match (the remaining player wins); with bots the last human plays on, and the room closes when no human is left. Bots (`bots.js`) think like the singleplayer AI (`js/ai.js`) and all their actions are broadcast as `ev`; abilities are server-authoritative (`ability` input -> `ev kind:'ability'`).
 
 ## Monitoring: `/health`
 
@@ -108,6 +108,6 @@ CPU is light (a 4-player room is a few hundred microseconds per tick); the Fires
 - `crash` has `cause`: `'trail' | 'wall' | 'void' | 'side' | 'leave'` and `lives` (remaining, Death Match only). `ev.kind` also includes `'respawn'` (Death Match, full bike state). `snap` also has `phase`, `roundTime` and per-bike `lives`.
 - `end` = `{t:'end', mode, reason:'normal'|'forfeit', ranks:[{id,uid,username,place,won,left,scores,rankBefore,rankAfter,change}]}`.
 - Extra server messages: `{t:'online', online}` (throttled to 1 per 2 s) and `{t:'rank', rank}` (sent to a player who left a match, after the loss is applied).
-- `colorIdx` is the index into `CFG.players` (0 orange, 1 blue, 2 green, 3 purple), distinct per lobby. Abilities/`ability`/`swap` inputs are ignored; `loadout` is `null`.
+- `colorIdx` is the index into `CFG.players` (0 orange, 1 blue, 2 green, 3 purple), distinct per lobby. `start.players[].loadout` is the provisional ability list (queue time) and `bot:true` marks bots (`uid`/`rank` null); the final loadout arrives as `loadout` messages in the first countdown. `in` accepts `kind:'ability'` + `ability:<id>`; `swap` is ignored (local). `ev.kind` also includes `'ability'` (with `ability`, `dj?`), snapshots carry `ab` timers, `end.ranks[]` rows of bots have `bot:true` and null ranks. Rank records carry `v:2` (old records without `v` are converted on read, `js/ranks.js migrateRank`).
 - A second login with the same uid replaces the first connection (`error` code `replaced`). Queueing the same player twice or while in a match is `error busy`.
-- If a match ends because everyone else left (`forfeit`), the remaining player counts as the sole winner.
+- If a match without bots ends because everyone else left (`forfeit`), the remaining player counts as the sole winner. With bots in the room the survivor keeps playing; the room closes (`forfeit`, nobody notified) when no human is left.

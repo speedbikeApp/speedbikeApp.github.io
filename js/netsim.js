@@ -9,6 +9,10 @@
 import { CFG } from './config.js';
 import { step, turnBike, canTurn, startBoost, startJump } from './physics.js';
 import { newSegment, resetBike } from './state.js';
+import { ABILITIES, useAbilityId } from './abilities.js';
+
+// Abilities are replayed on a bike alone: allBoost / allJump hit the others, and those arrive as their own boost / jump events from the server.
+const NO_OTHERS = { bikes: [] };
 
 export const MAX_RESIM = 90; // ticks (0.75 s): never replay more than this for one correction
 const dtOf = () => 1 / CFG.tickHz;
@@ -36,17 +40,31 @@ export function createSim(state, tick = 0) { return { state, tick, pending: [], 
 /** New round / fresh start: forget history and unconfirmed inputs. */
 export function resetSim(sim, tick = sim.tick) { sim.tick = tick; sim.pending.length = 0; sim.hist.clear(); }
 
-// Per-bike scalar history (jump / boost timers, height, speed ...) so a rewind restores the ability state of that tick too.
+// Per-bike scalar history (jump / boost timers, height, speed ...) so a rewind restores the ability state of that tick too
+// (plus the nested ability timers cd / active / used of bikes with a loadout).
 const HIST = MAX_RESIM + 40;
 function scalars(b) { const o = {}; for (const k in b) { const v = b[k]; if (typeof v === 'number' || typeof v === 'boolean') o[k] = v; } return o; }
 function record(sim) {
   for (const b of sim.state.bikes) {
     let h = sim.hist.get(b.id); if (!h) sim.hist.set(b.id, h = []);
-    h.push({ tick: sim.tick, s: scalars(b) });
+    h.push({ tick: sim.tick, s: scalars(b), ab: b.abilities && b.abilities.length ? { cd: { ...b.cd }, active: { ...b.active }, used: { ...b.used } } : null });
     if (h.length > HIST) h.shift();
   }
 }
-const histAt = (sim, id, tick) => { const h = sim.hist.get(id); if (!h || !h.length) return null; const e = h.find((x) => x.tick === tick); return e ? e.s : null; };
+// After a bike was re-simulated (event / correction), its recorded history for the replayed ticks must say what the replay computed, or
+// the next snapshot would be projected from the stale pre-correction state.
+function patchHist(sim, b, tick) {
+  const h = sim.hist.get(b.id); if (!h || !h.length) return;
+  const i = tick - h[0].tick, e = i >= 0 && i < h.length ? h[i] : null;
+  if (!e || e.tick !== tick) return;
+  e.s = scalars(b);
+  e.ab = b.abilities && b.abilities.length ? { cd: { ...b.cd }, active: { ...b.active }, used: { ...b.used } } : null;
+}
+const histAt = (sim, id, tick) => {
+  const h = sim.hist.get(id); if (!h || !h.length) return null;
+  const e = h.find((x) => x.tick === tick); if (!e) return null;
+  return e.ab ? { ...e.s, cd: { ...e.ab.cd }, active: { ...e.ab.active }, used: { ...e.ab.used } } : e.s; // fresh nested copies: the bike must never alias the history
+};
 
 export function tagSegs(b, tick) { for (const s of b.trail) if (s.ct === undefined) s.ct = tick; }
 const bikeOf = (sim, id) => sim.state.bikes.find((v) => v.id === id);
@@ -57,6 +75,7 @@ export function stepSim(sim) {
   for (const b of sim.state.bikes) tagSegs(b, sim.tick);
   const events = step(sim.state, dtOf());
   sim.tick++;
+  for (const e of events) { const v = bikeOf(sim, e.victim); if (v) v.deadTick = sim.tick; } // lets a snapshot older than this death be recognised as stale
   for (const b of sim.state.bikes) tagSegs(b, sim.tick);
   return events;
 }
@@ -73,6 +92,7 @@ export function applyInput(b, p) {
   }
   if (p.kind === 'boost') return startBoost(b);
   if (p.kind === 'jump') return startJump(b);
+  if (p.kind === 'ability') return useAbilityId(b, p.ability, NO_OTHERS);
   return false;
 }
 
@@ -96,6 +116,7 @@ export function advanceBike(sim, b, fromTick, toTick, pend = null) {
   const to = Math.min(toTick, fromTick + MAX_RESIM);
   for (let k = fromTick; k < to; k++) {
     for (const p of todo) if (!p.done && p.ctick <= k) { p.done = true; applyInput(b, p); }
+    patchHist(sim, b, k);
     tagSegs(b, k);
     if (step(tmp, dt).length) { died = true; break; }
     tagSegs(b, k + 1);
@@ -135,11 +156,12 @@ export function applyEvent(sim, ev, nowTick = sim.tick) {
     return { applied: true, died: advanceBike(sim, b, ev.tick, nowTick), respawned: true };
   }
   if (!b || !b.alive || typeof ev.tick !== 'number') return { applied: false, died: false };
-  if (ev.kind !== 'turn' && ev.kind !== 'boost' && ev.kind !== 'jump') return { applied: false, died: false };
+  if (ev.kind !== 'turn' && ev.kind !== 'boost' && ev.kind !== 'jump' && ev.kind !== 'ability') return { applied: false, died: false };
+  if (ev.kind === 'ability' && !(ABILITIES[ev.ability] && ABILITIES[ev.ability].type === 'active')) return { applied: false, died: false };
   const own = ev.id === sim.state.playerId;
   let resimmed = false;
   if (own) { // consume the matching prediction
-    const i = sim.pending.findIndex((p) => p.kind === ev.kind && (ev.kind !== 'turn' || ev.side === undefined || p.side === ev.side));
+    const i = sim.pending.findIndex((p) => p.kind === ev.kind && (ev.kind !== 'turn' || ev.side === undefined || p.side === ev.side) && (ev.kind !== 'ability' || p.ability === ev.ability));
     const pr = i >= 0 ? sim.pending.splice(i, 1)[0] : null;
     dropPredicted(b);
     // The server applied it LATER than we predicted (stale / future ctick, or beyond the server's rewind cap): the prediction's effects between
@@ -166,10 +188,24 @@ export function applyEvent(sim, ev, nowTick = sim.tick) {
     b.x = ev.x; b.z = ev.z; if (typeof ev.y === 'number') b.y = ev.y; b.dx = ndx; b.dz = ndz;
     endSegment(b, ev.x, ev.z, ndx, ndz);
     if (ev.kind === 'boost') { b.boosting = false; b.boostMeter = 1; startBoost(b); }
-    else { b.jumpT = -1; b.falling = false; b.djUsed = false; b.jumpMeter = 1; startJump(b); }
+    else if (ev.kind === 'jump') applyJump(b, ev.dj);
+    else applyAbilityEv(b, ev.ability, ev.dj);
   }
   const died = advanceBike(sim, b, ev.tick, nowTick, own ? sim.pending : null);
   return { applied: true, died };
+}
+
+// Jump event. dj = the server made it a double jump (airborne, Double Jump equipped): continue the arc from the current height instead
+// of starting a fresh one. A prediction of the same press may already have been applied on this bike: both paths start from a clean slate.
+function applyJump(b, dj) {
+  if (dj && b.jumpT >= 0) { b.djUsed = false; startJump(b); return; }
+  b.jumpT = -1; b.falling = false; b.djUsed = false; b.jumpMeter = 1; startJump(b);
+}
+// Active ability event: clear whatever a prediction of the same press set (cooldown / duration / once flag), then run the real thing.
+function applyAbilityEv(b, id, dj) {
+  b.cd[id] = 0; b.active[id] = 0; if (ABILITIES[id].once) b.used[id] = false;
+  if (id === 'rocketJump') { if (dj && b.jumpT >= 0) b.djUsed = false; else { b.jumpT = -1; b.falling = false; b.djUsed = false; b.jumpMeter = 1; } }
+  useAbilityId(b, id, NO_OTHERS);
 }
 
 /** Server says this bike crashed. Returns true if it was still alive here (caller shows the burst). */
@@ -178,6 +214,20 @@ export function applyCrash(sim, msg) {
   if (!b || !b.alive) return false;
   b.alive = false; b.trail.length = 0;
   return true;
+}
+
+// Ability timers of a snapshot (seconds left AT the snapshot tick, n ticks ago): fix cooldowns / shield / turbo / stealth that drifted
+// (a prediction the server refused, a late event). Small differences are ignored so a healthy bike never jitters.
+function syncAbilities(b, ab, n) {
+  const age = n * dtOf(), TOL = 0.12;
+  for (const id of b.abilities) {
+    for (const [dst, src] of [[b.active, ab.ac || {}], [b.cd, ab.cd || {}]]) {
+      const want = Math.max(0, (src[id] || 0) - age), have = dst[id] || 0;
+      if (Math.abs(want - have) > TOL) dst[id] = want;
+    }
+    if (ABILITIES[id].once) b.used[id] = !!(ab.us && ab.us.includes(id));
+  }
+  if (typeof ab.sl === 'number') { const want = Math.max(0, ab.sl - age); if (Math.abs(want - b.slowLeft) > TOL) b.slowLeft = want; }
 }
 
 // Copy of a bike without its trail (deep enough that stepping the copy never touches the original's nested ability state).
@@ -196,9 +246,12 @@ export function applySnap(sim, snap, nowTick = sim.tick, opts = {}) {
     if (!b || !sb.alive) continue;
     if (typeof sb.lives === 'number') b.lives = sb.lives;
     const revive = !b.alive;
+    if (b.alive && sb.ab && b.abilities && b.abilities.length && !(sb.id === sim.state.playerId && sim.pending.length)) syncAbilities(b, sb.ab, n);
     // Our own bike crashed locally while an input of ours is still in flight: the server may not know that input yet (it will replay it
     // at its tick and may well crash us), so this snap is not evidence of a false crash. Wait for the ev / crash message.
     if (revive && sb.id === sim.state.playerId && sim.pending.length) continue;
+    // This bike died here AFTER the snapshot was taken (the snapshot is older than the crash, the `crash` message is still on its way): not a false crash.
+    if (revive && b.deadTick !== undefined && b.deadTick > snap.tick) continue;
     // server state projected forward to now, on a scratch copy
     const c = cloneBike(b);
     const past = histAt(sim, b.id, snap.tick); if (past && b.alive) Object.assign(c, past);

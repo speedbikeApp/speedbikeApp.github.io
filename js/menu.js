@@ -1,7 +1,7 @@
 // Menu screens (main / mode select / settings) + pause-panel buttons. DOM only; game flow is injected by main.js.
 // Settings are applied live (render + audio) and persisted through save.js.
 import { CFG } from './config.js';
-import { getSave, setSetting, setUsername, saveSoon, buyAbility, toggleEquip, buyPart, equipPart, partOwned } from './save.js';
+import { getSave, setSetting, setUsername, saveSoon, buyAbility, buyInfinite, abilityCharges, infinitePrice, STACK_MAX, toggleEquip, buyPart, equipPart, partOwned } from './save.js';
 import { CATS, CAT_LABEL, partList, getPart, glowHex } from './parts.js';
 import { ACHIEVEMENTS, getAchievement, achValue, achProgress } from './achievements.js';
 import { ABILITIES, ABILITY_IDS } from './abilities.js';
@@ -57,10 +57,16 @@ function renderAbilities(msg) {
   $('abHead').textContent = `SBCOINS ${d.coins}   SLOTS ${eq.length}/${CFG.abilities.maxSlots}`;
   $('abMsg').textContent = msg;
   $('abList').innerHTML = ABILITY_IDS.map((id) => {
-    const a = ABILITIES[id], owned = own.includes(id), on = eq.includes(id);
-    const btn = !owned ? `<button class="mbtn frame" type="button" data-id="${id}" data-act="buy"${d.coins < a.price ? ' style="opacity:.55"' : ''}>BUY <span class="coins">${a.price}</span></button>`
-      : `<button class="mbtn frame${on ? ' sel' : ''}" type="button" data-id="${id}" data-act="eq">${on ? 'EQUIPPED' : 'EQUIP'}</button>`;
-    return `<div class="abItem frame${on ? ' eq' : ''}"><b>${a.name.toUpperCase()}</b><span class="tag">${a.type.toUpperCase()}${a.price ? '' : ' - FREE'}</span><p>${a.desc}</p>${btn}</div>`;
+    const a = ABILITIES[id], owned = own.includes(id), on = eq.includes(id), n = abilityCharges(id), free = a.price === 0;
+    const cnt = n === Infinity ? '∞' : 'x' + n;
+    const dim = (p) => (d.coins < p ? ' style="opacity:.55"' : '');
+    let buy = '';
+    if (!free && n === Infinity) buy = '';
+    else if (!free && n >= STACK_MAX) { const p = infinitePrice(id); buy = `<button class="mbtn frame" type="button" data-id="${id}" data-act="inf"${dim(p)}>INFINITE <span class="coins">${p}</span></button>`; }
+    else if (!free) buy = `<button class="mbtn frame" type="button" data-id="${id}" data-act="buy"${dim(a.price)}>BUY +1 <span class="coins">${a.price}</span></button>`;
+    const eqBtn = owned ? `<button class="mbtn frame${on ? ' sel' : ''}" type="button" data-id="${id}" data-act="eq">${on ? 'EQUIPPED' : 'EQUIP'}</button>` : '';
+    const kind = a.type === 'passive' ? 'PASSIVE - 1 PER MATCH' : a.once ? 'ACTIVE - 1 PER USE' : 'ACTIVE';
+    return `<div class="abItem frame${on ? ' eq' : ''}"${on && n < 1 ? ' style="opacity:.6"' : ''}><b>${a.name.toUpperCase()}</b><span class="tag">${kind}${free ? ' - FREE' : ' - ' + cnt}</span><p>${a.desc}</p>${buy}${eqBtn}</div>`;
   }).join('');
 }
 // ---- GARAGE: category tabs, part cards (preview on select), buy / equip. 3D preview = separate small renderer. ----
@@ -114,7 +120,7 @@ function renderStats() {
   }).join('');
   $('stSum').textContent = `ACHIEVEMENTS ${own.size}/${ACHIEVEMENTS.length}`;
 }
-const AB_MSG = { coins: 'NOT ENOUGH SBCOINS', full: 'ALL SLOTS FULL - UNEQUIP ONE FIRST' };
+const AB_MSG = { max: 'AT 99 - BUY INFINITE', need99: 'NEED 99 CHARGES FIRST', owned: 'ALREADY UNLIMITED', coins: 'NOT ENOUGH SBCOINS', full: 'ALL SLOTS FULL - UNEQUIP ONE FIRST' };
 
 function syncDiff() {
   const d = getSave().settings.aiDifficulty;
@@ -167,7 +173,7 @@ export function initMenu(h) {
   $('abList').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-id]');
     if (!b) return;
-    const r = b.dataset.act === 'buy' ? buyAbility(b.dataset.id) : toggleEquip(b.dataset.id);
+    const r = b.dataset.act === 'buy' ? buyAbility(b.dataset.id) : b.dataset.act === 'inf' ? buyInfinite(b.dataset.id) : toggleEquip(b.dataset.id);
     renderAbilities(r.ok ? '' : AB_MSG[r.reason] || '');
   });
   for (const b of $('scrMode').querySelectorAll('button[data-mode]')) b.addEventListener('click', () => h.onPlay(b.dataset.mode));

@@ -18,7 +18,9 @@ export function mergeProgress(local, cloud) {
   for (const c of CATS) parts[c] = union(local.unlocks.parts[c], cloud.unlocks.parts[c]);
   return {
     coins: newer.coins, updatedAt: Math.max(local.updatedAt, cloud.updatedAt), stats,
-    unlocks: { abilities: union(local.unlocks.abilities, cloud.unlocks.abilities), parts, achievements: union(local.unlocks.achievements, cloud.unlocks.achievements) },
+    // ability charges are spendable like coins: they follow the newer save; infinite flags are permanent (union)
+    unlocks: { abilities: union(local.unlocks.abilities, cloud.unlocks.abilities), abilityCount: { ...newer.unlocks.abilityCount },
+      abilityInf: union(local.unlocks.abilityInf || [], cloud.unlocks.abilityInf || []), parts, achievements: union(local.unlocks.achievements, cloud.unlocks.achievements) },
     equipped: JSON.parse(JSON.stringify(newer.equipped)),
   };
 }

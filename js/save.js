@@ -7,7 +7,10 @@ import { getAchievement, newlyEarned } from './achievements.js';
 import { defaultKeys, validateKeys } from './input.js';
 
 export const KEY = 'speedbike.save.v1';
-export const VERSION = 1;
+export const VERSION = 2; // 2: consumable abilities (unlocks.abilityCount / abilityInf)
+export const STACK_MAX = 99;
+export const INFINITE_MULT = 100; // infinite = 100x the single price (bought at 99 charges)
+export const MIGRATE_CHARGES = 5; // charges given per previously-bought ability when upgrading a v1 save
 export const NAME_MAX = 12;
 export const DEFAULT_NAME = 'PLAYER';
 
@@ -22,7 +25,7 @@ export const defaults = () => ({
   stats: { matches: 0, wins: 0, winStreak: 0, bestStreak: 0, kills: 0, distance: 0, boosts: 0, jumps: 0,
     bestRoundBoosts: 0, bestRoundJumps: 0, dmFlawless: 0, wins3d: 0, winsHyper: 0 },
   // parts: owned part ids per category (free ones are always present); achievements: earned ids
-  unlocks: { abilities: FREE_ABILITIES(), parts: Object.fromEntries(CATS.map((c) => [c, freeParts(c)])), achievements: [] },
+  unlocks: { abilities: FREE_ABILITIES(), abilityCount: {}, abilityInf: [], parts: Object.fromEntries(CATS.map((c) => [c, freeParts(c)])), achievements: [] },
   equipped: { abilities: FREE_ABILITIES(), parts: { ...DEFAULT_PARTS } },
 });
 
@@ -63,6 +66,16 @@ function clamp(d) {
   // abilities: only known ids; free ones are always unlocked; equipped must be unlocked, unique, <= maxSlots
   const un = new Set(d.unlocks.abilities.filter(isAbilityId));
   for (const id of FREE_ABILITIES()) un.add(id);
+  // consumables: counts 0..99 integers for known non-free ids; infinite flags for known non-free ids (infinite implies owned)
+  const free = new Set(FREE_ABILITIES()), cnt = {}, ac = isObj(d.unlocks.abilityCount) ? d.unlocks.abilityCount : {};
+  const inf = new Set((Array.isArray(d.unlocks.abilityInf) ? d.unlocks.abilityInf : []).filter((id) => isAbilityId(id) && !free.has(id)));
+  for (const id of ABILITY_IDS) {
+    if (free.has(id)) continue;
+    const n = Math.min(STACK_MAX, Math.max(0, Math.floor(Number(ac[id]) || 0)));
+    if (n > 0 && !inf.has(id)) cnt[id] = n;
+    if (n > 0 || inf.has(id)) un.add(id);
+  }
+  d.unlocks.abilityCount = cnt; d.unlocks.abilityInf = ABILITY_IDS.filter((id) => inf.has(id));
   d.unlocks.abilities = ABILITY_IDS.filter((id) => un.has(id));
   const eq = Array.isArray(d.equipped.abilities) ? d.equipped.abilities : FREE_ABILITIES();
   d.equipped.abilities = [...new Set(eq.filter((id) => un.has(id)))].slice(0, CFG.abilities.maxSlots);
@@ -81,7 +94,13 @@ function clamp(d) {
 export function parseSave(text) {
   let raw = null;
   try { raw = text == null ? null : JSON.parse(text); } catch { raw = null; }
+  // v1 saves (no abilityCount): every owned non-turbo ability becomes MIGRATE_CHARGES charges
+  if (isObj(raw) && isObj(raw.unlocks) && !isObj(raw.unlocks.abilityCount)) {
+    const old = Array.isArray(raw.unlocks.abilities) ? raw.unlocks.abilities : [], free = new Set(FREE_ABILITIES());
+    raw = { ...raw, unlocks: { ...raw.unlocks, abilityCount: Object.fromEntries(old.filter((id) => isAbilityId(id) && !free.has(id)).map((id) => [id, MIGRATE_CHARGES])) } };
+  }
   const d = merge(defaults(), raw);
+  d.version = VERSION;
   // old saves without an equipped list start with the free abilities equipped (an explicit [] stays empty)
   if (!isObj(raw) || !isObj(raw.equipped) || !Array.isArray(raw.equipped.abilities)) d.equipped.abilities = FREE_ABILITIES();
   return clamp(d);
@@ -187,15 +206,60 @@ export function recordMatch(placement, bonus = 0, info = {}) {
 // Online match coins (placement + kill coins already computed by the caller). Coins only: online matches don't touch offline stats.
 export function addCoins(n) { const d = getSave(); d.coins += Math.max(0, Math.floor(n)); flushSave(); return d.coins; }
 
-// ---- abilities ----
-// Buy with SBCoins. Returns {ok, reason?}.
+// ---- abilities (consumable) ----
+// Free abilities (turbo) are unlimited. Others: charges 0..STACK_MAX in unlocks.abilityCount; at STACK_MAX the player can
+// buy INFINITE for INFINITE_MULT x price (flag in unlocks.abilityInf). unlocks.abilities = ever owned (stays equippable at 0 charges).
+const isFree = (id) => isAbilityId(id) && ABILITIES[id].price === 0;
+export const isInfinite = (id) => isFree(id) || (isAbilityId(id) && getSave().unlocks.abilityInf.includes(id));
+/** Charges left: Infinity for free / infinite abilities, 0 for unknown. */
+export function abilityCharges(id) {
+  if (!isAbilityId(id)) return 0;
+  if (isInfinite(id)) return Infinity;
+  return getSave().unlocks.abilityCount[id] || 0;
+}
+export const infinitePrice = (id) => (isAbilityId(id) ? ABILITIES[id].price * INFINITE_MULT : 0);
+/** Spend one charge. true if the ability could be used (unlimited = no change). */
+export function spendAbility(id) {
+  const n = abilityCharges(id);
+  if (n <= 0) return false;
+  if (n !== Infinity) {
+    const d = getSave();
+    if (n <= 1) delete d.unlocks.abilityCount[id]; else d.unlocks.abilityCount[id] = n - 1;
+    saveSoon();
+  }
+  return true;
+}
+/** Match start: spend one charge per equipped passive that has any. Returns the passive ids active for this match. */
+export function spendPassives(equippedIds) {
+  const out = [];
+  for (const id of equippedIds || []) if (isAbilityId(id) && ABILITIES[id].type === 'passive' && spendAbility(id)) out.push(id);
+  return out;
+}
+/** Equipped ids that currently have a charge (or are unlimited). */
+export const usableAbilities = () => getSave().equipped.abilities.filter((id) => abilityCharges(id) >= 1);
+// Buy ONE charge with SBCoins. Returns {ok, reason?}: unknown | owned (free / already infinite) | max (99: buy infinite) | coins.
 export function buyAbility(id) {
   const d = getSave();
   if (!isAbilityId(id)) return { ok: false, reason: 'unknown' };
-  if (d.unlocks.abilities.includes(id)) return { ok: false, reason: 'owned' };
+  if (isInfinite(id)) return { ok: false, reason: 'owned' };
+  const n = d.unlocks.abilityCount[id] || 0;
+  if (n >= STACK_MAX) return { ok: false, reason: 'max' };
   const price = ABILITIES[id].price;
   if (d.coins < price) return { ok: false, reason: 'coins' };
-  d.coins -= price; d.unlocks.abilities.push(id);
+  d.coins -= price; d.unlocks.abilityCount[id] = n + 1;
+  if (!d.unlocks.abilities.includes(id)) d.unlocks.abilities.push(id);
+  clamp(d); flushSave();
+  return { ok: true };
+}
+// Buy unlimited uses (only while holding exactly STACK_MAX charges). Returns {ok, reason?}: unknown | owned | need99 | coins.
+export function buyInfinite(id) {
+  const d = getSave();
+  if (!isAbilityId(id)) return { ok: false, reason: 'unknown' };
+  if (isInfinite(id)) return { ok: false, reason: 'owned' };
+  if ((d.unlocks.abilityCount[id] || 0) < STACK_MAX) return { ok: false, reason: 'need99' };
+  const price = infinitePrice(id);
+  if (d.coins < price) return { ok: false, reason: 'coins' };
+  d.coins -= price; d.unlocks.abilityInf.push(id);
   clamp(d); flushSave();
   return { ok: true };
 }

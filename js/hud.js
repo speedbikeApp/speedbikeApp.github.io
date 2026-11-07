@@ -1,5 +1,6 @@
 // DOM HUD: score bar, timer, pause, minimap, countdown / result overlays, ability hexagon.
 import { CFG } from './config.js';
+import { abilityCharges } from './save.js';
 import { activeDef, ABILITIES, isActive, canUse, protectLeft } from './abilities.js';
 import { MAPS } from './maps.js';
 import { getAchievement } from './achievements.js';
@@ -110,13 +111,14 @@ export function setAbilityButtons(b) {
 // Swap button shows "slot/actives" and is hidden with fewer than two active abilities. DOM touched only on change.
 export function setAbilityHud(b) {
   const def = activeDef(b), actives = (b.abilities || []).filter((id) => ABILITIES[id].type === 'active');
-  let key, cdLeft = 0, frac = 1, ready = false, active = false, usedUp = false;
+  let key, cdLeft = 0, frac = 1, ready = false, active = false, usedUp = false, charges = 0;
   if (def) {
     cdLeft = b.cd[def.id] || 0;
     frac = def.cooldown > 0 ? 1 - cdLeft / def.cooldown : 1;
-    ready = canUse(b, def.id); active = isActive(b, def.id);
+    charges = abilityCharges(def.id);
+    ready = charges >= 1 && canUse(b, def.id); active = isActive(b, def.id);
     usedUp = !!(def.once && b.used[def.id]);
-    key = `${def.id}|${Math.ceil(cdLeft)}|${Math.floor(frac * 50)}|${ready}|${active}|${actives.length}|${actives.indexOf(def.id)}|${usedUp}`;
+    key = `${def.id}|${Math.ceil(cdLeft)}|${Math.floor(frac * 50)}|${ready}|${active}|${actives.length}|${actives.indexOf(def.id)}|${usedUp}|${charges}`;
   } else key = 'none';
   if (cache.abHud === key) return;
   cache.abHud = key;
@@ -124,8 +126,9 @@ export function setAbilityHud(b) {
   el.classList.toggle('none', !def); el.classList.toggle('ready', ready); el.classList.toggle('active', active);
   el.style.setProperty('--f', Math.floor(frac * 100));
   $('abIcon').textContent = def ? def.icon : '--';
-  $('abName').textContent = def ? def.short : 'NONE';
-  $('abState').textContent = !def ? '' : ready ? 'OK!!' : usedUp ? 'USED' : active && cdLeft <= 0 ? 'ON' : Math.ceil(cdLeft) + 's';
+  $('abName').textContent = def ? def.short + ' ' + (charges === Infinity ? '∞' : 'x' + charges) : 'NONE';
+  el.classList.toggle('empty', !!def && charges < 1);
+  $('abState').textContent = !def ? '' : charges < 1 ? 'EMPTY' : ready ? 'OK!!' : usedUp ? 'USED' : active && cdLeft <= 0 ? 'ON' : Math.ceil(cdLeft) + 's';
   const sw = $('swapBtn');
   sw.style.visibility = actives.length > 1 ? 'visible' : 'hidden';
   sw.textContent = def ? `${actives.indexOf(def.id) + 1}/${actives.length} ⇄` : '';
@@ -220,7 +223,7 @@ function onlineResultHtml(match) {
   const R = onlineResult, dm = match.mode.kind === 'deathmatch';
   const rows = R.rows.slice().sort((a, b) => a.place - b.place || a.id - b.id);
   const me = R.rows.find((r) => r.id === R.meId);
-  const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${badgeHtml(r.rankAfter || r.rankBefore)} ${colored(r.id, esc(r.username))}${friendIcon(r.uid)} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
+  const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${r.bot ? '' : badgeHtml(r.rankAfter || r.rankBefore)} ${colored(r.id, esc(r.username))}${friendIcon(r.uid)} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
   const first = rows.filter((r) => r.place === 1);
   const title = me && me.won ? 'YOU WIN!' : me && me.place === 1 ? 'TIED FOR 1ST' : first.length === 1 ? `${esc(first[0].username).toUpperCase()} WINS` : 'DRAW';
   let rank = '';

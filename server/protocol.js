@@ -1,8 +1,17 @@
 // Client message validation + rate limiting. Everything from a socket is untrusted: parse defensively, return plain objects only.
+import { CFG } from '../js/config.js';
+import { isAbilityId } from '../js/abilities.js';
 export const MAX_MSG = 1024;        // bytes, every message ...
 export const MAX_HELLO = 4096;      // ... except hello (a Firebase ID token alone is ~1 KB)
 export const MODES_ALL = ['standard', 'hyper', '3d', 'deathmatch'];
 export const INPUT_KINDS = ['turn', 'boost', 'jump', 'ability', 'swap'];
+
+// Loadout (ability ids the client says it can use): unknown ids / duplicates are dropped, at most CFG.abilities.maxSlots kept. Always an array.
+export function sanitizeLoadout(v) {
+  const out = [];
+  if (Array.isArray(v)) for (const id of v.slice(0, 16)) if (isAbilityId(id) && !out.includes(id) && out.length < CFG.abilities.maxSlots) out.push(id);
+  return out;
+}
 
 const isStr = (v, max) => typeof v === 'string' && v.length <= max;
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -33,12 +42,15 @@ export function parseClientMessage(raw) {
       return ok({ t: 'hello', token: o.token });
     case 'queue':
       if (!isStr(o.mode, 16) || !MODES_ALL.includes(o.mode)) return bad('bad_mode', 'unknown mode');
-      return ok({ t: 'queue', mode: o.mode });
+      return ok({ t: 'queue', mode: o.mode, ...(o.loadout !== undefined ? { loadout: sanitizeLoadout(o.loadout) } : {}) });
+    case 'loadout': // ability ids for the next match (lobby / party) or the final list during the first countdown of a match
+      return ok({ t: 'loadout', abilities: sanitizeLoadout(o.abilities) });
     case 'leaveQueue': case 'leave':
       return ok({ t: o.t });
     case 'in': {
       if (!isStr(o.kind, 8) || !INPUT_KINDS.includes(o.kind)) return bad('bad_message', 'bad input kind');
       const m = { t: 'in', kind: o.kind };
+      if (o.kind === 'ability') { if (!isAbilityId(o.ability)) return bad('bad_message', 'bad ability'); m.ability = o.ability; }
       if (o.kind === 'turn') { if (o.side !== -1 && o.side !== 1) return bad('bad_message', 'bad turn side'); m.side = o.side; }
       if (o.ctick !== undefined && isNum(o.ctick)) m.ctick = o.ctick; // client tick when pressed: the server rewinds the bike to it (lag compensation, capped by CFG.net.maxRewindMs)
       return ok(m);

@@ -7,6 +7,7 @@ import { featuredMode, nextRotation } from './rotation.js';
 import { defaultRank } from './ranks.js';
 import { badgeHtml, badgeInfo, fmtCountdown } from './rankview.js';
 import { party, PARTY_ERR } from './party.js';
+import { usableAbilities } from './save.js';
 
 const $ = (id) => document.getElementById(id);
 let show = () => {}, openAccountScreen = () => {};
@@ -77,7 +78,7 @@ export function onScreen(name) {
 export function queueMode(modeId) {
   if (net.state !== 'online') { show('scrMulti'); msg('NOT CONNECTED TO THE SERVER'); return false; }
   if (!party.canStartGame()) { show('scrMulti'); msg(LEADER_ONLY); return false; }
-  net.send({ t: 'queue', mode: modeId });
+  net.send({ t: 'queue', mode: modeId, loadout: usableAbilities() }); // provisional loadout (charges are only spent when the match starts)
   flow = 'queue'; flowMode = modeId;
   $('qMode').textContent = MODE_LABEL[modeId] || modeId.toUpperCase();
   $('qSub').textContent = 'JOINING QUEUE...';

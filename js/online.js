@@ -12,9 +12,10 @@ import { canTurn, isAirborne } from './physics.js';
 import { popTurn, popAction, clearQueue } from './input.js';
 import { burst, resetCamera, resetEffects, setBikeStyle } from './render.js';
 import * as audio from './audio.js';
-import { setHudPlayers, resetHudPlayers, setOnlineResult, flashTurn, showAnnounce } from './hud.js';
+import { setHudPlayers, resetHudPlayers, setOnlineResult, flashTurn, showAnnounce, setAbilityHud } from './hud.js';
+import { ABILITIES, setLoadout, cycleAbility, activeDef } from './abilities.js';
 import { DEFAULT_PARTS, glowHex, colorDist, CLASH_DIST } from './parts.js';
-import { getSave, addCoins, coinsForPlacement } from './save.js';
+import { getSave, addCoins, coinsForPlacement, abilityCharges, spendAbility, spendPassives, usableAbilities } from './save.js';
 import { social } from './social.js';
 import { party } from './party.js';
 
@@ -91,7 +92,8 @@ export function begin(msg, st, bikes0, exitCb) {
   const useGlow = others.every((c) => colorDist(c, mine) >= CLASH_DIST);
   state.bikes = players.map((p) => {
     const b = createBike(p.id, p.id === youId && useGlow ? mine : colorOf(p), 0, 0, 0, -1);
-    b.name = p.username; b.rank = p.rank; b.uid = p.uid;
+    b.name = p.username; b.rank = p.rank; b.uid = p.uid; b.bot = !!p.bot;
+    setLoadout(b, p.loadout || []);   // provisional (queue time); everybody's final list follows as `loadout` messages during the countdown
     return b;
   });
   state.playerId = youId; state.tick = 0; state.time = 0;
@@ -106,9 +108,22 @@ export function begin(msg, st, bikes0, exitCb) {
   if (mode.kind === 'deathmatch') match.kills = match.scores;
   tb = { v: mode.roundTime, tick: 0 }; cdBase = { cd: CFG.match.countdown, tick: 0 }; runStart = 0;
   placeBikes(); resetCamera(); resetEffects(); clearQueue(); setOnlineResult(null);
+  announceLoadout();
   document.body.classList.add('online');
   net.lock(true);
   active = true;
+}
+
+/** Our loadout for this match: equipped actives that still have charges + the passives whose charge is spent now (one per match).
+ *  Sent to the server during the first countdown; it relays it to every client. */
+export function matchLoadout() {
+  const eq = getSave().equipped.abilities, usable = new Set(usableAbilities()), passives = new Set(spendPassives(eq));
+  return eq.filter((id) => (ABILITIES[id].type === 'passive' ? passives.has(id) : usable.has(id)));
+}
+function announceLoadout() {
+  const ids = matchLoadout(), me = bikeById(youId);
+  if (me) setLoadout(me, ids);
+  net.send({ t: 'loadout', abilities: ids });
 }
 
 function placeBikes() {
@@ -184,8 +199,10 @@ on('ev', (m) => {
   if (was && r.applied && !r.respawned) { const e = smooth(was, cap); if (m.id === youId) { dbg.ownEvents++; dbg.ownErr = e; if (e > dbg.ownErrMax) dbg.ownErrMax = e; } else if (e > dbg.remoteErrMax) dbg.remoteErrMax = e; }
   else if (was && r.respawned) was.vox = was.voz = 0;
   if (r.respawned) delete match.respawnIn[m.id];
+  if (m.kind === 'ability' && m.id === youId && r.applied) spendAbility(m.ability); // the server confirmed the activation: now it costs a charge (turbo: free)
   if (r.died && wasAlive) fx(was);
 });
+on('loadout', (m) => { const b = bikeById(m.id); if (b && m.id !== youId && Array.isArray(m.abilities)) setLoadout(b, m.abilities); });
 on('crash', (m) => {
   tc.sample(m.tick, performance.now());
   if (match.phase === 'running') advance(performance.now());
@@ -223,6 +240,13 @@ function localInputs(me, nowMs) {
   if ((act === 'boost' || act === 'jump') && predictInput(sim, me.id, { kind: act })) {
     net.send({ t: 'in', kind: act, ctick: sim.tick });
     if (act === 'boost') audio.boost(); else audio.jump();
+  } else if (act === 'swap') cycleAbility(me); // which ability the hexagon fires is local; the activation names the ability
+  else if (act === 'ability') {
+    const def = activeDef(me);
+    if (def && abilityCharges(def.id) >= 1 && predictInput(sim, me.id, { kind: 'ability', ability: def.id })) {
+      net.send({ t: 'in', kind: 'ability', ability: def.id, ctick: sim.tick });
+      audio.boost();
+    }
   }
   if (isAirborne(me) && !me.airTurn) popTurn(nowMs, true); // mid-air: buffered turns are dropped
   else {
@@ -263,6 +287,7 @@ export function update(nowMs, dt) {
   }
   prunePending(sim);
   visDecay(state.bikes, dt);
+  const me = bikeById(youId); if (me) setAbilityHud(me);
   for (const id of Object.keys(m.respawnIn)) { m.respawnIn[id] -= dt; if (m.respawnIn[id] <= 0) delete m.respawnIn[id]; }
   return extra;
 }

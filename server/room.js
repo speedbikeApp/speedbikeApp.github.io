@@ -1,4 +1,6 @@
-// One authoritative match. Runs the shared game modules (state/physics/modes/rules) with 4 human bikes and no AI.
+// One authoritative match. Runs the shared game modules (state/physics/modes/rules) with 2-4 human bikes plus server-side bots
+// (player entries with bot:true, see server/bots.js) that fill the empty slots. Abilities are server-authoritative: an `ability` input
+// runs the shared js/abilities.js on the bike (lag-compensated like turns) and is broadcast as an `ev` {kind:'ability', ability:id}.
 // Lag compensation (docs/MULTIPLAYER.md "Lag compensation"): an input carrying a client tick `ctick` in the recent past is applied
 // at THAT tick: the bike is rewound to its recorded state, the input applied, and the bike re-simulated alone up to the current tick
 // (other bikes' trails are looked up as they were at each replayed tick). Capped by CFG.net.maxRewindMs.
@@ -12,7 +14,10 @@ import { performance } from 'node:perf_hooks';
 import { step, turnBike, canTurn, isAirborne, startBoost, startJump } from '../js/physics.js';
 import { createMatch, MODES } from '../js/modes.js';
 import { rankings } from '../js/rules.js';
-import { makeRng } from '../js/ai.js';
+import { makeRng, createAI, aiThink, aiAbilities, aiUseAbilities } from '../js/ai.js';
+import { ABILITIES, isAbilityId, setLoadout, useAbilityId } from '../js/abilities.js';
+
+const STUB = { bikes: [] }; // state for a rewound scratch bike: forced-on-others abilities (allBoost / allJump) are never rewound, see #applyInputs
 
 const SNAP_HZ = 10;
 const TURN_BUFFER_MS = CFG.inputBufferMs;   // a turn blocked by minTurnGap is retried for this long (same as the offline input buffer)
@@ -21,12 +26,13 @@ const RING = 48;            // per-bike state history (ticks); must exceed the r
 const STAT_WIN = 10000;     // ms: window of the "max" timing stats
 
 export class Room {
-  // players: [{uid, username, rank, colorIdx, send(msg)}]  (bike id = index)
+  // players: [{uid, username, rank, colorIdx, send(msg), loadout?:[ability ids], bot?:true, level?:AI level}]  (bike id = index; humans first, then bots)
   constructor({ id, mode, players, seed, timeScale = 1, maxRewindMs, onEnd, onLeave }) {
     this.id = id; this.mode = mode; this.scale = timeScale; this.onEnd = onEnd || (() => {}); this.onLeave = onLeave || (() => {});
     this.hz = CFG.tickHz; this.tick = 0; this.over = false;
     this.seed = seed ?? (Math.random() * 2 ** 32) >>> 0;
     this.players = players.map((p, i) => ({ ...p, id: i, left: false, handled: false }));
+    this.hasBots = this.players.some((p) => p.bot);
     this.inbox = []; this.pend = this.players.map(() => []);
     this.t0 = null; this.done = 0; this.snapEvery = Math.round(this.hz / SNAP_HZ);
     this.sent = { phase: null, round: -1 };
@@ -42,6 +48,10 @@ export class Room {
     this.state = createState();
     this.state.playerId = -1; // nobody is "the player": round modes then use resolveTick, never resolvePlayerOut
     this.players.forEach((p, i) => this.state.bikes.push(createBike(i, CFG.players[p.colorIdx % CFG.players.length].color, 0, 0, 0, -1)));
+    this.players.forEach((p, i) => setLoadout(this.state.bikes[i], p.loadout || []));
+    this.ais = new Map(); // bot id -> AI state (js/ai.js)
+    this.botRng = makeRng((this.seed ^ 0x9e3779b9) >>> 0);
+    this.players.forEach((p, i) => { if (p.bot) this.ais.set(i, createAI(p.level ?? 1, i * 2)); }); // staggered thinking
     this.match = createMatch(this.state, MODES[mode], makeRng(this.seed), {
       onRoundStart: () => { this.#killLeavers(); this.players.forEach((_, i) => { this.epoch[i]++; this.deathTick[i] = -1; this.lastIn[i] = -1; }); },
       onRespawn: (b) => { this.epoch[b.id]++; this.#ev(b, 'respawn'); },
@@ -50,7 +60,7 @@ export class Room {
 
     this.broadcast({
       t: 'start', mode, mapId: this.state.map.id, seed: this.seed, tick0: 0, cfgOverrides: {},
-      players: this.players.map((p) => ({ id: p.id, uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, loadout: null })),
+      players: this.players.map((p) => ({ id: p.id, uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, bot: !!p.bot, loadout: this.state.bikes[p.id].abilities.slice() })),
     }, (p) => ({ you: p.id }));
     this.#syncPhase();
   }
@@ -62,7 +72,18 @@ export class Room {
   input(id, msg) {
     const p = this.players[id];
     if (!p || p.left || this.over) return;
-    if (this.inbox.length < 64) this.inbox.push({ id, kind: msg.kind, side: msg.side, ctick: typeof msg.ctick === 'number' && Number.isFinite(msg.ctick) ? Math.floor(msg.ctick) : null });
+    if (this.inbox.length < 64) this.inbox.push({ id, kind: msg.kind, side: msg.side, ability: msg.ability, ctick: typeof msg.ctick === 'number' && Number.isFinite(msg.ctick) ? Math.floor(msg.ctick) : null });
+  }
+
+  // A player's final loadout for this match (the client has spent its passive charges): only during the very first countdown.
+  // Ownership cannot be verified server-side (coins live in the client's save), ids are only validated. Broadcast to everyone.
+  setLoadout(id, ids) {
+    const p = this.players[id], m = this.match;
+    if (!p || p.left || p.bot || this.over || m.phase !== 'countdown' || m.round !== 1) return false;
+    const b = this.state.bikes[id];
+    setLoadout(b, ids); p.loadout = b.abilities.slice();
+    this.broadcast({ t: 'loadout', id, abilities: p.loadout });
+    return true;
   }
 
   // Socket dropped / player quit: bike crashes at once and the player is charged a loss (via onLeave).
@@ -71,7 +92,8 @@ export class Room {
     if (!p || p.left || this.over) return;
     p.left = true; p.send = () => {};
     this.onLeave(p, this);
-    if (this.players.filter((q) => !q.left).length < 2) this.#finish('forfeit');
+    const humans = this.players.filter((q) => !q.left && !q.bot).length;
+    if (humans === 0 || (humans < 2 && !this.hasBots)) this.#finish('forfeit'); // with bots the last human plays on against them
   }
 
   // Catch up to wall-clock time. `now` = monotonic ms. Drift-free: the target tick count comes from the absolute start time,
@@ -98,14 +120,14 @@ export class Room {
     const s = this.stats, r = (v) => Math.round(v * 1000) / 1000;
     return { id: this.id, mode: this.mode, tick: this.tick, phase: this.match.phase, updates: s.updates, ticks: s.ticks,
       avgMs: r(s.avgMs), maxMs: r(Math.max(s.maxMs, s.prevMax)), behind: s.behind, behindMax: Math.max(s.behindMax, s.prevBehind), skipped: s.skipped,
-      lagComp: { inputs: s.inputs, rewound: s.rewound, avgRewindTicks: s.rewound ? r(s.rewindTicks / s.rewound) : 0, maxRewindTicks: s.maxRewindTicks, clamped: s.clamped, future: s.future, fallback: s.fallback, ignored: s.ignored } };
+      bots: this.ais.size, lagComp: { inputs: s.inputs, rewound: s.rewound, avgRewindTicks: s.rewound ? r(s.rewindTicks / s.rewound) : 0, maxRewindTicks: s.maxRewindTicks, clamped: s.clamped, future: s.future, fallback: s.fallback, ignored: s.ignored } };
   }
 
   #tick() {
     const m = this.match, dt = 1 / this.hz;
     if (m.phase === 'running') this.#record();
     const events = m.phase === 'running' ? this.#applyLeaves() : [];
-    if (m.phase === 'running') events.push(...this.#applyInputs());
+    if (m.phase === 'running') { this.#botThink(); events.push(...this.#applyInputs()); }
     else { this.inbox.length = 0; for (const q of this.pend) q.length = 0; }
     if (m.phase === 'running') {
       events.push(...step(this.state, dt));
@@ -123,11 +145,18 @@ export class Room {
   #snapBike(b) {
     const o = { id: b.id, x: r3(b.x), z: r3(b.z), y: r3(b.y), dx: b.dx, dz: b.dz, speed: r3(b.speed), alive: b.alive, boostMeter: r3(b.boostMeter), jumpMeter: r3(b.jumpMeter), boosting: b.boosting, jumpT: r3(b.jumpT), falling: b.falling, vy: r3(b.vy) };
     if (this.match.lives[b.id] !== undefined) o.lives = this.match.lives[b.id];
+    if (b.abilities.length) { // ability timers (seconds left): lets clients resync cooldowns / shield / turbo / stealth of every bike
+      const ac = {}, cd = {}, us = [], t2 = (v) => Math.round(v * 100) / 100;
+      for (const k in b.active) if (b.active[k] > 0) ac[k] = t2(b.active[k]);
+      for (const k in b.cd) if (b.cd[k] > 0) cd[k] = t2(b.cd[k]);
+      for (const k in b.used) if (b.used[k]) us.push(k);
+      o.ab = { ac, cd, us, sl: t2(b.slowLeft) };
+    }
     return o;
   }
 
-  #ev(b, kind, side, tick = this.tick) {
-    this.broadcast({ t: 'ev', tick, id: b.id, kind, ...(side ? { side } : {}), x: r3(b.x), z: r3(b.z), y: r3(b.y), dx: b.dx, dz: b.dz });
+  #ev(b, kind, side, tick = this.tick, extra) {
+    this.broadcast({ t: 'ev', tick, id: b.id, kind, ...(side ? { side } : {}), ...(extra || {}), x: r3(b.x), z: r3(b.z), y: r3(b.y), dx: b.dx, dz: b.dz });
   }
 
   // ---- lag compensation: per-bike state history ----
@@ -135,6 +164,7 @@ export class Room {
   #fill(e, b, id, tick = this.tick) {
     e.tick = tick; e.epoch = this.epoch[id]; e.n = b.trail.length;
     const s = e.s; for (const k in b) { const v = b[k]; if (typeof v === 'number' || typeof v === 'boolean') s[k] = v; }
+    e.ab = b.abilities.length ? { cd: { ...b.cd }, active: { ...b.active }, used: { ...b.used } } : null; // nested ability timers (rewound with the scalars)
   }
   #record() {
     for (const b of this.state.bikes) {
@@ -164,14 +194,17 @@ export class Room {
     if (!e) return false;
     const { trail: _t, ...rest } = real;
     const c = structuredClone(rest); Object.assign(c, e.s);          // scratch copy rewound to T
+    if (e.ab) { c.cd = { ...e.ab.cd }; c.active = { ...e.ab.active }; c.used = { ...e.ab.used }; }
     c.trail = real.trail.slice(0, e.n);
     if (c.trail.length) c.trail[c.trail.length - 1] = { ...c.trail[c.trail.length - 1], x2: c.x, z2: c.z };
     let ok = false;
+    const air = c.jumpT >= 0; // airborne when pressed: a jump / Rocket Jump then is a double jump (clients continue the arc)
     if (i.kind === 'turn') { if (!(isAirborne(c) && !c.airTurn) && canTurn(c)) { turnBike(c, i.side); ok = true; } }
     else if (i.kind === 'boost') ok = startBoost(c);
     else if (i.kind === 'jump') ok = startJump(c);
+    else if (i.kind === 'ability') ok = useAbilityId(c, i.ability, STUB);
     if (!ok) return false;
-    this.#ev(c, i.kind, i.kind === 'turn' ? i.side : undefined, T);   // state right after applying, at tick T
+    this.#ev(c, i.kind, i.kind === 'turn' ? i.side : undefined, T, i.kind === 'ability' ? { ability: i.ability, ...(air ? { dj: true } : {}) } : i.kind === 'jump' && air ? { dj: true } : undefined);   // state right after applying, at tick T
     const ring = this.hist[i.id], put = (tick) => { this.#fill(ring[tick % RING] || (ring[tick % RING] = { tick: -1, epoch: 0, n: 0, s: {} }), c, i.id, tick); };
     put(T);                                                          // same-tick follow-up inputs start from the post-input state
     const others = this.state.bikes.filter((o) => o.id !== i.id), views = others.map((o) => ({ id: o.id, alive: false, trail: [] }));
@@ -197,9 +230,10 @@ export class Room {
     for (const i of this.inbox) {
       const b = bikes[i.id];
       if (!b.alive) continue;                                        // dead bikes are never revived by a claimed tick
-      if (i.kind !== 'turn' && i.kind !== 'boost' && i.kind !== 'jump') continue; // 'ability' / 'swap': abilities are disabled online for now
+      if (i.kind === 'ability') { if (!isAbilityId(i.ability) || ABILITIES[i.ability].type !== 'active' || !b.abilities.includes(i.ability)) continue; } // must be in the bike's loadout
+      else if (i.kind !== 'turn' && i.kind !== 'boost' && i.kind !== 'jump') continue; // 'swap' only switches the client's selected slot
       st.inputs++;
-      let T = i.ctick === null ? this.tick : i.ctick;
+      let T = i.ctick === null || (i.kind === 'ability' && ABILITIES[i.ability].once) ? this.tick : i.ctick; // allBoost / allJump hit the others NOW: never rewound
       if (T > this.tick) { T = this.tick; st.future++; }
       else if (T < this.tick - this.maxRewind) { T = this.tick - this.maxRewind; st.clamped++; }
       if (T < this.lastIn[i.id]) T = this.lastIn[i.id];              // never before an input already applied (events are already broadcast)
@@ -215,7 +249,8 @@ export class Room {
       this.lastIn[i.id] = this.tick;
       if (i.kind === 'turn') { const q = this.pend[i.id]; if (q.length < 2) q.push({ side: i.side, expire }); }
       else if (i.kind === 'boost') { if (startBoost(b)) this.#ev(b, 'boost'); }
-      else if (i.kind === 'jump') { if (startJump(b)) this.#ev(b, 'jump'); }
+      else if (i.kind === 'jump') { const air = b.jumpT >= 0; if (startJump(b)) this.#ev(b, 'jump', undefined, this.tick, air ? { dj: true } : undefined); }
+      else if (i.kind === 'ability') this.#fire(b, i.ability);
     }
     this.inbox.length = 0;
     for (const b of bikes) { // turns wait (briefly) for the min turn gap, like the offline input buffer
@@ -228,6 +263,39 @@ export class Room {
       }
     }
     return out;
+  }
+
+  // Fire ability `id` on bike b now and broadcast it. allBoost / allJump force the other bikes: each one that actually started gets its
+  // own boost / jump event, so clients never have to guess who was affected (they apply the ability itself without touching the others).
+  #fire(b, id) {
+    const hit = ABILITIES[id].once ? this.state.bikes.filter((o) => o !== b && o.alive).map((o) => [o, o.boosting, o.jumpT >= 0]) : [];
+    const air = b.jumpT >= 0;
+    if (!useAbilityId(b, id, this.state)) return false;
+    this.#ev(b, 'ability', undefined, this.tick, { ability: id, ...(air ? { dj: true } : {}) });
+    for (const [o, wasBoost, wasJump] of hit) {
+      if (!wasBoost && o.boosting) this.#ev(o, 'boost');
+      if (!wasJump && o.jumpT >= 0) this.#ev(o, 'jump');
+    }
+    return true;
+  }
+
+  // Bots think on their staggered ticks like singleplayer (js/ai.js updateAIs), but every action goes out as an ev.
+  #botThink() {
+    if (!this.ais.size) return;
+    const rng = this.botRng, tickNo = this.tick, lv = CFG.ai.levels;
+    for (const [id, ai] of this.ais) {
+      const b = this.state.bikes[id];
+      if (!b.alive) continue;
+      const every = Math.max(1, Math.round((lv[ai.level] || lv[1]).every / Math.max(1, b.baseSpeed / CFG.baseSpeed)));
+      if ((tickNo + ai.offset) % every !== 0) continue;
+      const fired = b.abilities.filter((k) => ABILITIES[k].type === 'active' && !(b.cd[k] > 0));
+      if (fired.length && aiUseAbilities(this.state, b, ai, rng)) { for (const k of fired) if (b.cd[k] > 0) this.#ev(b, 'ability', undefined, this.tick, { ability: k }); }
+      const a = aiAbilities(this.state, b, ai, rng);
+      if (a.jump) { if (startJump(b)) this.#ev(b, 'jump'); continue; } // bots never double-jump (AI only jumps grounded)
+      if (a.boost && startBoost(b)) this.#ev(b, 'boost');
+      const side = aiThink(this.state, b, ai, rng);
+      if (side && canTurn(b)) { turnBike(b, side); this.#ev(b, 'turn', side); }
+    }
   }
 
   // Leavers are crashed once the round is running (countdown / round-end pauses wait; new rounds start them dead).
@@ -267,7 +335,7 @@ export class Room {
   #results(reason) {
     const m = this.match, ids = this.players.map((p) => p.id);
     const base = m.ranks || rankings(m.scores);
-    const stay = this.players.filter((p) => !p.left), gone = this.players.filter((p) => p.left);
+    const stay = this.players.filter((p) => !p.left), gone = this.players.filter((p) => p.left); // stay includes bots: they are opponents
     const place = {};
     if (reason === 'forfeit' && stay.length === 1) place[stay[0].id] = 1;
     else for (const p of stay) place[p.id] = 1 + stay.filter((q) => base[q.id] < base[p.id]).length; // competition rank among who stayed
@@ -275,7 +343,7 @@ export class Room {
     return ids.map((id) => {
       const p = this.players[id];
       const won = !p.left && place[id] === 1 && ids.filter((q) => place[q] === 1).length === 1;
-      return { id, uid: p.uid, username: p.username, place: place[id], won, left: p.left, scores: m.scores[id] || 0 };
+      return { id, uid: p.uid, username: p.username, place: place[id], won, left: p.left, scores: m.scores[id] || 0, ...(p.bot ? { bot: true } : {}) };
     });
   }
 

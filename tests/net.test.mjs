@@ -41,7 +41,7 @@ const { applyResult } = await import('../js/ranks.js');
 {
   const b = badgeInfo({ tier: 'Ne', div: 2, wins: 1 });
   assert.equal(b.sym, 'Ne'); assert.equal(b.roman, 'II'); assert.deepEqual(b.pips, [true, false]); assert.equal(b.color, '#ff4d2e'); assert.equal(b.label, 'NEON II');
-  assert.equal(badgeInfo(null).label, 'HELIUM III'); assert.equal(badgeInfo({ tier: 'zz', div: 9 }).label, 'HELIUM III', 'garbage -> default');
+  assert.equal(badgeInfo(null).label, 'HELIUM I'); assert.equal(badgeInfo({ tier: 'zz', div: 9 }).label, 'HELIUM I', 'garbage -> default');
   const h = badgeHtml({ tier: 'Xe', div: 1, wins: 1 });
   assert.ok(h.includes('--rc:#8f7bff') && h.includes('<b>Xe</b>') && h.includes('<i>I</i>') && h.includes('<u class="on"></u><u></u>'));
   assert.ok(!badgeHtml({ tier: 'He', div: 3, wins: 0 }).includes('class="on"'));

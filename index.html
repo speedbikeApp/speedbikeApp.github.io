@@ -57,6 +57,7 @@
   #abState { font-size: 17px; font-weight: 800; letter-spacing: 1px; line-height: 1.1; }
   #abilityBtn.ready::before { background: rgba(0,90,100,.92); } #abilityBtn.ready #abState { color: #fff; text-shadow: 0 0 10px #0ff; }
   #abilityBtn.active { background: #fff; } #abilityBtn.active #abState { color: #fff; }
+  #abilityBtn.empty { filter: grayscale(1) brightness(.6); }
   #abilityBtn.none { background: #357; cursor: default; } #abilityBtn.none::before { background: rgba(0,20,30,.88); }
   .chev { width: 24px; height: 38px; background: rgba(0,255,255,.2); transition: background .25s, filter .25s; }
   #chevL { clip-path: polygon(100% 0, 0 50%, 100% 100%, 70% 50%); } #chevR { clip-path: polygon(0 0, 100% 50%, 0 100%, 30% 50%); }
@@ -274,7 +275,6 @@
   .lrow { display: flex; align-items: center; gap: 10px; padding: 4px 10px; font-size: 14px; letter-spacing: 2px; border: 1px solid #357; text-align: left; }
   .lrow.me { border-color: var(--neon); background: rgba(0,255,255,.1); } .lrow .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); flex: none; }
   .lrow .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; } .lrow .rb { font-size: 15px; } .lrow.empty { opacity: .35; justify-content: center; }
-  body.online #abWrap, body.online #swapBtn { display: none; }
   .toast.ann { border-color: #0ff; box-shadow: 0 0 14px #0ff; background: rgba(0,16,24,.85); font-size: 13px; letter-spacing: 2px; } .toast.ann.up { border-color: #ff4d2e; box-shadow: 0 0 16px #ff4d2e; }
   .panel .orow { font-size: 15px; display: flex; align-items: center; gap: 8px; justify-content: center; } .panel .orow.me { background: rgba(0,255,255,.12); padding: 0 8px; }
   .panel .warn { font-size: 13px; color: #fc3; letter-spacing: 2px; }

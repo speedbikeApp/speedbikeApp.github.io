@@ -20,6 +20,12 @@ const wait = (ms = 30) => new Promise((r) => setTimeout(r, ms));
   assert.ok(m.unlocks.parts.body.includes('armored') && m.unlocks.parts.body.includes('frame'));
   assert.deepEqual(m.equipped.abilities, ['stealth']);
   assert.equal(C.mergeProgress(b, a).coins, 20, 'symmetric');
+  { // ability charges follow the newer save (spendable), infinite flags union
+    const x = S.progressOf(S.parseSave(JSON.stringify({ updatedAt: 1, unlocks: { abilityCount: { stealth: 30 }, abilityInf: ['allBoost'] } })));
+    const y = S.progressOf(S.parseSave(JSON.stringify({ updatedAt: 2, unlocks: { abilityCount: { stealth: 3 }, abilityInf: ['allJump'] } })));
+    const mm = C.mergeProgress(x, y);
+    assert.deepEqual(mm.unlocks.abilityCount, { stealth: 3 }); assert.deepEqual(mm.unlocks.abilityInf.sort(), ['allBoost', 'allJump']);
+  }
   // resolveProgress: no cloud -> local; junk cloud values are sanitized
   const loc = S.parseSave(JSON.stringify({ coins: 7, cloudUid: 'u1' }));
   assert.equal(C.resolveProgress(loc, null, 'u1').coins, 7);

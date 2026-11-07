@@ -17,9 +17,9 @@ const guard = setTimeout(() => { console.error('e2e timed out'); process.exit(1)
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-'));
 const file = path.join(dir, 'ranks.json');
 const store = createJsonStore(file);
-const tierPoint = { ...defaultRank(), tier: 'He', div: 1, wins: 1 };
+const tierPoint = { ...defaultRank(), tier: 'He', div: 3, wins: 1 };
 for (const u of ['a', 'b', 'c', 'd']) await store.setRank(u, tierPoint, u);   // whoever wins reaches NEON
-await store.setRank('x', { ...defaultRank(), tier: 'Ne', div: 3, wins: 0 }, 'x'); // leaver-to-be: loses -> demoted to He1
+await store.setRank('x', { ...defaultRank(), tier: 'Ne', div: 1, wins: 0 }, 'x'); // leaver-to-be: loses -> demoted to He 3 (1 win)
 
 const app = createGameServer({ auth: createDevAuth(), store, timeScale: SCALE, countdownMs: 400, log: () => {} });
 const port = await app.listen(0);
@@ -94,9 +94,9 @@ assert.equal(end.ranks.length, 4);
 const winners = end.ranks.filter((r) => r.won);
 assert.ok(winners.length <= 1);
 for (const r of end.ranks) {
-  assert.equal(r.rankBefore.tier + r.rankBefore.div + r.rankBefore.wins, 'He11');
-  if (r.won) { assert.equal(r.place, 1); assert.equal(r.change, 'promote'); assert.deepEqual([r.rankAfter.tier, r.rankAfter.div, r.rankAfter.wins], ['Ne', 3, 0]); }
-  else { assert.equal(r.rankAfter.wins, 0); assert.equal(r.rankAfter.div, 1); assert.equal(r.change, 'none'); }
+  assert.equal(r.rankBefore.tier + r.rankBefore.div + r.rankBefore.wins, 'He31');
+  if (r.won) { assert.equal(r.place, 1); assert.equal(r.change, 'promote'); assert.deepEqual([r.rankAfter.tier, r.rankAfter.div, r.rankAfter.wins], ['Ne', 1, 0]); }
+  else { assert.equal(r.rankAfter.wins, 0); assert.equal(r.rankAfter.div, 3); assert.equal(r.change, 'none'); }
   assert.equal(r.rankAfter.matches, 1);
 }
 // announcements reach everyone, including someone sitting in the menu
@@ -110,23 +110,28 @@ await store.flush();
 const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
 for (const r of end.ranks) assert.deepEqual([saved[r.uid].tier, saved[r.uid].div, saved[r.uid].wins], [r.rankAfter.tier, r.rankAfter.div, r.rankAfter.wins], 'persisted');
 
-// ---- match 2: a player vanishes mid-match -> loss for them, forfeit win for the other ----
+// ---- match 2: two humans + two bots. A player vanishes mid-match -> loss for them; the other plays on against the bots ----
 {
   const x = client('x'), y = client('y');
   await x.hello(); await y.hello();
   x.send({ t: 'queue', mode: 'deathmatch' }); y.send({ t: 'queue', mode: 'deathmatch' });
-  await Promise.all([x.wait('start'), y.wait('start')]);
+  const [sx] = await Promise.all([x.wait('start'), y.wait('start')]);
+  assert.equal(sx.players.length, 4, 'two humans + two bots after the countdown');
+  assert.deepEqual(sx.players.map((p) => !!p.bot), [false, false, true, true]); assert.ok(sx.players.slice(2).every((p) => /^BOT /.test(p.username) && p.uid === null && p.rank === null));
+  assert.equal(new Set(sx.players.map((p) => p.colorIdx)).size, 4);
   await y.wait('round'); await new Promise((r) => setTimeout(r, 300));
-  x.ws.terminate(); // socket dropped
-  const e2 = await y.wait('end');
-  assert.equal(e2.reason, 'forfeit');
-  const ry = e2.ranks.find((r) => r.uid === 'y'), rx = e2.ranks.find((r) => r.uid === 'x');
-  assert.ok(ry.won && ry.place === 1); assert.ok(rx.left && !rx.won);
-  assert.deepEqual([rx.rankAfter.tier, rx.rankAfter.div, rx.rankAfter.wins], ['He', 1, 1], 'leaver demoted Ne3 -> He1');
-  assert.equal(ry.rankAfter.wins, 1);
+  x.ws.terminate(); // socket dropped: charged a loss at once
+  for (let i = 0; i < 100 && (await store.getRank('x')).div !== 3; i++) await new Promise((r) => setTimeout(r, 50));
+  const rxs = await store.getRank('x'); assert.deepEqual([rxs.tier, rxs.div, rxs.wins], ['He', 3, 1], 'leaver demoted Ne 1 -> He 3');
+  await new Promise((r) => setTimeout(r, 300));
+  const yend = y.msgs.find((m) => m.t === 'end'); // fast sims may already be over: then it was a normal finish, never a forfeit
+  assert.ok(!yend || yend.reason === 'normal', 'the last human plays on against the bots (no forfeit while bots are in the room); results with bots: bots-e2e');
+  if (!yend) { assert.equal(app.rooms.size, 1); y.send({ t: 'leave' }); await new Promise((r) => setTimeout(r, 200)); }
+  assert.equal(app.rooms.size, 0, 'room closes when no human is left');
   await store.flush();
-  assert.deepEqual([JSON.parse(fs.readFileSync(file, 'utf8')).x.tier, JSON.parse(fs.readFileSync(file, 'utf8')).x.div], ['He', 1]);
-  // the winner is free to queue again
+  const disk = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.deepEqual([disk.x.tier, disk.x.div], ['He', 3]); assert.equal(Object.keys(disk).filter((k) => /bot/i.test(k) || k === 'null').length, 0, 'bots have no rank record');
+  // the survivor is free to queue again
   y.send({ t: 'queue', mode: 'standard' }); assert.equal((await new Promise((res) => { y.waiters.push({ test: (m) => m.t === 'queued', resolve: res }); })).position, 1);
   y.ws.close();
 }
