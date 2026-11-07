@@ -17,10 +17,11 @@ export function serverUrl(search = '', cfg = CFG.net) {
 
 // Clock offset (server time - local time) from ping/pong: keeps the lowest-RTT samples (least queueing noise).
 export class ClockSync {
-  constructor(keep = 8) { this.keep = keep; this.samples = []; this.offset = 0; this.rtt = 0; this.have = false; }
+  constructor(keep = 8) { this.keep = keep; this.samples = []; this.offset = 0; this.rtt = 0; this.last = null; this.have = false; }
   // sentMs / recvMs = local clock at ping send / pong receive, serverNow = server clock stamped in the pong.
   addPong(sentMs, recvMs, serverNow) {
     const rtt = Math.max(0, recvMs - sentMs);
+    this.last = rtt; // latest sample (HUD readout); .rtt is the best of the recent ones (used for the tick estimate)
     this.samples.push({ rtt, offset: serverNow + rtt / 2 - recvMs });
     if (this.samples.length > this.keep) this.samples.shift();
     const best = this.samples.reduce((a, s) => (s.rtt < a.rtt ? s : a));
@@ -30,7 +31,7 @@ export class ClockSync {
   // Seed from a message that carries serverNow but no round trip (welcome / lobby): coarse, replaced by ping samples.
   seed(recvMs, serverNow) { if (!this.have) { this.offset = serverNow - recvMs; this.have = true; } }
   serverNow(localMs) { return localMs + this.offset; }
-  reset() { this.samples = []; this.offset = 0; this.rtt = 0; this.have = false; }
+  reset() { this.samples = []; this.offset = 0; this.rtt = 0; this.last = null; this.have = false; }
 }
 
 /** opts: {url, getHello: async () => hello message, WebSocket, now, setTimeout, clearTimeout, cfg}. */

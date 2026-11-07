@@ -18,7 +18,7 @@ const { applyResult } = await import('../js/ranks.js');
   assert.equal(c.offset, 4000);
   c.addPong(3000, 3040, 7020);              // rtt 40 -> offset 7020+20-3040 = 4000
   assert.equal(c.rtt, 40);
-  assert.equal(c.serverNow(10000), 14000);
+  assert.equal(c.serverNow(10000), 14000); assert.equal(c.last, 40, 'latest sample kept for the HUD readout');
   const s = new ClockSync(); s.seed(500, 9000); assert.equal(s.offset, 8500); s.seed(600, 1); assert.equal(s.offset, 8500, 'seed only once');
 }
 // ---------------- server url ----------------
@@ -175,6 +175,76 @@ const sameWorld = (S, C, tag) => {
   const b = C.state.bikes[1];
   assert.ok(r.respawned && b.alive && b.trail.length === 1 && b.spawnProt > 0);
   assert.ok(Math.abs(b.x - (10 + 2 * CFG.baseSpeed * DT)) < 1e-6, 'advanced the 2 ticks since the event');
+}
+
+{
+  // visual smoothing: the sim is exact, the displayed position glides (render-only offset vox/voz)
+  const b = { x: 10, z: 5, dx: 1, dz: 0, alive: true };
+  const was = NS.visCapture(b);
+  b.x = 9; b.z = 5;                                              // correction moved the bike 1 unit back, same heading
+  assert.equal(NS.visBlend(b, was, { maxDist: 3 }), 1); assert.deepEqual([b.vox, b.voz], [1, 0], 'shows the old position');
+  assert.deepEqual(NS.visCapture(b), was, 'displayed = sim + offset');
+  const arr = [b]; NS.visDecay(arr, 0.12 / 3, 120);              // one time constant: 1/e
+  assert.ok(Math.abs(b.vox - Math.exp(-1)) < 1e-9);
+  for (let i = 0; i < 12; i++) NS.visDecay(arr, 0.01, 120);      // 120 ms more
+  assert.ok(Math.abs(b.vox) < 0.02, 'about 95% gone after blendMs'); NS.visDecay(arr, 1, 120); assert.deepEqual([b.vox, b.voz], [0, 0]);
+  const far = { x: 0, z: 0, dx: 1, dz: 0, alive: true }, wf = NS.visCapture(far); far.x = -4;
+  NS.visBlend(far, wf, { maxDist: 3 }); assert.deepEqual([far.vox, far.voz], [0, 0], 'large error: snap');
+  const turned = { x: 0, z: 0, dx: 1, dz: 0, alive: true }, wt = NS.visCapture(turned); turned.x = -1; turned.dx = 0; turned.dz = 1;
+  NS.visBlend(turned, wt, { maxDist: 3 }); assert.equal(turned.vox, 0, 'own bike: heading changed -> snap');
+  NS.visBlend(turned, wt, { maxDist: 3, allowTurn: true }); assert.equal(turned.vox, 1, 'remote bike: late turn is blended');
+  const tiny = { x: 0, z: 0, dx: 1, dz: 0, alive: true }, wy = NS.visCapture(tiny); tiny.x = 0.001; NS.visBlend(tiny, wy); assert.equal(tiny.vox, 0, 'rounding noise ignored');
+}
+{
+  // the server applied our jump LATER than we predicted (beyond its rewind cap): the prediction's trail steps / speed are undone
+  const S = mkSim(0), C = mkSim(0);
+  for (let t = 0; t < 30; t++) { NS.stepSim(S); NS.stepSim(C); }
+  assert.ok(NS.predictInput(C, 0, { kind: 'jump' })); const pc = C.pending[0].ctick;
+  for (let t = 0; t < 12; t++) { NS.stepSim(C); NS.stepSim(S); }   // 12 ticks later the server applies it (stamped with its own tick)
+  startJump(S.state.bikes[0]); const sb = S.state.bikes[0];
+  const ev = { tick: S.tick, id: 0, kind: 'jump', x: sb.x, z: sb.z, y: sb.y, dx: sb.dx, dz: sb.dz };
+  assert.equal(ev.tick, pc + 12);
+  NS.applyEvent(C, ev, C.tick);
+  for (let t = 0; t < 120; t++) { NS.stepSim(S); NS.stepSim(C); }
+  sameWorld(S, C, 'late jump');
+}
+{
+  // own bike crashed locally while an input is in flight: a snap showing it alive must not revive it (the server may kill it on replay)
+  const S = mkSim(0), C = mkSim(0);
+  for (let t = 0; t < 30; t++) { NS.stepSim(S); NS.stepSim(C); }
+  assert.ok(NS.predictInput(C, 0, { kind: 'turn', side: 1 })); C.state.bikes[0].alive = false;
+  const snap = { tick: S.tick, bikes: S.state.bikes.map((b) => ({ id: b.id, x: b.x, z: b.z, y: b.y, dx: b.dx, dz: b.dz, speed: b.speed, alive: true })) };
+  assert.deepEqual(NS.applySnap(C, snap, S.tick).revived, [], 'pending input: no revive');
+  C.pending.length = 0; assert.deepEqual(NS.applySnap(C, snap, S.tick).revived, [0], 'revived once nothing is in flight');
+}
+{
+  // a turn pressed on the very tick an earlier event is replayed up to is kept (not lost by the rewind)
+  const S = mkSim(0), C = mkSim(0);
+  for (let t = 0; t < 30; t++) { NS.stepSim(S); NS.stepSim(C); }
+  NS.predictInput(C, 0, { kind: 'turn', side: 1 });
+  const ev1 = { tick: C.tick, id: 0, kind: 'turn', side: 1 }; { const b = S.state.bikes[0]; NS.applyInput(b, { kind: 'turn', side: 1 }); Object.assign(ev1, { x: b.x, z: b.z, y: b.y, dx: b.dx, dz: b.dz }); }
+  for (let t = 0; t < 40; t++) { NS.stepSim(S); NS.stepSim(C); }
+  assert.ok(NS.predictInput(C, 0, { kind: 'turn', side: -1 }), 'second turn pressed');
+  const ev2 = { tick: C.tick, id: 0, kind: 'turn', side: -1 }; { const b = S.state.bikes[0]; NS.applyInput(b, { kind: 'turn', side: -1 }); Object.assign(ev2, { x: b.x, z: b.z, y: b.y, dx: b.dx, dz: b.dz }); }
+  NS.applyEvent(C, ev1, C.tick);                                // first event arrives while the second turn was pressed on this very tick
+  assert.deepEqual([C.state.bikes[0].dx, C.state.bikes[0].dz], [S.state.bikes[0].dx, S.state.bikes[0].dz], 'second turn survived the replay');
+  NS.applyEvent(C, ev2, C.tick);
+  for (let t = 0; t < 60; t++) { NS.stepSim(S); NS.stepSim(C); }
+  sameWorld(S, C, 'same-tick follow-up');
+}
+{
+  // against the REAL server room through a simulated 150 ms RTT link (+-15 ms): the own turn lands where it was pressed, worlds identical
+  const { runLag, diffWorlds } = await import('../server/test/lagsim.mjs');
+  const presses = [];
+  for (let w = 0; w < 4; w++) for (const [at, side] of [[1000, 1], [2500, 1], [3400, 1]]) presses.push({ at: at + w * 7, who: w, kind: 'turn', side });
+  presses.push({ at: 1700, who: 2, kind: 'jump' }, { at: 400, who: 3, kind: 'boost' });
+  const r = runLag({ rttMs: 150, jitterMs: 15, seconds: 4.2, presses, seed: 3 });
+  const own = r.clients.flatMap((c) => c.ownEv);
+  assert.ok(own.length >= 12);
+  assert.ok(Math.max(...own.map((e) => e.corr)) < 0.01 && Math.max(...own.map((e) => e.landing ?? 0)) < 0.01, 'own turns land exactly');
+  assert.deepEqual(diffWorlds(r), [], '150 ms RTT: identical worlds incl. trails');
+  const old = runLag({ rttMs: 150, jitterMs: 15, seconds: 4.2, presses, seed: 3, maxRewindMs: 0 });
+  assert.ok(Math.max(...old.clients.flatMap((c) => c.ownEv).map((e) => e.corr)) > 1, 'sanity: the old server behaviour pulled the own bike back > 1 unit');
 }
 
 // ---------------- WebSocket client ----------------

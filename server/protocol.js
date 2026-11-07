@@ -32,7 +32,7 @@ export function parseClientMessage(raw) {
       if (!isStr(o.kind, 8) || !INPUT_KINDS.includes(o.kind)) return bad('bad_message', 'bad input kind');
       const m = { t: 'in', kind: o.kind };
       if (o.kind === 'turn') { if (o.side !== -1 && o.side !== 1) return bad('bad_message', 'bad turn side'); m.side = o.side; }
-      if (o.ctick !== undefined && isNum(o.ctick)) m.ctick = o.ctick; // informational only: the server applies inputs at its own tick
+      if (o.ctick !== undefined && isNum(o.ctick)) m.ctick = o.ctick; // client tick when pressed: the server rewinds the bike to it (lag compensation, capped by CFG.net.maxRewindMs)
       return ok(m);
     }
     case 'ping':

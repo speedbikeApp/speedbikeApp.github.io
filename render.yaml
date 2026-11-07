@@ -6,6 +6,7 @@ services:
     name: speedbike-server
     runtime: node
     plan: free
+    region: frankfurt # closest to the players (Tel Aviv ~60 ms RTT vs ~300 ms from the US regions); changing it means recreating the service
     autoDeploy: false # pushes to GitHub (website updates) never redeploy the server; deploy it manually from the dashboard
     rootDir: server
     buildCommand: npm ci

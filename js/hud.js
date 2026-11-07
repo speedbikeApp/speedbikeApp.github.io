@@ -184,6 +184,14 @@ export function setScoreboard(state, match, dm) {
 // Small centred status line under the timer (Death Match: respawn countdown / eliminated). '' hides it.
 export function setStatus(text) { setHtml('status', text); show($('status'), !!text); }
 
+// Online latency readout under the timer (dim; yellow > 120 ms, orange > 220 ms). null / disabled (?ping=0, CFG.net.showPing) hides it.
+const pingOn = CFG.net.showPing && !(typeof location !== 'undefined' && /[?&]ping=0\b/.test(location.search));
+export function setPing(ms) {
+  const el = $('ping'), t = pingOn && ms !== null && ms !== undefined ? ms + ' ms' : '';
+  if (cache.ping === t) return;
+  cache.ping = t; el.textContent = t; el.classList.toggle('on', !!t);
+  el.classList.toggle('warn', ms > 120 && ms <= 220); el.classList.toggle('bad', ms > 220);
+}
 export function setTimer(seconds) { setHtml('timer', Math.max(0, seconds).toFixed(3)); }
 export function showPause(on) { show($('pauseOverlay'), on); }
 

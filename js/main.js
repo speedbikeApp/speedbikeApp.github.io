@@ -4,7 +4,7 @@ import { step, turnBike, canTurn, isAirborne, startBoost, startJump } from './ph
 import { initInput, popTurn, popAction, pushAction, clearQueue, setOnPause } from './input.js';
 import { render, burst, resetCamera, resetEffects, setBikeStyle } from './render.js';
 import * as audio from './audio.js';
-import { initHud, setTimer, setScoreboard, setStatus, showPause, showLeave, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks, showAnnounce } from './hud.js';
+import { initHud, setTimer, setPing, setScoreboard, setStatus, showPause, showLeave, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks, showAnnounce } from './hud.js';
 import { createAI, updateAIs } from './ai.js';
 import { useAbility, cycleAbility, setLoadout } from './abilities.js';
 import { createMatch, MODES } from './modes.js';
@@ -212,6 +212,7 @@ function frameOnline(now, dt) {
   trackAudio(m);
   render(state, dt, state.playerId, extra);
   setTimer(m.clock());
+  setPing(online.ping());
   setScoreboard(state, m, m.mode.kind === 'deathmatch');
   setStatus(online.status());
   syncOverlays(m);

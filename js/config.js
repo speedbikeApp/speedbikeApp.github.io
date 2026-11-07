@@ -78,6 +78,13 @@ export const CFG = {
     helloTimeoutMs: 8000,
     snapEps: 0.35,                // units: authoritative snap vs local bike position before the bike is corrected
     maxCatchup: 60,               // ticks the online sim may run in one frame to catch the server tick estimate
+    // Lag compensation (server/room.js): an input claiming a client tick up to this far in the past is applied AT that tick (bike rewound,
+    // input applied, re-simulated to now). Older claims are clamped to this. 150 ms covers a 300 ms RTT; it is also the max retroactive advantage.
+    maxRewindMs: 150,
+    // Client visual smoothing of corrections (render-only offset on the bike mesh / camera that decays to 0, ~95% gone after blendMs).
+    // Errors larger than the *Max (units) are snapped instead.
+    blendMs: 120, blendOwnMax: 3, blendRemoteMax: 10,
+    showPing: true,               // latency readout in the online HUD (?ping=0 hides it)
     lobbySec: 30,
   },
   ai: {

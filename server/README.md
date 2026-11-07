@@ -40,18 +40,29 @@ Dev auth lets anyone claim any uid: never expose it to the internet. Open the ga
 
 ## Files
 
-`index.js` http + ws + glue, shared 4 ms loop (rooms, lobby timers, rotation, heartbeat) | `protocol.js` message validation + rate limiter |
+`index.js` http + ws + glue, shared 16 ms loop (rooms, lobby timers, rotation, heartbeat) | `protocol.js` message validation + rate limiter |
 `auth.js` dev / Firebase auth | `store.js` ranks (atomic JSON file or Firestore) | `ranking.js` applies results + announcements |
 `matchmaker.js` queues and lobbies (clock-injected, no timers) | `room.js` one match | `test/` (`npm test`; `e2e.test.mjs` plays full matches over real sockets).
 
 ## How a room runs
 
 `Room.update(now)` computes how many ticks are due from the absolute start time (`floor((now - t0) * 120 / 1000)`), so a late timer
-runs several ticks in a row instead of drifting; a stall over ~2 s is skipped. Per tick: apply leavers, apply queued inputs (turns
-wait up to 100 ms for the min turn gap, like the offline input buffer), `step()`, feed crashes to `match.onTick` (`resolveTick`, never
+runs several ticks in a row instead of drifting; a stall over ~2 s is skipped. One shared loop wakes every 16 ms (`loopMs`, ~4x fewer wake-ups than the
+old 4 ms timer: the free Render instance has 0.1 CPU) and each wake-up runs the ~2 ticks that are due. Per tick: record every alive bike's
+state into a short history ring, apply leavers, apply queued inputs (**lag compensation**: an input with a recent `ctick` is applied at that
+tick by rewinding + replaying that one bike, see docs/MULTIPLAYER.md "Lag compensation"; otherwise turns wait up to 100 ms for the min
+turn gap, like the offline input buffer), `step()`, feed crashes to `match.onTick` (`resolveTick`, never
 `resolvePlayerOut`: `state.playerId = -1`), broadcast. `ev` = authoritative state right before server tick `tick`; `crash`/`round`/`snap`
 carry the tick counter after the iteration. Snapshots go out at 10 Hz. Leaving or dropping a socket crashes the bike and charges
 a rank loss immediately; fewer than 2 humans left ends the match (the remaining player wins).
+
+## Monitoring: `/health`
+
+`GET /health` also returns `loop` (`intervalMs` = scheduler interval, `avgIntervalMs` / `maxIntervalMs` = actual wake-up spacing over the last
+~10-20 s, `cpuPct` = share of one CPU the process used over the last ~5 s) and `roomStats[]` per running room: `avgMs` / `maxMs` = time of one
+`update()` call, `behind` / `behindMax` = ticks owed at wake-up (about 2 normally; a growing number = CPU starvation), `skipped` = stalls > 2 s that were
+skipped, `lagComp` = `{inputs, rewound, avgRewindTicks, maxRewindTicks, clamped, future, fallback, ignored}` input counters. On Render free, watch
+`maxIntervalMs` far above 16 and `behindMax` above ~10: the instance is being throttled.
 
 ## Hosting notes (no decision made)
 
@@ -67,6 +78,7 @@ CPU is light (a 4-player room is a few hundred microseconds per tick); the Fires
 
 ## Protocol notes / deviations from docs/MULTIPLAYER.md
 
+- Lag compensation: `in.ctick` is now used (it was informational): `ev.tick` can be up to `CFG.net.maxRewindMs` (150 ms = 18 ticks) older than the server's current tick, so `ev` messages are no longer in tick order across bikes. Old clients are fine (they already rewind + replay to `ev.tick`).
 - `hello` may be up to 4 KB (a Firebase ID token is ~1 KB+); every other message is capped at 1 KB.
 - Tick numbering: `tick0` is always 0 (the sim starts in the 3 s countdown). `ev.tick` = state before iteration `tick`; `crash`/`round`/`snap` use the counter after the iteration.
 - `round` also carries `round` (number), `cd` (countdown seconds left), `lives` (Death Match) and, for `phase:'countdown'`, `bikes` (fresh spawn states). Phases: `countdown | running | roundEnd | matchEnd`.

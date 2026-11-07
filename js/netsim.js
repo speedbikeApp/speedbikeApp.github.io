@@ -100,6 +100,8 @@ export function advanceBike(sim, b, fromTick, toTick, pend = null) {
     if (step(tmp, dt).length) { died = true; break; }
     tagSegs(b, k + 1);
   }
+  // inputs pressed at exactly the tick we replayed up to (their step has not run yet) still have to be re-applied, or the rewind would drop them
+  if (!died) { for (const p of todo) if (!p.done && p.ctick <= to) { p.done = true; applyInput(b, p); } tagSegs(b, to); }
   tmp.bikes.length = 0;
   return died;
 }
@@ -135,13 +137,25 @@ export function applyEvent(sim, ev, nowTick = sim.tick) {
   if (!b || !b.alive || typeof ev.tick !== 'number') return { applied: false, died: false };
   if (ev.kind !== 'turn' && ev.kind !== 'boost' && ev.kind !== 'jump') return { applied: false, died: false };
   const own = ev.id === sim.state.playerId;
+  let resimmed = false;
   if (own) { // consume the matching prediction
     const i = sim.pending.findIndex((p) => p.kind === ev.kind && (ev.kind !== 'turn' || ev.side === undefined || p.side === ev.side));
-    if (i >= 0) sim.pending.splice(i, 1);
+    const pr = i >= 0 ? sim.pending.splice(i, 1)[0] : null;
     dropPredicted(b);
+    // The server applied it LATER than we predicted (stale / future ctick, or beyond the server's rewind cap): the prediction's effects between
+    // its tick and the event tick (jump arc trail steps, boost speed) must go too. Undo from just before the press and replay without it.
+    if (pr && pr.ctick < ev.tick && ev.tick - pr.ctick <= MAX_RESIM) {
+      const before = histAt(sim, b.id, pr.ctick - 1);
+      if (before) {
+        rewindTrail(b, pr.ctick - 1); Object.assign(b, before, { alive: true });
+        const s = b.trail[b.trail.length - 1]; if (s) { s.x2 = b.x; s.z2 = b.z; }
+        resimmed = true;
+        if (advanceBike(sim, b, pr.ctick - 1, ev.tick)) return { applied: true, died: true };
+      }
+    }
   }
   rewindTrail(b, ev.tick);
-  const past = histAt(sim, b.id, ev.tick); if (past) Object.assign(b, past, { alive: true });
+  const past = resimmed ? null : histAt(sim, b.id, ev.tick); if (past) Object.assign(b, past, { alive: true });
   const ndx = ev.dx, ndz = ev.dz;
   if (ev.kind === 'turn') {
     // the segment being left runs along the axis perpendicular to the new heading
@@ -182,6 +196,9 @@ export function applySnap(sim, snap, nowTick = sim.tick, opts = {}) {
     if (!b || !sb.alive) continue;
     if (typeof sb.lives === 'number') b.lives = sb.lives;
     const revive = !b.alive;
+    // Our own bike crashed locally while an input of ours is still in flight: the server may not know that input yet (it will replay it
+    // at its tick and may well crash us), so this snap is not evidence of a false crash. Wait for the ev / crash message.
+    if (revive && sb.id === sim.state.playerId && sim.pending.length) continue;
     // server state projected forward to now, on a scratch copy
     const c = cloneBike(b);
     const past = histAt(sim, b.id, snap.tick); if (past && b.alive) Object.assign(c, past);
@@ -222,4 +239,30 @@ export function applySnap(sim, snap, nowTick = sim.tick, opts = {}) {
     out.corrected.push(b.id);
   }
   return out;
+}
+
+// ---- visual error smoothing (render-only) ---------------------------------------------------------------------------------
+// The sim (and every trail) is always exact. When a correction moves a bike, the bike MESH / camera keep showing the old position
+// and glide to the new one: b.vox / b.voz = (displayed - simulated) position, decayed to 0 each frame by visDecay.
+/** Where the bike is currently displayed (sim position + leftover offset) and its heading. Call BEFORE a correction. */
+export function visCapture(b) { return { x: b.x + (b.vox || 0), z: b.z + (b.voz || 0), dx: b.dx, dz: b.dz }; }
+/**
+ * Call AFTER the correction: keep showing the captured position. Errors beyond opts.maxDist are snapped (offset cleared); a heading
+ * change also snaps unless opts.allowTurn (remote bikes: their turn event legitimately arrives late). Returns the error shown (units).
+ */
+export function visBlend(b, was, opts = {}) {
+  const ex = was.x - b.x, ez = was.z - b.z, d = Math.hypot(ex, ez);
+  const turned = was.dx !== b.dx || was.dz !== b.dz;
+  if (!b.alive || d < 0.02 || d > (opts.maxDist ?? 3) || (turned && !opts.allowTurn)) { b.vox = 0; b.voz = 0; return d; }
+  b.vox = ex; b.voz = ez;
+  return d;
+}
+/** Per-frame decay of every bike's offset (exponential; tau = blendMs / 3 so ~95% is gone after blendMs). */
+export function visDecay(bikes, dt, blendMs = CFG.net.blendMs) {
+  const k = Math.exp(-dt / Math.max(0.001, blendMs / 3000));
+  for (const b of bikes) {
+    if (!b.vox && !b.voz) continue;
+    b.vox *= k; b.voz *= k;
+    if (Math.abs(b.vox) < 0.005 && Math.abs(b.voz) < 0.005) { b.vox = 0; b.voz = 0; }
+  }
 }

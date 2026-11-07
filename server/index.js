@@ -14,7 +14,7 @@ import { settleMatch } from './ranking.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// opts: { auth, store, port, timeScale (TEST ONLY: speeds the sim up), countdownMs, allowedOrigins:[...] , log }
+// opts: { auth, store, port, timeScale (TEST ONLY: speeds the sim up), countdownMs, allowedOrigins:[...] , log, loopMs (scheduler interval, default 16) }
 export function createGameServer(opts) {
   const { auth, store, timeScale = 1, allowedOrigins = [], log = console.log } = opts;
   const sessions = new Set(), byUid = new Map(), rooms = new Map();
@@ -135,7 +135,8 @@ export function createGameServer(opts) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: true, auth: auth.mode, store: store.kind, online: online(), rooms: rooms.size, ...mm.stats(), featured, uptime: Math.round(process.uptime()) }));
+      return res.end(JSON.stringify({ ok: true, auth: auth.mode, store: store.kind, online: online(), rooms: rooms.size, ...mm.stats(), featured, uptime: Math.round(process.uptime()),
+        loop: loopView(), roomStats: [...rooms.values()].map((r) => r.statsView()) }));
     }
     res.writeHead(req.url === '/' ? 200 : 404, { 'Content-Type': 'text/plain' });
     res.end(req.url === '/' ? 'SpeedBike game server\n' : 'not found\n');
@@ -159,10 +160,21 @@ export function createGameServer(opts) {
     ws.on('error', () => {});
   });
 
-  // One shared loop for every room (drift-free per room, see Room.update), the lobby countdowns, rotation and heartbeat.
-  let lastSlow = 0;
+  // One shared loop for every room (drift-free per room, see Room.update: each wake-up runs as many 120 Hz ticks as are due), the lobby
+  // countdowns, rotation and heartbeat. A coarse interval (16 ms, ~4x fewer wake-ups than the old 4 ms) keeps CPU low on small hosts.
+  // loopView() (in /health): wake-up interval stats, share of CPU used by the process (user+system over the last ~5 s), per-room timing.
+  const LOOP_MS = opts.loopMs ?? 16;
+  let lastSlow = 0, lastWake = 0, ivAvg = LOOP_MS, ivMax = 0, ivPrev = 0, ivWin = 0, cpuPct = 0, cpuLast = process.cpuUsage(), cpuAt = performance.now();
+  const loopView = () => ({ intervalMs: LOOP_MS, avgIntervalMs: Math.round(ivAvg * 100) / 100, maxIntervalMs: Math.round(Math.max(ivMax, ivPrev) * 10) / 10, cpuPct: Math.round(cpuPct * 10) / 10 });
   const loop = setInterval(() => {
     const t = performance.now();
+    if (lastWake) { // wake-up spacing: a max far above LOOP_MS means the host starved the process (CPU throttling / GC)
+      const iv = t - lastWake; ivAvg = ivAvg * 0.98 + iv * 0.02;
+      if (t - ivWin > 10000) { ivPrev = ivMax; ivMax = 0; ivWin = t; }
+      if (iv > ivMax) ivMax = iv;
+    }
+    lastWake = t;
+    if (t - cpuAt >= 5000) { const u = process.cpuUsage(), used = (u.user - cpuLast.user + u.system - cpuLast.system) / 1000; cpuPct = 100 * used / (t - cpuAt); cpuLast = u; cpuAt = t; }
     for (const room of rooms.values()) room.update(t);
     const now = Date.now();
     mm.tick(now);
@@ -171,7 +183,7 @@ export function createGameServer(opts) {
       const f = featuredMode(now);
       if (f !== featured) { featured = f; broadcastAll({ t: 'rotation', featured, nextRotation: nextRotation(now) }); }
     }
-  }, 4);
+  }, LOOP_MS);
   const beat = setInterval(() => {
     for (const s of sessions) { if (!s.alive) { s.ws.terminate(); continue; } s.alive = false; try { s.ws.ping(); } catch { /* closing */ } }
   }, 15000);

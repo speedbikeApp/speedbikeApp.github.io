@@ -455,7 +455,7 @@ export function render(state, dt, followId, extra = 0) {
   for (const b of state.bikes) {
     const v = viewFor(b);
     const ex = b.alive ? b.speed * extra : 0;
-    v.px = b.x + b.dx * ex; v.pz = b.z + b.dz * ex;
+    v.px = b.x + b.dx * ex + (b.vox || 0); v.pz = b.z + b.dz * ex + (b.voz || 0); // vox/voz: online correction smoothing (netsim.js visBlend)
     v.group.visible = b.alive;
     v.group.position.set(v.px, b.y, v.pz);
     v.group.rotation.order = 'YXZ';
@@ -467,7 +467,7 @@ export function render(state, dt, followId, extra = 0) {
     if (b.alive) { const sp = b.speed * dt / WHEEL_R; v.wheels[0].rotation.x += sp; v.wheels[1].rotation.x += sp; }
     const pl = b.alive ? protectLeft(b) : 0; // shield shell: solid, then blinking for the last 0.5 s
     v.shield.visible = pl > 0 && (pl > 0.5 || Math.floor(pl * 10) % 2 === 0);
-    syncTrail(b, v, ex, dt);
+    syncTrail(b, v, ex + (b.vox ? b.vox * b.dx : 0) + (b.voz ? b.voz * b.dz : 0), dt); // trail head follows the part of the offset along the heading
     if (b.alive) { if (b.id === followId) follow = b; else if (b.id === cam.specId) alt = b; }
   }
   if (follow) { cam.specId = null; const v = bikeViews.get(follow.id); updateChase(follow, v.px, v.pz, dt, 0); }

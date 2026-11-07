@@ -4,7 +4,7 @@
 import { CFG } from './config.js';
 import * as auth from './auth.js';
 import { createNet, buildHello, serverUrl } from './net.js';
-import { TickClock, createSim, resetSim, stepSim, predictInput, prunePending, applyEvent, applySnap, applyCrash } from './netsim.js';
+import { TickClock, createSim, resetSim, stepSim, predictInput, prunePending, applyEvent, applySnap, applyCrash, visCapture, visBlend, visDecay } from './netsim.js';
 import { MODES } from './modes.js';
 import { MAPS } from './maps.js';
 import { createBike, resetBike, spawnPoints } from './state.js';
@@ -52,7 +52,7 @@ export const match = {                // match-shaped object read by hud.js / th
   clock() { return match.mode.countUp ? match.elapsed : match.timeLeft; },
 };
 export const isActive = () => active;
-export const dbg = { snaps: 0, corrected: 0, revived: 0, events: 0, maxErr: 0 }; // counters for tests / tuning (netcode health)
+export const dbg = { snaps: 0, corrected: 0, revived: 0, events: 0, maxErr: 0, ownEvents: 0, ownErr: 0, ownErrMax: 0, remoteErrMax: 0, smoothed: 0, snapped: 0 }; // counters for tests / tuning (netcode health)
 export const currentMode = () => (startMsg ? startMsg.mode : null);
 
 // Temporarily apply server config overrides (only keys that already exist, plain numbers / nested objects).
@@ -107,7 +107,7 @@ export function begin(msg, st, bikes0, exitCb) {
 
 function placeBikes() {
   const pts = spawnPoints(state.bikes.length, state.map);
-  state.bikes.forEach((b, i) => { resetBike(b, pts[i], mode.speed); b.trail[0].ct = -1; });
+  state.bikes.forEach((b, i) => { resetBike(b, pts[i], mode.speed); b.trail[0].ct = -1; b.vox = b.voz = 0; });
 }
 
 /** Leave the online view and restore the singleplayer world. quiet = no onExit callback. */
@@ -131,6 +131,13 @@ export function leave() {
 // ---------------------------------------------------------------- server messages (only while a match is active)
 const fx = (b) => { burst(b.x, b.z, b.color, b.y + 0.8); audio.crash(b.id === youId); };
 const bikeById = (id) => (state ? state.bikes.find((b) => b.id === id) : null);
+// Show a bike's pre-correction position and glide it to the corrected one (render-only offset, see netsim.js visBlend).
+function smooth(b, cap) {
+  if (!b || !cap) return 0;
+  const own = b.id === youId, e = visBlend(b, cap, own ? { maxDist: CFG.net.blendOwnMax } : { maxDist: CFG.net.blendRemoteMax, allowTurn: true });
+  if (e >= 0.02) { if (b.vox || b.voz) dbg.smoothed++; else dbg.snapped++; }
+  return e;
+}
 const on = (type, fn) => net.on(type, (m) => { if (active && sim) fn(m); });
 
 on('round', (m) => {
@@ -154,7 +161,10 @@ on('snap', (m) => {
   if (match.phase !== 'running') return;
   advance(performance.now());
   if (typeof m.roundTime === 'number') tb = { v: m.roundTime, tick: m.tick };
+  const caps = new Map(state.bikes.map((b) => [b.id, visCapture(b)]));
   const r = applySnap(sim, m, sim.tick, { spawnProt: mode.kind === 'deathmatch' ? CFG.deathMatch.spawnProtect : 0 });
+  for (const id of r.revived) { const b = bikeById(id); if (b) b.vox = b.voz = 0; }
+  for (const id of r.corrected) smooth(bikeById(id), caps.get(id));
   dbg.snaps++; (dbg.log = dbg.log || []).push([sim.tick - m.tick, JSON.stringify(r.err)]); if (dbg.log.length > 30) dbg.log.shift(); dbg.corrected += r.corrected.length; dbg.revived += r.revived.length;
   for (const sb of m.bikes || []) if (typeof sb.lives === 'number') match.lives[sb.id] = sb.lives;
 });
@@ -162,9 +172,11 @@ on('ev', (m) => {
   tc.sample(m.tick, performance.now());
   if (match.phase !== 'running') return;
   advance(performance.now());
-  const was = bikeById(m.id), wasAlive = was && was.alive;
+  const was = bikeById(m.id), wasAlive = was && was.alive, cap = was && visCapture(was);
   const r = applyEvent(sim, m, sim.tick);
   dbg.events++;
+  if (was && r.applied && !r.respawned) { const e = smooth(was, cap); if (m.id === youId) { dbg.ownEvents++; dbg.ownErr = e; if (e > dbg.ownErrMax) dbg.ownErrMax = e; } else if (e > dbg.remoteErrMax) dbg.remoteErrMax = e; }
+  else if (was && r.respawned) was.vox = was.voz = 0;
   if (r.respawned) delete match.respawnIn[m.id];
   if (r.died && wasAlive) fx(was);
 });
@@ -238,9 +250,13 @@ export function update(nowMs, dt) {
     } else if (m.phase === 'countdown') m.cd = Math.max(0.001, cdBase.cd - (sim.tick - cdBase.tick) * DT);
   }
   prunePending(sim);
+  visDecay(state.bikes, dt);
   for (const id of Object.keys(m.respawnIn)) { m.respawnIn[id] -= dt; if (m.respawnIn[id] <= 0) delete m.respawnIn[id]; }
   return extra;
 }
+
+/** Round-trip time of the latest ping in ms (null until the first pong): the HUD latency readout. */
+export function ping() { const v = net.clock.last; return v === null || v === undefined ? null : Math.round(v); }
 
 // Death Match status line (respawn countdown / eliminated), like singleplayer.
 export function status() {

@@ -31,6 +31,9 @@
   .hrow .hv { min-width: 16px; text-align: right; }
   #shieldTag { display: none; font-size: 11px; letter-spacing: 2px; color: #bff; text-shadow: 0 0 8px #0ff; }
   #top { position: fixed; top: calc(10px * var(--hud)); left: 50%; transform: translateX(-50%) scale(var(--hud)); transform-origin: top center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  #ping { display: none; font-size: 11px; letter-spacing: 2px; color: #fff; opacity: .4; margin-top: -4px; pointer-events: none; text-shadow: 0 0 4px #000; }
+  #ping.warn { color: #ffd34d; opacity: .6; } #ping.bad { color: #ff6a4d; opacity: .75; }
+  body.online #ping.on { display: block; }
   #timer { font-size: 28px; padding: 4px 16px; pointer-events: none; min-width: 7ch; text-align: center; }
   button.neon { font: inherit; color: var(--neon); cursor: pointer; padding: 4px 18px; letter-spacing: 2px; font-size: 14px; }
   button.neon:active { background: rgba(0,255,255,.25); }
@@ -256,6 +259,7 @@
 </div>
 <div id="top">
   <div id="timer" class="frame">100.000</div>
+  <div id="ping" aria-hidden="true"></div>
   <button id="pause" class="neon frame" type="button">PAUSE</button>
 </div>
 <button id="boostBtn" class="abtn frame" type="button" tabindex="-1"><b>OK!!</b><small>BOOST</small></button>

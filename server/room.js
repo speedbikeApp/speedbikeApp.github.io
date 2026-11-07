@@ -1,10 +1,14 @@
 // One authoritative match. Runs the shared game modules (state/physics/modes/rules) with 4 human bikes and no AI.
+// Lag compensation (docs/MULTIPLAYER.md "Lag compensation"): an input carrying a client tick `ctick` in the recent past is applied
+// at THAT tick: the bike is rewound to its recorded state, the input applied, and the bike re-simulated alone up to the current tick
+// (other bikes' trails are looked up as they were at each replayed tick). Capped by CFG.net.maxRewindMs.
 // Tick numbering: `tick` = iterations completed so far. Every message carries the tick counter at the moment it is produced:
 //   ev    -> state right BEFORE iteration `tick` runs (client applies it when its own sim reaches that tick)
 //   crash -> produced by the iteration that just finished (tick = counter after it)
 //   snap/round -> state after `tick` iterations.
 import { CFG } from '../js/config.js';
 import { createState, createBike } from '../js/state.js';
+import { performance } from 'node:perf_hooks';
 import { step, turnBike, canTurn, isAirborne, startBoost, startJump } from '../js/physics.js';
 import { createMatch, MODES } from '../js/modes.js';
 import { rankings } from '../js/rules.js';
@@ -13,10 +17,12 @@ import { makeRng } from '../js/ai.js';
 const SNAP_HZ = 10;
 const TURN_BUFFER_MS = CFG.inputBufferMs;   // a turn blocked by minTurnGap is retried for this long (same as the offline input buffer)
 const r3 = (v) => Math.round(v * 1000) / 1000;
+const RING = 48;            // per-bike state history (ticks); must exceed the rewind cap in ticks (150 ms = 18 ticks at 120 Hz)
+const STAT_WIN = 10000;     // ms: window of the "max" timing stats
 
 export class Room {
   // players: [{uid, username, rank, colorIdx, send(msg)}]  (bike id = index)
-  constructor({ id, mode, players, seed, timeScale = 1, onEnd, onLeave }) {
+  constructor({ id, mode, players, seed, timeScale = 1, maxRewindMs, onEnd, onLeave }) {
     this.id = id; this.mode = mode; this.scale = timeScale; this.onEnd = onEnd || (() => {}); this.onLeave = onLeave || (() => {});
     this.hz = CFG.tickHz; this.tick = 0; this.over = false;
     this.seed = seed ?? (Math.random() * 2 ** 32) >>> 0;
@@ -24,13 +30,21 @@ export class Room {
     this.inbox = []; this.pend = this.players.map(() => []);
     this.t0 = null; this.done = 0; this.snapEvery = Math.round(this.hz / SNAP_HZ);
     this.sent = { phase: null, round: -1 };
+    this.maxRewind = Math.min(RING - 4, Math.max(0, Math.ceil((maxRewindMs ?? CFG.net.maxRewindMs) * this.hz / 1000)));
+    this.hist = this.players.map(() => new Array(RING).fill(null)); // per bike: ring of {tick, epoch, n (trail length), s (scalars)} at the START of that tick
+    this.epoch = this.players.map(() => 0);       // bumped on crash / respawn / round start: older history entries are void
+    this.deathTick = this.players.map(() => -1);  // tick counter right after the bike's last crash (-1 = none this round)
+    this.lastIn = this.players.map(() => -1);     // effective tick of the bike's last input: later ones are never applied before it
+    this.tmp = { bikes: [], time: 0, tick: 0, playerId: -1, map: null };
+    this.stats = { updates: 0, ticks: 0, avgMs: 0, maxMs: 0, prevMax: 0, winStart: 0, behind: 0, behindMax: 0, prevBehind: 0, skipped: 0,
+      inputs: 0, rewound: 0, clamped: 0, future: 0, fallback: 0, ignored: 0, rewindTicks: 0, maxRewindTicks: 0 };
 
     this.state = createState();
     this.state.playerId = -1; // nobody is "the player": round modes then use resolveTick, never resolvePlayerOut
     this.players.forEach((p, i) => this.state.bikes.push(createBike(i, CFG.players[p.colorIdx % CFG.players.length].color, 0, 0, 0, -1)));
     this.match = createMatch(this.state, MODES[mode], makeRng(this.seed), {
-      onRoundStart: () => this.#killLeavers(),
-      onRespawn: (b) => this.#ev(b, 'respawn'),
+      onRoundStart: () => { this.#killLeavers(); this.players.forEach((_, i) => { this.epoch[i]++; this.deathTick[i] = -1; this.lastIn[i] = -1; }); },
+      onRespawn: (b) => { this.epoch[b.id]++; this.#ev(b, 'respawn'); },
     });
     this.match.startMatch();
 
@@ -43,11 +57,12 @@ export class Room {
 
   broadcast(msg, extra) { for (const p of this.players) if (!p.left) p.send(extra ? { ...msg, ...extra(p) } : msg); }
 
-  // Feed from the connection layer (already validated). Applied at the room's current tick, never in the past.
+  // Feed from the connection layer (already validated). msg.ctick = the client's estimated server tick when it pressed (lag compensation);
+  // missing / not a number = apply now. Never trusted beyond the tick itself, see #applyInputs.
   input(id, msg) {
     const p = this.players[id];
     if (!p || p.left || this.over) return;
-    if (this.inbox.length < 64) this.inbox.push({ id, kind: msg.kind, side: msg.side });
+    if (this.inbox.length < 64) this.inbox.push({ id, kind: msg.kind, side: msg.side, ctick: typeof msg.ctick === 'number' && Number.isFinite(msg.ctick) ? Math.floor(msg.ctick) : null });
   }
 
   // Socket dropped / player quit: bike crashes at once and the player is charged a loss (via onLeave).
@@ -64,20 +79,38 @@ export class Room {
   update(now) {
     if (this.over) return;
     if (this.t0 === null) this.t0 = now;
+    const st = this.stats, w0 = performance.now();
     const perMs = this.hz * this.scale / 1000, maxLag = 2 * this.hz * this.scale;
     let due = Math.floor((now - this.t0) * perMs) - this.done;
-    if (due > maxLag) { this.t0 += (due - maxLag) / perMs; due = maxLag; }
-    while (due-- > 0 && !this.over) { this.#tick(); this.done++; }
+    const behind = due;
+    if (due > maxLag) { this.t0 += (due - maxLag) / perMs; due = maxLag; st.skipped++; }
+    let ran = 0;
+    while (due-- > 0 && !this.over) { this.#tick(); this.done++; ran++; }
+    const ms = performance.now() - w0;
+    if (w0 - st.winStart > STAT_WIN) { st.prevMax = st.maxMs; st.prevBehind = st.behindMax; st.maxMs = 0; st.behindMax = 0; st.winStart = w0; }
+    st.updates++; st.ticks += ran; st.avgMs = st.updates === 1 ? ms : st.avgMs * 0.98 + ms * 0.02; st.behind = behind;
+    if (ms > st.maxMs) st.maxMs = ms;
+    if (behind > st.behindMax) st.behindMax = behind;
+  }
+
+  // Timing + lag-compensation counters for /health. ms values are per update() call (one per loop wake-up, ~16 ms).
+  statsView() {
+    const s = this.stats, r = (v) => Math.round(v * 1000) / 1000;
+    return { id: this.id, mode: this.mode, tick: this.tick, phase: this.match.phase, updates: s.updates, ticks: s.ticks,
+      avgMs: r(s.avgMs), maxMs: r(Math.max(s.maxMs, s.prevMax)), behind: s.behind, behindMax: Math.max(s.behindMax, s.prevBehind), skipped: s.skipped,
+      lagComp: { inputs: s.inputs, rewound: s.rewound, avgRewindTicks: s.rewound ? r(s.rewindTicks / s.rewound) : 0, maxRewindTicks: s.maxRewindTicks, clamped: s.clamped, future: s.future, fallback: s.fallback, ignored: s.ignored } };
   }
 
   #tick() {
     const m = this.match, dt = 1 / this.hz;
+    if (m.phase === 'running') this.#record();
     const events = m.phase === 'running' ? this.#applyLeaves() : [];
-    if (m.phase === 'running') this.#applyInputs();
+    if (m.phase === 'running') events.push(...this.#applyInputs());
     else { this.inbox.length = 0; for (const q of this.pend) q.length = 0; }
     if (m.phase === 'running') {
       events.push(...step(this.state, dt));
       this.tick++;
+      for (const e of events) this.#markDead(e.victim);
       for (const e of events) this.broadcast({ t: 'crash', tick: this.tick, victim: e.victim, killer: e.killer, cause: e.cause || (e.killer === null ? 'wall' : 'trail'), ...(m.lives[e.victim] !== undefined ? { lives: Math.max(0, m.lives[e.victim] - 1) } : {}) });
       m.onTick(events, dt);
     } else { m.advance(dt); this.tick++; }
@@ -93,19 +126,96 @@ export class Room {
     return o;
   }
 
-  #ev(b, kind, side) {
-    this.broadcast({ t: 'ev', tick: this.tick, id: b.id, kind, ...(side ? { side } : {}), x: r3(b.x), z: r3(b.z), y: r3(b.y), dx: b.dx, dz: b.dz });
+  #ev(b, kind, side, tick = this.tick) {
+    this.broadcast({ t: 'ev', tick, id: b.id, kind, ...(side ? { side } : {}), x: r3(b.x), z: r3(b.z), y: r3(b.y), dx: b.dx, dz: b.dz });
   }
 
+  // ---- lag compensation: per-bike state history ----
+  // Recorded at the START of every running tick (before leaves / inputs), so entry[T] = the bike's state after T iterations.
+  #fill(e, b, id, tick = this.tick) {
+    e.tick = tick; e.epoch = this.epoch[id]; e.n = b.trail.length;
+    const s = e.s; for (const k in b) { const v = b[k]; if (typeof v === 'number' || typeof v === 'boolean') s[k] = v; }
+  }
+  #record() {
+    for (const b of this.state.bikes) {
+      if (!b.alive) continue;
+      const ring = this.hist[b.id], i = this.tick % RING;
+      this.#fill(ring[i] || (ring[i] = { tick: -1, epoch: 0, n: 0, s: {} }), b, b.id);
+    }
+  }
+  #entry(id, tick) { const e = this.hist[id][((tick % RING) + RING) % RING]; return e && e.tick === tick && e.epoch === this.epoch[id] ? e : null; }
+  #markDead(id) { this.epoch[id]++; this.deathTick[id] = this.tick; }
+
+  // The world other bikes' trails had after `tick` iterations, for replaying a rewound bike. Dead / reset bikes are no obstacle.
+  #viewAt(o, view, tick) {
+    if (!o.alive) { view.trail = []; return; }
+    if (tick >= this.tick) { view.trail = o.trail; return; }
+    const e = this.#entry(o.id, tick);
+    if (!e || o.trail.length < e.n) { view.trail = []; return; }
+    const t = o.trail.slice(0, e.n), last = t[e.n - 1];
+    if (last) t[e.n - 1] = { ...last, x2: e.s.x, z2: e.s.z };
+    view.trail = t;
+  }
+
+  // Apply input `i` to bike i.id as of tick T (< this.tick) and replay it up to now. Returns false (bike untouched) when it can't be
+  // rewound or the input isn't valid at T; true when applied (the bike may have died on the replayed path: returned in `out`).
+  #applyRewound(i, T, out) {
+    const real = this.state.bikes[i.id], e = this.#entry(i.id, T);
+    if (!e) return false;
+    const { trail: _t, ...rest } = real;
+    const c = structuredClone(rest); Object.assign(c, e.s);          // scratch copy rewound to T
+    c.trail = real.trail.slice(0, e.n);
+    if (c.trail.length) c.trail[c.trail.length - 1] = { ...c.trail[c.trail.length - 1], x2: c.x, z2: c.z };
+    let ok = false;
+    if (i.kind === 'turn') { if (!(isAirborne(c) && !c.airTurn) && canTurn(c)) { turnBike(c, i.side); ok = true; } }
+    else if (i.kind === 'boost') ok = startBoost(c);
+    else if (i.kind === 'jump') ok = startJump(c);
+    if (!ok) return false;
+    this.#ev(c, i.kind, i.kind === 'turn' ? i.side : undefined, T);   // state right after applying, at tick T
+    const ring = this.hist[i.id], put = (tick) => { this.#fill(ring[tick % RING] || (ring[tick % RING] = { tick: -1, epoch: 0, n: 0, s: {} }), c, i.id, tick); };
+    put(T);                                                          // same-tick follow-up inputs start from the post-input state
+    const others = this.state.bikes.filter((o) => o.id !== i.id), views = others.map((o) => ({ id: o.id, alive: false, trail: [] }));
+    const tmp = this.tmp, dt = 1 / this.hz;
+    tmp.map = this.state.map; tmp.time = this.state.time; tmp.bikes = [c, ...views];
+    for (let k = T; k < this.tick; k++) {
+      others.forEach((o, j) => this.#viewAt(o, views[j], k + 1));    // the world after iteration k
+      const ev = step(tmp, dt);
+      if (ev.length) { out.push(ev[0]); break; }                     // died on the replayed path (c.alive=false, trail cleared by step)
+      put(k + 1);
+    }
+    tmp.bikes = [];
+    const { trail, ...now } = c;
+    Object.assign(real, now); real.trail = trail;
+    return true;
+  }
+
+  // Inputs are applied in arrival order. Lag compensation: a past `ctick` (within the cap) is applied at that tick via #applyRewound;
+  // a future / missing ctick, one the bike can't take at that tick, or without history (round start, respawn) is applied now.
+  // Returns crash events produced by replays.
   #applyInputs() {
-    const bikes = this.state.bikes, expire = this.tick + Math.ceil(TURN_BUFFER_MS * this.hz / 1000);
+    const bikes = this.state.bikes, expire = this.tick + Math.ceil(TURN_BUFFER_MS * this.hz / 1000), out = [], st = this.stats;
     for (const i of this.inbox) {
       const b = bikes[i.id];
-      if (!b.alive) continue;
+      if (!b.alive) continue;                                        // dead bikes are never revived by a claimed tick
+      if (i.kind !== 'turn' && i.kind !== 'boost' && i.kind !== 'jump') continue; // 'ability' / 'swap': abilities are disabled online for now
+      st.inputs++;
+      let T = i.ctick === null ? this.tick : i.ctick;
+      if (T > this.tick) { T = this.tick; st.future++; }
+      else if (T < this.tick - this.maxRewind) { T = this.tick - this.maxRewind; st.clamped++; }
+      if (T < this.lastIn[i.id]) T = this.lastIn[i.id];              // never before an input already applied (events are already broadcast)
+      if (T < this.deathTick[i.id]) { st.ignored++; continue; }      // the bike crashed after the claimed tick: a crash is final
+      if (T < this.tick) {
+        const n = out.length;
+        if (this.#applyRewound(i, T, out)) {
+          this.lastIn[i.id] = T; st.rewound++; st.rewindTicks += this.tick - T; if (this.tick - T > st.maxRewindTicks) st.maxRewindTicks = this.tick - T;
+          continue;
+        }
+        st.fallback++;
+      }
+      this.lastIn[i.id] = this.tick;
       if (i.kind === 'turn') { const q = this.pend[i.id]; if (q.length < 2) q.push({ side: i.side, expire }); }
       else if (i.kind === 'boost') { if (startBoost(b)) this.#ev(b, 'boost'); }
       else if (i.kind === 'jump') { if (startJump(b)) this.#ev(b, 'jump'); }
-      // 'ability' / 'swap': abilities are disabled online for now
     }
     this.inbox.length = 0;
     for (const b of bikes) { // turns wait (briefly) for the min turn gap, like the offline input buffer
@@ -117,6 +227,7 @@ export class Room {
         break;
       }
     }
+    return out;
   }
 
   // Leavers are crashed once the round is running (countdown / round-end pauses wait; new rounds start them dead).
