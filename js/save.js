@@ -4,6 +4,7 @@ import { CFG } from './config.js';
 import { ABILITIES, ABILITY_IDS, isAbilityId, FREE_ABILITIES } from './abilities.js';
 import { CATS, DEFAULT_PARTS, PARTS, getPart, isPartId, freeParts } from './parts.js';
 import { getAchievement, newlyEarned } from './achievements.js';
+import { defaultKeys, validateKeys } from './input.js';
 
 export const KEY = 'speedbike.save.v1';
 export const VERSION = 1;
@@ -12,8 +13,8 @@ export const DEFAULT_NAME = 'PLAYER';
 
 export const defaults = () => ({
   version: VERSION,
-  settings: { bloom: CFG.render.bloom.strength, masterVol: CFG.audio.master, musicVol: CFG.audio.music, sfxVol: CFG.audio.sfx,
-    muted: false, aiDifficulty: CFG.ai.difficulty, quality: 'high' },
+  settings: { bloom: CFG.render.bloom.strength, masterVol: CFG.audio.master, musicVol: CFG.audio.music, sfxVol: CFG.audio.sfx, engineVol: 0.3,
+    muted: false, aiDifficulty: CFG.ai.difficulty, quality: 'high', keys: defaultKeys() },
   profile: { username: DEFAULT_NAME },
   coins: 0,
   stats: { matches: 0, wins: 0, winStreak: 0, bestStreak: 0, kills: 0, distance: 0, boosts: 0, jumps: 0,
@@ -51,6 +52,7 @@ function merge(def, src) {
 function clamp(d) {
   const s = d.settings, c01 = (v) => Math.min(1, Math.max(0, v));
   s.masterVol = c01(s.masterVol); s.musicVol = c01(s.musicVol); s.sfxVol = c01(s.sfxVol);
+  s.engineVol = c01(s.engineVol); s.keys = validateKeys(s.keys);
   s.bloom = Math.min(3, Math.max(0, s.bloom));
   s.aiDifficulty = Math.min(2, Math.max(0, Math.round(s.aiDifficulty)));
   if (!(s.quality in CFG.quality)) s.quality = 'high';

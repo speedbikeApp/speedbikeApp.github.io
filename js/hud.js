@@ -134,7 +134,7 @@ function roundResultHtml(match) {
   const gained = {};
   for (const id of r.awards) gained[id] = (gained[id] || 0) + 1;
   const ids = Object.keys(gained).map(Number);
-  const title = r.reason === 'timeout' ? 'TIME UP' : r.reason === 'draw' ? 'DRAW' : 'ROUND OVER';
+  const title = r.reason === 'timeout' ? 'TIME UP' : r.reason === 'draw' ? 'DRAW' : r.reason === 'out' ? 'YOU CRASHED' : 'ROUND OVER';
   const lines = ids.length
     ? ids.map((id) => `<div class="line">${colored(id, nameOf(id))} +${gained[id]}</div>`).join('')
     : '<div class="line">NO POINTS</div>';
@@ -176,7 +176,6 @@ export function drawMinimap(state) {
   if ((mapFrame++ % 3) || !mapCtx) return;
   const map = state.map || MAPS.arena, c = mapCtx, W = c.canvas.width, k = W / (2 * map.half), o = W / 2;
   c.clearRect(0, 0, W, W);
-  if (map.walls) { c.strokeStyle = '#0f6'; c.lineWidth = 2; c.strokeRect(1, 1, W - 2, W - 2); }
   c.lineWidth = 2;
   for (const p of map.platforms) {
     const t = Math.max(0, Math.min(1, (p.y + 4) / 8)); // low -> dark, high -> brighter

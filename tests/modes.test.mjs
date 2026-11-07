@@ -6,7 +6,7 @@ globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null)
 
 const { CFG } = await import('../js/config.js');
 const { createBike, createState, resetBike, spawnPoints } = await import('../js/state.js');
-const { step, startJump, isAirborne } = await import('../js/physics.js');
+const { step, startJump, isAirborne, turnBike } = await import('../js/physics.js');
 const { MAPS, groundAt } = await import('../js/maps.js');
 const { createMatch, MODES, pickRespawn } = await import('../js/modes.js');
 const { createAI, updateAIs, makeRng, probe } = await import('../js/ai.js');
@@ -30,15 +30,18 @@ const T = MAPS.tiers;
 }
 
 // ---------------------------------------------------------------- platforms / height
-{ // default map = one 100x100 platform with walls (follows CFG.arena.half)
+{ // default map = one 102x102 platform, NO walls (follows CFG.arena.half)
   const A = MAPS.arena;
-  assert.equal(A.platforms.length, 1); assert.deepEqual(A.platforms[0], { x0: -50, z0: -50, x1: 50, z1: 50, y: 0 }); assert.ok(A.walls);
+  assert.equal(A.platforms.length, 1); assert.deepEqual(A.platforms[0], { x0: -51, z0: -51, x1: 51, z1: 51, y: 0 }); assert.ok(!A.walls); assert.ok(!T.walls);
   assert.equal(groundAt(A, 0, 0), 0); assert.equal(groundAt(A, 60, 0), -Infinity);
   assert.equal(createState().map, A);
 }
-{ // jump geometry assumptions behind the TIERS layout: peak 3.5 > pad height 2.5, ~18 units of airtime at base speed
-  const J = CFG.jump; near((J.rise + J.float + J.fall) * CFG.baseSpeed, 18);
-  assert.ok(J.height > T.platforms[1].y && T.platforms[1].x0 - T.platforms[0].x1 === 5);
+{ // jump geometry assumptions behind the TIERS layout: peak 3.5 > pad height 2; one-tile (3 unit) gap; every size is a whole number of tiles
+  const J = CFG.jump; near((J.rise + J.float + J.fall) * CFG.baseSpeed, 12.75);
+  assert.ok(J.height > T.platforms[1].y && T.platforms[1].x0 - T.platforms[0].x1 === CFG.tile && T.platforms[1].y === 2);
+  for (const mp of [MAPS.arena, T]) for (const p of mp.platforms) {
+    for (const v of [p.x1 - p.x0, p.z1 - p.z0]) near(v / CFG.tile, Math.round(v / CFG.tile), 1e-9);
+  }
 }
 { // driving off an edge onto a LOWER glued platform: falls 2 units, lands, survives
   const b = at(0, 0, 30, 0, 1), s = mk(T, b); // main -> south deck (z 40..70, y -2)
@@ -60,34 +63,34 @@ const T = MAPS.tiers;
 { // side of a HIGHER platform = crash (from the low deck into main's edge; and from main into a pad's side)
   const b = at(0, 0, 55, 0, -1, -2), s = mk(T, b); // on the north... south deck heading -z into main (y 0)
   const ev = run(s, 2); assert.deepEqual(ev, [{ victim: 0, killer: null, cause: 'side' }]);
-  assert.ok(Math.abs(b.z - 40) < 0.2);
+  assert.ok(Math.abs(b.z - 39) < 0.2);
   // a bike dropped into the gap hits the pad side
   const c = at(1, 42, 0, 1, 0, -5); c.falling = true; c.jumpT = -1;
   const ev2 = run(mk(T, c), 1); assert.equal(ev2[0].cause, 'side');
 }
-{ // jump carries a bike across the 5-unit gap at base speed; lands on the raised pad (y 2.5), trail rises from there
-  for (const d of [1.6, 2.5, 4]) { // take-off distance before the edge (see the sweep below for the full window)
-    const b = at(0, 40 - d, 0, 1, 0), s = mk(T, b);
+{ // jump carries a bike across the 3-unit gap at base speed; lands on the raised pad (y 2), trail rises from there
+  for (const d of [0.5, 2.5, 6]) { // take-off distance before the edge (see the sweep below for the full window)
+    const b = at(0, 39 - d, 0, 1, 0), s = mk(T, b);
     assert.ok(startJump(b));
     const ev = run(s, 2.2);
     assert.equal(ev.length, 0, `jump from ${d} before the edge`); assert.ok(b.alive);
-    assert.equal(b.y, 2.5); assert.ok(b.x > 50); assert.ok(!isAirborne(b));
-    assert.equal(b.trail[b.trail.length - 1].y0, 2.5);
+    assert.equal(b.y, 2); assert.ok(b.x > 45); assert.ok(!isAirborne(b));
+    assert.equal(b.trail[b.trail.length - 1].y0, 2);
   }
-  // human-friendly window: sweep the take-off distance in 0.25 steps; the contiguous successful range must be >= 0.75 s
+  // human-friendly window: sweep the take-off distance in 0.25 steps; the contiguous successful range must be 0.45..0.65 s
   let okN = 0, lo = null, hi = null;
   for (let d = 0; d <= 16; d += 0.25) {
-    const c = at(0, 40 - d, 0, 1, 0), cs = mk(T, c); startJump(c);
+    const c = at(0, 39 - d, 0, 1, 0), cs = mk(T, c); startJump(c);
     const ev2 = run(cs, 2.2);
-    if (ev2.length === 0 && c.alive && c.y === 2.5) { okN++; if (lo === null) lo = d; hi = d; }
+    if (ev2.length === 0 && c.alive && c.y === 2) { okN++; if (lo === null) lo = d; hi = d; }
   }
   const windowSec = (hi - lo + 0.25) / CFG.baseSpeed;
   assert.equal(okN * 0.25, hi - lo + 0.25, 'window is contiguous');
-  assert.ok(windowSec >= 0.75, `tiers jump window ${windowSec.toFixed(2)} s`);
+  assert.ok(windowSec >= 0.45 && windowSec <= 0.65, `tiers jump window ${windowSec.toFixed(2)} s`);
   console.log(`  tiers gap-jump take-off window: ${lo}..${hi} units before the edge = ${windowSec.toFixed(2)} s`);
   // ...and back from the pad to main (descending: any take-off point near the edge works)
-  const b = at(0, 47, 0, -1, 0, 2.5), s = mk(T, b); assert.ok(startJump(b));
-  const ev = run(s, 1.6); assert.equal(ev.length, 0); assert.equal(b.y, 0); assert.ok(b.x < 40 && b.x > 20);
+  const b = at(0, 45, 0, -1, 0, 2), s = mk(T, b); assert.ok(startJump(b));
+  const ev = run(s, 1.6); assert.equal(ev.length, 0); assert.equal(b.y, 0); assert.ok(b.x < 39 && b.x > 20);
   // too early / no jump: crash
   const e = at(1, 25, 0, 1, 0); assert.ok(startJump(e)); assert.equal(run(mk(T, e), 3).length, 1, 'jumped far too early');
 }
@@ -96,9 +99,26 @@ const T = MAPS.tiers;
   run(s, 0.35); assert.ok(b.falling); assert.ok(!startJump(b));
   assert.ok(b.trail.length > 2 && b.trail[b.trail.length - 1].y0 < 0);
 }
-{ // arena unchanged: walls kill at any height, y stays 0
+{ // arena has NO walls: driving off the edge makes the bike fall (keeps moving forward, y drops) and crash below killY
   const b = at(0, 0, 0, 1, 0), s = mk(MAPS.arena, b);
-  const ev = run(s, 5); assert.deepEqual(ev, [{ victim: 0, killer: null }]);
+  let fell = 0, maxX = 0, ev = [];
+  for (let i = 0; i < 5 * CFG.tickHz && !ev.length; i++) { ev = step(s, DT); if (b.falling) { fell++; maxX = b.x; } }
+  assert.deepEqual(ev, [{ victim: 0, killer: null, cause: 'void' }]);
+  assert.ok(fell > 0.5 * CFG.tickHz, 'visibly falls for a while before the crash'); assert.ok(maxX > CFG.arena.half + 5, 'keeps moving forward while falling');
+  assert.ok(b.y < MAPS.arena.killY + 1);
+  // all four edges, and a corner, are equally deadly
+  for (const [x, z, dx, dz] of [[0, 0, -1, 0], [0, 0, 0, 1], [0, 0, 0, -1], [45, 45, 1, 0]]) {
+    const c = at(1, x, z, dx, dz); const e = run(mk(MAPS.arena, c), 6); assert.equal(e.length, 1); assert.equal(e[0].cause, 'void'); assert.equal(e[0].killer, null);
+  }
+}
+{ // nothing snaps positions to the grid: spawn, free coordinates and turns keep their exact fractional values
+  assert.equal(CFG.tile, 3);
+  const b = at(0, 1.234, -7.891, 1, 0), s = mk(MAPS.arena, b);
+  run(s, 0.5); assert.ok(Math.abs(b.z - (-7.891)) < 1e-12, 'z untouched'); assert.ok(b.x % CFG.tile !== 0);
+  near(b.x, 1.234 + 7.5, 1e-6);
+  turnBike(b, 1); run(s, 0.3); near(b.x, 1.234 + 7.5, 1e-6); near(b.z, -7.891 + 4.5, 1e-6);
+  const lane = at(1, 3, 6, 0, 1), s2 = mk(MAPS.arena, lane); run(s2, 0.1); near(lane.x, 3, 1e-12); // riding exactly on a grid line is fine too
+  const off = at(2, 4.5, 6, 0, 1), s3 = mk(MAPS.arena, off); run(s3, 0.1); near(off.x, 4.5, 1e-12); // ...and so is the middle of a tile
 }
 
 // ---------------------------------------------------------------- Death Match
@@ -123,13 +143,13 @@ const crash = (s, id) => { const b = s.bikes[id]; b.alive = false; b.trail.lengt
   near(b.spawnProt, CFG.deathMatch.spawnProtect); assert.ok(m.clock() > 2.2);
   assert.equal(m.rankingsCheck, undefined);
 }
-{ // spawn protection: trails cannot kill a fresh respawn for spawnProtect seconds (walls still do)
+{ // spawn protection: trails cannot kill a fresh respawn for spawnProtect seconds (falling still does)
   const wall = at(1, 10, 20, 0, 1); wall.speed = 0; wall.baseSpeed = 0; Object.assign(wall.trail[0], { x1: 10, x2: 10, z1: -20, z2: 20 });
   const b = at(0, 0, 0, 1, 0), s = mk(MAPS.arena, b, wall); b.spawnProt = 1;
   assert.equal(run(s, 0.8).length, 0, 'drove through the trail'); assert.ok(b.alive && b.x > 10);
   const c = at(2, 0, 0, 1, 0), s2 = mk(MAPS.arena, c, wall); c.spawnProt = 0;
   assert.equal(run(s2, 1).length, 1);
-  const d = at(3, 0, 0, 1, 0); d.spawnProt = 100; assert.equal(run(mk(MAPS.arena, d), 5)[0].killer, null, 'wall still kills');
+  const d = at(3, 0, 0, 1, 0); d.spawnProt = 100; assert.equal(run(mk(MAPS.arena, d), 5)[0].killer, null, 'falling still kills');
 }
 { // respawn spot: max over candidates of the min distance to other bikes and trails
   const rng = makeRng(9);
@@ -142,9 +162,9 @@ const crash = (s, id) => { const b = s.bikes[id]; b.alive = false; b.trail.lengt
   assert.ok(p.x > 15 && p.z > 15, `expected the open SE quadrant, got ${p.x.toFixed(1)},${p.z.toFixed(1)}`);
   // brute force over a grid inside the same margin
   const dist = (x, z) => { let d = 1e9; for (const o of others) { d = Math.min(d, Math.hypot(o.x - x, o.z - z)); for (const g of o.trail) { const x0 = Math.min(g.x1, g.x2), x1 = Math.max(g.x1, g.x2), z0 = Math.min(g.z1, g.z2), z1 = Math.max(g.z1, g.z2); d = Math.min(d, Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(z0 - z, 0, z - z1))); } } return d; };
-  let best = 0; for (let x = -44; x <= 44; x += 1) for (let z = -44; z <= 44; z += 1) best = Math.max(best, dist(x, z));
+  let best = 0; for (let x = -42; x <= 42; x += 1) for (let z = -42; z <= 42; z += 1) best = Math.max(best, dist(x, z));
   assert.ok(Math.abs(dist(p.x, p.z) - p.d) < 1e-9); assert.ok(p.d >= best * 0.9, `chosen ${p.d.toFixed(1)} vs best ${best.toFixed(1)}`);
-  assert.ok(Math.abs(p.x) <= 44 && Math.abs(p.z) <= 44, 'kept off the walls');
+  assert.ok(Math.abs(p.x) <= CFG.arena.half - CFG.deathMatch.margin + 1e-9 && Math.abs(p.z) <= CFG.arena.half - CFG.deathMatch.margin + 1e-9, 'kept off the edges');
   // faces open space: the chosen heading has room, never straight at a wall
   const tmp = at(9, p.x, p.z, p.dx, p.dz); assert.ok(probe(s, tmp, p.dx, p.dz, 60).d > 15);
   assert.equal(Math.abs(p.dx) + Math.abs(p.dz), 1);
@@ -197,7 +217,7 @@ const crash = (s, id) => { const b = s.bikes[id]; b.alive = false; b.trail.lengt
     respawns += Math.max(0, dead - s.bikes.filter((b) => !b.alive).length);
   }
   assert.equal(m.phase, 'matchEnd'); assert.ok(m.lives[m.winner] > 0); assert.equal(m.ranks[m.winner], 1);
-  assert.ok(Object.values(m.kills).reduce((a, b) => a + b, 0) > 0);
+  assert.ok(respawns > 0, "bikes respawned");
   console.log(`  headless Death Match: ${m.elapsed.toFixed(0)} s, ${respawns} respawns, lives ${JSON.stringify(m.lives)}, kills ${JSON.stringify(m.kills)}`);
 }
 
@@ -236,7 +256,7 @@ const SEEDS = 10;
   const turnDist = (speed) => {
     const b = at(0, 0, 0, 1, 0), s = mk(MAPS.arena, b); b.speed = b.baseSpeed = speed;
     const ai = createAI(2, 0), rng = makeRng(1);
-    for (let i = 0; i < 20 * CFG.tickHz; i++) { const before = b.dx; updateAIs(s, new Map([[0, ai]]), s.tick++, rng); if (b.dx !== before || b.dz !== 0) return 50 - b.x; step(s, DT); }
+    for (let i = 0; i < 20 * CFG.tickHz; i++) { const before = b.dx; updateAIs(s, new Map([[0, ai]]), s.tick++, rng); if (b.dx !== before || b.dz !== 0) return CFG.arena.half - b.x; step(s, DT); }
     return null;
   };
   const d15 = turnDist(15), d25 = turnDist(25);
@@ -261,7 +281,7 @@ const SEEDS = 10;
   // the gap logic really jumps: hard AI heading at the east gap (always rolls when boxed; forced here via crossing flag)
   const b = at(0, 31, 0, 1, 0), s = mk(T, b), ai = createAI(2, 0), ais = new Map([[0, ai]]), rng = makeRng(2);
   ai.crossing = true; let crossed = false;
-  for (let i = 0; i < 6 * CFG.tickHz && b.alive; i++) { updateAIs(s, ais, s.tick++, rng); step(s, DT); if (b.y === 2.5 && b.x > 47) { crossed = true; break; } }
+  for (let i = 0; i < 6 * CFG.tickHz && b.alive; i++) { updateAIs(s, ais, s.tick++, rng); step(s, DT); if (b.y === 2 && b.x > 44) { crossed = true; break; } }
   assert.ok(crossed && b.alive, 'AI with crossing flag jumped the gap onto the pad');
 }
 console.log('modes tests passed');

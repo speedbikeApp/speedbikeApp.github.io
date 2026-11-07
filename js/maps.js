@@ -1,16 +1,16 @@
 // Map descriptions (pure data + tiny queries; no three, no DOM).
 // A map = flat axis-aligned platforms {x0,z0,x1,z1,y} (y = top height; the slab is solid below it), optional arena walls,
 // spawn points and a kill height. Physics, AI, render and minimap all read the same description.
-//   walls   : true = the square |x|,|z| < half is fenced by fatal walls (any height). false = open edges (fall off = crash).
+//   walls   : legacy flag (physics still supports fatal walls) - every shipped map is false: open edges, fall off = crash.
 //   half    : half-size of the square that bounds the whole map (grid/minimap/camera scale), centred on the origin.
 //   killY   : a falling bike below this height crashes (no platform to catch it).
 //   spawns  : optional fixed spawn list [{x,z,dx,dz,y}] ordered S,W,N,E (null = computed from CFG.arena.half).
 import { CFG } from './config.js';
 
 let arenaCache = null;
-// Default map: ONE 100x100 platform with walls. Reads CFG.arena.half live (tests/tuning may change it).
+// Default map: ONE 102x102 platform, NO walls (driving off the edge = fall and crash). Reads CFG.arena.half live (tests/tuning may change it).
 const arena = {
-  id: 'arena', name: 'ARENA', walls: true, killY: -14, spawns: null,
+  id: 'arena', name: 'ARENA', walls: false, killY: -14, spawns: null,
   get half() { return CFG.arena.half; },
   get platforms() {
     const h = CFG.arena.half;
@@ -19,21 +19,21 @@ const arena = {
   },
 };
 
-// TIERS (3D mode). No walls: every open edge is a drop.
-//   MAIN  80x80 at y=0 (x,z in -40..40) - all four bikes spawn here, 28 units from the centre.
-//   EAST / WEST  40x50 raised pads at y=2.5, a 5-unit gap away from MAIN. Reachable only by jumping (jump peak 3.5):
-//        at base speed, take off anywhere in the last ~11 units before MAIN's edge (window ~0.75 s). Falling into the gap = crash.
+// TIERS (3D mode). No walls: every open edge is a drop. All sizes are multiples of CFG.tile (3).
+//   MAIN  78x78 at y=0 (x,z in -39..39) - all four bikes spawn here, 28 units from the centre.
+//   EAST / WEST  48x48 raised pads at y=2 (= trail height), a 3-unit (one tile) gap away from MAIN. Reachable only by jumping:
+//        at base speed take off anywhere in the last ~7.6 units before MAIN's edge (window ~0.5 s). Falling into the gap = crash.
 //   NORTH / SOUTH  60x30 low decks at y=-2 glued to MAIN's z-edges: driving off that edge drops 2 units and survives;
 //        getting back up needs a jump (the deck is a dead-end pocket otherwise).
 const R = 28;
 const tiers = {
   id: 'tiers', name: 'TIERS', walls: false, half: 90, killY: -14,
   platforms: [
-    { x0: -40, z0: -40, x1: 40, z1: 40, y: 0 },
-    { x0: 45, z0: -25, x1: 85, z1: 25, y: 2.5 },
-    { x0: -85, z0: -25, x1: -45, z1: 25, y: 2.5 },
-    { x0: -30, z0: -70, x1: 30, z1: -40, y: -2 },
-    { x0: -30, z0: 40, x1: 30, z1: 70, y: -2 },
+    { x0: -39, z0: -39, x1: 39, z1: 39, y: 0 },
+    { x0: 42, z0: -24, x1: 90, z1: 24, y: 2 },
+    { x0: -90, z0: -24, x1: -42, z1: 24, y: 2 },
+    { x0: -30, z0: -69, x1: 30, z1: -39, y: -2 },
+    { x0: -30, z0: 39, x1: 30, z1: 69, y: -2 },
   ],
   spawns: [
     { x: 0, z: R, dx: 0, dz: -1, y: 0 }, { x: -R, z: 0, dx: 1, dz: 0, y: 0 },

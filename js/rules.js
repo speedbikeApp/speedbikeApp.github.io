@@ -16,6 +16,13 @@ export function resolveTick(aliveBefore, crashed, rng = Math.random) {
   return { awards, ended, survivors };
 }
 
+// The human player crashed (offline game: don't make them wait). The round ends at once and a random bot that is still alive
+// after this tick gets the point (nobody if every bot went down in the same tick). Other crashes of that tick give nothing.
+export function resolvePlayerOut(aliveBefore, crashed, playerId, rng = Math.random) {
+  const survivors = aliveBefore.filter((id) => !crashed.includes(id));
+  return { awards: survivors.length ? [pick(survivors, rng)] : [], ended: true, survivors, playerOut: true };
+}
+
 // Timer ran out: every alive bike gets 1 point.
 export function resolveTimeout(alive) { return { awards: [...alive], ended: true, survivors: [...alive] }; }
 

@@ -4,7 +4,7 @@
 // The caller (main.js) runs physics only while phase === 'running' and feeds step() events to match.onTick().
 import { CFG } from './config.js';
 import { resetBike, spawnPoints } from './state.js';
-import { resolveTick, resolveTimeout, applyAwards, matchWinner, placements, rankings } from './rules.js';
+import { resolveTick, resolvePlayerOut, resolveTimeout, applyAwards, matchWinner, placements, rankings } from './rules.js';
 import { MAPS, mapOf, platformArea } from './maps.js';
 import { probe } from './ai.js';
 
@@ -16,7 +16,8 @@ function roundMode(id, label, speed, map = 'arena') {
     get speed() { return speed(); },
     roundTime: CFG.match.roundTime,
     winPoints: CFG.match.winPoints,
-    onCrash: (match, crashed, aliveBefore) => resolveTick(aliveBefore, crashed, match.rng),
+    // The player crashing ends the round at once (random alive bot scores); bot-vs-bot crashes use the normal rules.
+    onCrash: (match, crashed, aliveBefore) => (crashed.includes(match.playerId()) ? resolvePlayerOut(aliveBefore, crashed, match.playerId(), match.rng) : resolveTick(aliveBefore, crashed, match.rng)),
     onTimeout: (match, alive) => resolveTimeout(alive),
   };
 }
@@ -79,6 +80,7 @@ export function createMatch(state, mode = MODES.standard, rng = Math.random, hoo
     placements: null, ranks: null, winner: null,
 
     setMode(md) { m.mode = md; },
+    playerId() { return state.playerId; },
     // Seconds to show on the HUD timer.
     clock() { return m.mode.countUp ? m.elapsed : m.timeLeft; },
     // Bonus SBCoins on top of the placement coins (Death Match: per kill).
@@ -127,17 +129,18 @@ export function createMatch(state, mode = MODES.standard, rng = Math.random, hoo
       if (events.length) {
         const crashed = events.map((e) => e.victim);
         res = m.mode.onCrash(m, crashed, [...alive, ...crashed]);
-        reason = res.survivors.length === 1 ? 'last' : res.survivors.length === 0 ? 'draw' : 'crash';
+        reason = res.playerOut ? (res.survivors.length ? 'out' : 'draw') : res.survivors.length === 1 ? 'last' : res.survivors.length === 0 ? 'draw' : 'crash';
       }
       if ((!res || !res.ended) && m.timeLeft <= 0) { // timeout (also covers crash + timeout same tick)
         const t = m.mode.onTimeout(m, alive);
         res = { awards: [...(res ? res.awards : []), ...t.awards], ended: true, survivors: t.survivors };
+        delete res.playerOut;
         reason = 'timeout';
       }
       if (!res) return;
       applyAwards(m.scores, res.awards);
       m.lastResult = { awards: res.awards, ended: res.ended, reason };
-      if (res.ended) { m.phase = 'roundEnd'; m.delay = CFG.match.roundEndDelay; }
+      if (res.ended) { m.phase = 'roundEnd'; m.delay = res.playerOut ? CFG.match.playerOutDelay : CFG.match.roundEndDelay; }
     },
 
     // ---- Death Match ----

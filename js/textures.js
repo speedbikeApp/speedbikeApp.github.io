@@ -75,9 +75,9 @@ export function makeTrailTexture() {
   return t;
 }
 
-// Floor grid tile covering `cells` x `cells` squares (wraps seamlessly). Dim minor lines (stay under the bloom threshold, only a
-// faint glow) and brighter major lines on the tile border. Mipmapped + anisotropic so lines survive at grazing angles.
-export function makeGridTexture(cells = 10, px = 1024, maxAniso = 8) {
+// Floor grid texture covering `cells` x `cells` game tiles (wraps seamlessly), one line per tile border (kept under the bloom
+// threshold, only a faint glow). Mipmapped + anisotropic so lines survive at grazing angles.
+export function makeGridTexture(cells = 4, px = 1024, maxAniso = 8) {
   const c = document.createElement('canvas'); c.width = c.height = px;
   const g = c.getContext('2d'), cell = px / cells;
   g.fillStyle = '#000'; g.fillRect(0, 0, px, px);
@@ -89,9 +89,7 @@ export function makeGridTexture(cells = 10, px = 1024, maxAniso = 8) {
       if (i === 0) { g.fillRect(px - w / 2, 0, w / 2, px); g.fillRect(0, px - w / 2, px, w / 2); }
     }
   };
-  lines(5, '#5a5a5a');
-  g.fillStyle = '#9a9a9a';
-  g.fillRect(-4, 0, 8, px); g.fillRect(px - 4, 0, 8, px); g.fillRect(0, -4, px, 8); g.fillRect(0, px - 4, px, 8);
+  lines(7, '#8a8a8a');
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.colorSpace = THREE.SRGBColorSpace;

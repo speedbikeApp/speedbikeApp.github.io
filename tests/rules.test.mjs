@@ -42,4 +42,11 @@ const first = () => 0, last = () => 0.999;
   assert.equal(matchWinner({ 0: 5, 1: 6, 2: 4, 3: 0 }, 5), 1);
   assert.deepEqual(placements({ 0: 1, 1: 5, 2: 3, 3: 3 }), [1, 2, 3, 0]);
 }
+{ // player out: round ends at once, one random surviving bot scores, none if no bot survives the tick
+  const { resolvePlayerOut } = await import('../js/rules.js');
+  const r = resolvePlayerOut([0, 1, 2, 3], [0], 0, () => 0.5);
+  assert.equal(r.ended, true); assert.equal(r.awards.length, 1); assert.ok([1, 2, 3].includes(r.awards[0]));
+  const r2 = resolvePlayerOut([0, 1, 2], [0, 1], 0, () => 0); assert.deepEqual(r2.awards, [2]);
+  const r3 = resolvePlayerOut([0, 3], [0, 3], 0); assert.deepEqual(r3.awards, []); assert.equal(r3.ended, true);
+}
 console.log('rules tests passed');

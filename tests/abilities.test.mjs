@@ -36,14 +36,16 @@ const wallAt = (id, x, z1, z2, y0 = 0) => { // static vertical trail wall along 
   near(b.trail[0].x2 - b.trail[0].x1, 22.5, 0.2);
 }
 { // jump arc timing & height; meter drains instantly, refills over 5 s
-  near(jumpY(0), 0); near(jumpY(0.2), 3.5); near(jumpY(0.6), 3.5); near(jumpY(1.0), 3.5); near(jumpY(1.2), 0);
-  assert.ok(jumpY(0.1) > 0 && jumpY(0.1) < 3.5 && jumpY(1.1) > 0 && jumpY(1.1) < 3.5);
+  // smooth parabola: 0.85 s total, peak 3.5 at 0.425 s, symmetric (no plateau)
+  near(jumpY(0), 0); near(jumpY(0.425), 3.5); near(jumpY(0.85), 0);
+  near(jumpY(0.425 / 2), 3.5 * 0.75); near(jumpY(0.425 * 1.5), 3.5 * 0.75);
+  assert.ok(jumpY(0.3) < 3.5 && jumpY(0.55) < 3.5, 'no float plateau');
   const b = createBike(0, 0, -45, 0, 1, 0), s = mk(b);
   assert.ok(startJump(b)); assert.equal(b.jumpsUsed, 1); assert.equal(b.jumpMeter, 0);
   assert.ok(!startJump(b));
   let peak = 0, airTicks = 0;
   for (let i = 0; i < 1.5 * CFG.tickHz; i++) { step(s, DT); peak = Math.max(peak, b.y); if (isAirborne(b)) airTicks++; }
-  near(peak, 3.5, 1e-6); near(airTicks * DT, 1.2, DT * 2); assert.equal(b.y, 0);
+  near(peak, 3.5, 0.01); near(airTicks * DT, 0.85, DT * 2); assert.equal(b.y, 0);
   near(b.jumpMeter, 1.5 / 5, 0.01);
   assert.ok(!startJump(b), 'still recharging');
   run(s, 3.5 + 0.05); assert.equal(b.jumpMeter, 1);
@@ -52,15 +54,15 @@ const wallAt = (id, x, z1, z2, y0 = 0) => { // static vertical trail wall along 
 { // y at checkpoints during real stepping
   const b = createBike(0, 0, -45, 0, 1, 0), s = mk(b);
   startJump(b);
-  run(s, 0.2); near(b.y, 3.5, 0.02);
-  run(s, 0.4); near(b.y, 3.5, 1e-9);
-  run(s, 0.4); near(b.y, 3.5, 0.02);
-  run(s, 0.1); assert.ok(b.y < 3.5 && b.y > 0);
-  run(s, 0.1 + DT); assert.equal(b.y, 0);
+  run(s, 0.2125); near(b.y, 2.625, 0.15);
+  run(s, 0.2125); near(b.y, 3.5, 0.02);
+  run(s, 0.2125); near(b.y, 2.625, 0.15);
+  run(s, 0.2125 - 0.03); assert.ok(b.y < 0.4 && b.y > 0);
+  run(s, 0.06); assert.equal(b.y, 0);
 }
 { // no turning mid-air (turn dropped), airTurn flag allows it
   const b = createBike(0, 0, -45, 0, 1, 0), s = mk(b);
-  run(s, 0.2); startJump(b); run(s, 0.3);
+  run(s, 0.2); startJump(b); run(s, 0.43); // near the peak (long flat trail segment)
   assert.ok(!canTurn(b)); const n = b.trail.length; turnBike(b, 1);
   assert.equal(b.dx, 1); assert.equal(b.trail.length, n);
   b.airTurn = true; assert.ok(canTurn(b)); turnBike(b, 1); assert.equal(b.dz, 1);
@@ -104,11 +106,34 @@ const wallAt = (id, x, z1, z2, y0 = 0) => { // static vertical trail wall along 
   const ev = run(s, 0.5);
   assert.deepEqual(ev, [{ victim: 0, killer: 1 }]);
 }
-{ // enough clearance: jump 2 units ahead clears (y >= 2 after ~0.07 s = ~1 unit)
+{ // enough clearance: jump 2.5 units ahead clears (y >= 2 after ~0.14 s = ~2.1 units)
   const w = wallAt(1, 0, -10, 10);
   const b = createBike(0, 0, -2.5, 0, 1, 0), s = mk(b, w);
   startJump(b);
   assert.equal(run(s, 0.4).length, 0);
+}
+{ // skill-based pre-jump: sweep the take-off distance before a trail wall; the clearing window must be ~0.45-0.65 s wide
+  const STEP = 0.1, ok = [];
+  for (let d = 0.2; d <= 14; d += STEP) {
+    const w = wallAt(1, 0, -10, 10), b = createBike(0, 0, -d, 0, 1, 0), s = mk(b, w);
+    startJump(b);
+    const ev = run(s, 1.5);
+    ok.push([d, ev.length === 0 && b.x > 3]);
+  }
+  // longest contiguous run of successes (isolated hits right at the late edge, where y is only just ~2, are ignored)
+  let lo = null, hi = null, cur = null;
+  for (const [d, good] of ok) {
+    if (good) { if (!cur) cur = [d, d]; else cur[1] = d; if (!lo || cur[1] - cur[0] > hi - lo) { lo = cur[0]; hi = cur[1]; } } else cur = null;
+  }
+  const win = (hi - lo + STEP) / CFG.baseSpeed;
+  assert.ok(win >= 0.45 && win <= 0.65, `pre-jump window ${win.toFixed(2)} s`);
+  assert.ok(lo > 1.5 && hi < 12, `window ${lo.toFixed(1)}..${hi.toFixed(1)} units before the trail`); // too late AND too early both fail
+  assert.ok(!ok.find(([d]) => Math.abs(d - 12.5) < 0.01)[1] && !ok.find(([d]) => Math.abs(d - 1) < 0.01)[1]);
+  console.log(`  jump clears a trail when taken off ${lo.toFixed(1)}..${hi.toFixed(1)} units before it = ${win.toFixed(2)} s window`);
+  // above trail height (y >= 2) for ~0.56 s of the 0.85 s arc
+  let above = 0; const b = createBike(0, 0, -45, 0, 1, 0), s = mk(b); startJump(b);
+  for (let i = 0; i < CFG.tickHz; i++) { step(s, DT); if (b.y >= CFG.trailHeight) above++; }
+  assert.ok(above * DT > 0.5 && above * DT < 0.6, `above trail height ${(above * DT).toFixed(2)} s`);
 }
 { // elevated trail: a grounded bike passes under a segment whose bottom is above the bike (y0 >= bikeHeight), hits a low one
   const hi = wallAt(1, 0, -10, 10, 3), lo = wallAt(2, 0, -10, 10, 0.5);
@@ -122,7 +147,7 @@ const wallAt = (id, x, z1, z2, y0 = 0) => { // static vertical trail wall along 
   startJump(j); 
   const s = mk(j);
   run(s, 1.3);
-  const plateau = j.trail.filter((t) => t.y0 >= 3.4);
+  const plateau = j.trail.filter((t) => t.y0 >= 1.5);
   assert.ok(plateau.length >= 1);
   const ramp = j.trail.filter((t) => t.y0 < 1 && Math.abs(t.x2 - t.x1) > 0.01);
   assert.ok(ramp.length >= 1);
@@ -136,10 +161,12 @@ const wallAt = (id, x, z1, z2, y0 = 0) => { // static vertical trail wall along 
   const g2 = createBike(2, 0, rx, -5, 0, 1);
   assert.deepEqual(run(mk(g2, o), 0.8), [{ victim: 2, killer: 1 }], 'ramp segment (y0 < 1) is solid');
 }
-{ // arena walls are fatal even when airborne
+{ // no walls: a jump over the arena edge is fine in the air but the bike still falls afterwards (void, killer null)
   const b = createBike(0, 0, 47, 0, 1, 0), s = mk(b);
   startJump(b);
-  assert.equal(run(s, 0.5).length, 1);
+  assert.equal(run(s, 0.5).length, 0);
+  const ev = run(s, 3);
+  assert.equal(ev.length, 1); assert.equal(ev[0].killer, null); assert.equal(ev[0].cause, 'void');
 }
 { // resetBike clears per-round counters, meters and speed; honors base speed
   const b = createBike(0, 0, 0, 0, 1, 0), s = mk(b);
@@ -153,7 +180,7 @@ const wallAt = (id, x, z1, z2, y0 = 0) => { // static vertical trail wall along 
   const box = () => {
     const a = createBike(0, 0, 0, 0, 1, 0);
     const ahead = wallAt(1, 4, -10, 10);
-    const l = createBike(2, 0, -10, 1.5, 1, 0), r = createBike(3, 0, -10, -1.5, 1, 0);
+    const l = createBike(2, 0, 10, 1.5, 1, 0), r = createBike(3, 0, 10, -1.5, 1, 0); // head at x=10 so step() keeps the parked trail intact
     for (const o of [l, r]) { o.speed = 0; o.baseSpeed = 0; Object.assign(o.trail[0], { x1: -10, x2: 10, z1: o.z, z2: o.z }); }
     return [a, mk(a, ahead, l, r)];
   };
@@ -161,12 +188,14 @@ const wallAt = (id, x, z1, z2, y0 = 0) => { // static vertical trail wall along 
   assert.ok(aiAbilities(s, a, createAI(1), makeRng(1)).jump);
   assert.ok(aiAbilities(s, a, createAI(2), makeRng(1)).jump);
   assert.ok(!aiAbilities(s, a, createAI(0), makeRng(1)).jump, 'easy never jumps');
-  [a, s] = box();
-  const ais = new Map([[0, createAI(1, 0)]]);
-  let ev = [];
-  for (let i = 0; i < 2 * CFG.tickHz && !ev.length; i++) { updateAIs(s, ais, s.tick++, makeRng(2)); ev = step(s, DT); }
-  assert.equal(a.jumpsUsed, 1);
-  assert.equal(ev.length, 0, 'AI escaped over the trail');
+  for (const lvl of [1, 2]) for (let off = 0; off < 6; off++) { // any think phase: the jump lands inside the 0.14..0.71 s take-off window
+    [a, s] = box();
+    const ais = new Map([[0, createAI(lvl, off)]]);
+    let ev = [];
+    for (let i = 0; i < 2 * CFG.tickHz && !ev.length; i++) { updateAIs(s, ais, s.tick++, makeRng(2)); ev = step(s, DT); }
+    assert.equal(a.jumpsUsed, 1, `level ${lvl} offset ${off} jumps`);
+    assert.equal(ev.length, 0, `AI level ${lvl} offset ${off} escaped over the trail`);
+  }
   // open side available -> no jump
   const b = createBike(0, 0, 0, 0, 1, 0), s2 = mk(b, wallAt(1, 4, -10, 10));
   assert.ok(!aiAbilities(s2, b, createAI(2), makeRng(1)).jump);

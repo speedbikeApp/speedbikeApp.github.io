@@ -1,6 +1,8 @@
-// All tuning values. 1 unit = 1 grid square.
+// All tuning values. World units are kept as before (speeds, sizes, distances); one visible GRID TILE = CFG.tile units = one bike
+// length (the bike model is scaled to it, see bikeScale). Positions are free: nothing snaps to tile lines or centres.
 export const CFG = {
-  arena: { half: 50 },            // platform 100x100
+  tile: 3,                        // world units per grid tile (= bike length)
+  arena: { half: 51 },            // platform 102x102 = 34x34 tiles, NO walls: driving off the edge = fall
   baseSpeed: 15,
   trailHeight: 2,
   trailThickness: 0.3,
@@ -8,9 +10,11 @@ export const CFG = {
   bikeHeight: 1.0,                // collision height of a bike: it occupies [y, y+bikeHeight] vertically
   // Boost: pressing burns the whole meter as a one-shot burst (mult x speed for `duration` s), then it refills over `recharge` s.
   boost: { mult: 1.5, duration: 1.5, recharge: 6.5 },
-  // Jump arc: rise (ease-out) -> float at `height` -> fall (ease-in). Meter empties on press, refills linearly over `recharge` s.
+  // Jump arc: smooth parabola, rise (ease-out) for `rise` s up to `height`, then fall (ease-in) for `fall` s (float = 0).
+  // Total 0.85 s, peak 1.75x trail height; the bike is above the trail (y >= 2) for ~0.56 s => take-off must be 2.1..10.6 units
+  // (0.14..0.71 s) before the trail at base speed. Meter empties on press, refills linearly over `recharge` s.
   // While airborne a new trail segment is started whenever y moved >= trailStep from the newest segment's y0.
-  jump: { height: 3.5, rise: 0.2, float: 0.8, fall: 0.2, recharge: 5.0, trailStep: 0.25 },
+  jump: { height: 3.5, rise: 0.425, float: 0, fall: 0.425, recharge: 5.0, trailStep: 0.25 },
   // Abilities (phase 6). price = SBCoins (0 = unlocked from the start); cooldown/duration in seconds.
   // Cooldown starts on activation (so it includes the active duration). All timers tick on the fixed step (pause freezes them).
   abilities: {
@@ -32,7 +36,7 @@ export const CFG = {
     lives: 3, respawnDelay: 1.5,
     spawnProtect: 1.0,            // seconds after a respawn that trails cannot kill the bike (walls / falling still do); 0 = off
     coinsPerKill: 5,              // SBCoins per kill on top of the placement coins (CFG.rewards.coins)
-    samples: 200, margin: 6,      // respawn-spot search: random candidates, kept this far from platform edges / walls
+    samples: 200, margin: 9,      // respawn-spot search: random candidates, kept this far from platform edges / walls
   },
   tickHz: 120,
   inputBufferMs: 100,
@@ -42,7 +46,7 @@ export const CFG = {
   camera: { back: 7, up: 7.5, lookAhead: 12, lookY: 0, fov: 75, fovBoost: 12, fovLerp: 6,
     // spectating after the player crashes: damped chase of a survivor, or slow orbit when nobody is left
     spectate: { follow: 3, orbitSpeed: 0.2, orbitRadius: 60, orbitHeight: 38, orbitLerp: 2 } },
-  bikeScale: 1.3,
+  bikeScale: 1.1,                 // model is ~2.7 local units long => ~2.97 world units = one tile
   burst: { count: 48, speed: 14, life: 1.2, gravity: 20, pool: 400, flashLife: 0.5 },
   trailFade: 0.45,                // seconds for a crashed bike's trail to drop away
   render: {
@@ -57,7 +61,7 @@ export const CFG = {
   audio: { master: 0.8, music: 0.35, sfx: 0.8, bpm: 112 },
   colors: { player: 0xff5a1f, floor: 0x000000, grid: 0xffffff, wall: 0x00ff66 },
   spawnRadius: 0.8,               // fraction of arena half-size
-  match: { winPoints: 5, roundTime: 100, countdown: 3, goShowSec: 0.7, roundEndDelay: 3 },
+  match: { winPoints: 5, roundTime: 100, countdown: 3, goShowSec: 0.7, roundEndDelay: 3, playerOutDelay: 1.5 },
   // index 0 = player, then AI opponents
   players: [
     { name: 'PLAYER', color: 0xff5a1f },

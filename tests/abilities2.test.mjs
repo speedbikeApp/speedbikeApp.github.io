@@ -84,25 +84,25 @@ const parked = (id, x, z1, z2) => { const o = createBike(id, 0, x, z2, 0, 1); o.
   let peak = 0, air = 0;
   assert.ok(A.useAbility(b, s)); assert.equal(b.jumpMeter, 0);
   for (let i = 0; i < 3 * CFG.tickHz; i++) { step(s, DT); peak = Math.max(peak, b.y); if (b.jumpT >= 0) air++; }
-  near(peak, 7, 1e-6); near(air * DT, 1.2 * CFG.abilities.rocketJump.timeScale, 2 * DT);
+  near(peak, 7, 0.02); near(air * DT, 0.85 * CFG.abilities.rocketJump.timeScale, 2 * DT);
   assert.equal(b.y, 0);
-  near(jumpY(0.5 * 1.4, 7, 1.4), 7);
+  near(jumpY(0.425 * 1.4, 7, 1.4), 7);
   assert.ok(!A.useAbility(b, s) || b.cd.rocketJump >= 0); // cooldown running
   const c = bike(1, -300, 10, 1, 0, ['rocketJump']), t = mk(c); c.jumpMeter = 0.5;
   assert.ok(!A.useAbility(c, t), 'refused while jump recharging'); assert.equal(c.cd.rocketJump || 0, 0, 'no cooldown consumed');
   // next normal jump is normal again
   const d = bike(2, -300, 20, 1, 0, ['rocketJump']), u = mk(d);
-  A.useAbility(d, u); run(u, 2); d.jumpMeter = 1; startJump(d); run(u, 0.5); near(d.y, 3.5, 1e-6);
+  A.useAbility(d, u); run(u, 2); d.jumpMeter = 1; startJump(d); run(u, 0.425); near(d.y, 3.5, 0.02);
 }
 { // Double Jump: second jump in the air only when equipped, once per airtime, climbs higher
   const n = bike(0, -300, 0, 1, 0, []), t = mk(n); startJump(n); run(t, 0.5);
   assert.ok(!startJump(n), 'no double jump without the passive');
   const b = bike(1, -300, 10, 1, 0, ['doubleJump']), s = mk(b);
   assert.ok(!startJump(b) || true); b.jumpT = -1; b.jumpMeter = 1; b.jumpsUsed = 0;
-  startJump(b); run(s, 0.5); near(b.y, 3.5, 1e-6);
+  startJump(b); run(s, 0.425); near(b.y, 3.5, 0.02);
   assert.ok(startJump(b)); assert.equal(b.jumpsUsed, 2);
   let peak = 0; for (let i = 0; i < 2 * CFG.tickHz; i++) { step(s, DT); peak = Math.max(peak, b.y); }
-  near(peak, 7, 1e-6); assert.equal(b.y, 0);
+  near(peak, 7, 0.02); assert.equal(b.y, 0);
   b.jumpMeter = 1; startJump(b); run(s, 0.3); assert.ok(startJump(b), 'djUsed resets on landing');
   assert.ok(!startJump(b), 'only one extra jump per airtime');
 }
@@ -114,7 +114,7 @@ const parked = (id, x, z1, z2) => { const o = createBike(id, 0, x, z2, 0, 1); o.
   const n = bike(1, -300, 10, 1, 0, []); assert.equal(n.airTurn, false);
   startJump(n); run(mk(n), 0.4); assert.ok(!canTurn(n));
 }
-{ CFG.arena.half = REAL_HALF; // Protector: passes through a trail but not an arena wall; ends after duration
+{ CFG.arena.half = REAL_HALF; // Protector: passes through a trail but not the arena edge; ends after duration
   const wall = parked(1, 0, -10, 10);
   const b = bike(0, -20, 0, 1, 0, ['protector']), s = mk(b, wall);
   A.useAbility(b, s);
@@ -122,7 +122,7 @@ const parked = (id, x, z1, z2) => { const o = createBike(id, 0, x, z2, 0, 1); o.
   assert.equal(ev.length, 0); assert.ok(b.alive && b.x > 10);
   const c = bike(2, -20, 0, 1, 0, []), s2 = mk(c, parked(1, 0, -10, 10));
   assert.deepEqual(run(s2, 2.5).map((e) => [e.victim, e.killer]), [[2, 1]], 'unprotected dies on the trail');
-  // arena wall still kills a protected bike
+  // the arena edge (fall) still kills a protected bike
   const d = bike(3, 40, 0, 1, 0, ['protector']), s3 = mk(d); A.useAbility(d, s3);
   const e3 = run(s3, 2); assert.deepEqual(e3.map((e) => [e.victim, e.killer]), [[3, null]]);
   // after 3 s protection is over

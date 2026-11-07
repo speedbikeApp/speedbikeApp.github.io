@@ -89,6 +89,28 @@
     .setrow input[type=range] { height: 28px; } .panel { padding: 10px 22px; gap: 6px; }
     #countdown { font-size: 80px; }
   }
+  /* ---- controls screen ---- */
+  #ctlCols { display: flex; gap: 22px; align-items: flex-start; justify-content: center; flex-wrap: wrap; width: min(760px, 88vw); }
+  #ctlKeys, #ctlOther { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+  #ctlCols .lbl small { opacity: .6; letter-spacing: 1px; margin-left: 6px; }
+  .krow, .prow { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; letter-spacing: 2px; min-height: 34px; }
+  .krow > span:first-child, .prow > span:first-child { text-align: left; }
+  .kcaps { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .kcap { font: inherit; font-weight: 800; font-size: 13px; color: #fff; min-width: 38px; min-height: 32px; padding: 3px 10px; cursor: pointer; background: rgba(0,40,55,.75); border: 2px solid var(--neon); border-bottom-width: 4px; border-radius: 6px; box-shadow: 0 0 8px rgba(0,255,255,.45); text-shadow: 0 0 6px #0ff; touch-action: manipulation; }
+  .kcap:hover, .kcap:focus-visible { background: rgba(0,255,255,.25); outline: none; }
+  .kcap.fixed { cursor: default; opacity: .65; box-shadow: none; }
+  .kcap.add { opacity: .55; border-style: dashed; font-weight: 500; }
+  .kcap.wait { background: rgba(255,200,0,.2); border-color: #fc3; color: #fc3; text-shadow: none; box-shadow: 0 0 10px #fc3; animation: kblink 1s infinite; }
+  @keyframes kblink { 50% { opacity: .55; } }
+  #kMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; }
+  #touchMap { position: relative; height: 96px; border: 1px solid var(--neon); border-radius: 6px; font-size: 9px; letter-spacing: 1px; background: linear-gradient(90deg, transparent calc(50% - 1px), rgba(0,255,255,.5) 50%, transparent calc(50% + 1px)); }
+  #touchMap span { position: absolute; padding: 1px 4px; white-space: nowrap; }
+  #touchMap .tl { left: 4px; top: 4px; } #touchMap .tr { right: 4px; top: 4px; }
+  #touchMap .bl { left: 4px; bottom: 4px; border: 1px solid var(--neon); border-radius: 4px; } #touchMap .br { right: 4px; bottom: 4px; border: 1px solid var(--neon); border-radius: 4px; }
+  #touchMap .cc { left: 50%; top: 50%; transform: translate(-50%, -50%); background: rgba(0,20,30,.9); border: 1px solid var(--neon); border-radius: 4px; }
+  #touchMap .sw2 { left: 50%; bottom: 4px; transform: translateX(-50%); } #touchMap .pz { right: 4px; top: 50%; transform: translateY(-50%); opacity: .8; }
+  .prow { min-height: 24px; font-size: 11px; } .prow > span:last-child { color: #fff; text-align: right; }
+  @media (max-height: 460px) { #ctlCols { gap: 12px; } .krow { min-height: 30px; } .kcap { min-height: 28px; } #touchMap { height: 80px; } .prow { min-height: 20px; } }
   /* ---- garage / stats / toasts ---- */
   #gMain { display: flex; gap: 14px; align-items: stretch; width: min(740px, 86vw); }
   #gLeft { flex: 0 0 38%; display: flex; flex-direction: column; gap: 6px; align-items: center; }
@@ -234,9 +256,28 @@
     <label class="setrow"><span>MASTER</span><input id="sMaster" type="range" min="0" max="100" step="1"><span id="vMaster"></span></label>
     <label class="setrow"><span>MUSIC</span><input id="sMusic" type="range" min="0" max="100" step="1"><span id="vMusic"></span></label>
     <label class="setrow"><span>SFX</span><input id="sSfx" type="range" min="0" max="100" step="1"><span id="vSfx"></span></label>
+    <label class="setrow"><span>ENGINE</span><input id="sEngine" type="range" min="0" max="100" step="1"><span id="vEngine"></span></label>
     <div class="setrow"><span>SOUND</span><button id="sMute" class="mbtn frame" type="button"></button></div>
     <label class="setrow"><span>QUALITY</span><select id="sQuality"><option value="low">LOW (1x)</option><option value="medium">MEDIUM (1.5x)</option><option value="high">HIGH (2x)</option></select></label>
+    <div class="setrow"><span>CONTROLS</span><button id="sControls" class="mbtn frame" type="button">KEYS &amp; PAD</button></div>
     <button id="sBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrControls" class="screen frame">
+    <h2>CONTROLS</h2>
+    <div id="ctlCols">
+      <div id="ctlKeys">
+        <div class="lbl">KEYBOARD <small>click a key to rebind</small></div>
+        <div id="kRows"></div>
+        <div id="kMsg"></div>
+      </div>
+      <div id="ctlOther">
+        <div class="lbl">TOUCH</div>
+        <div id="touchMap" aria-hidden="true"><span class="tl">TAP LEFT = TURN LEFT</span><span class="tr">TAP RIGHT = TURN RIGHT</span><span class="bl">BOOST</span><span class="br">JUMP</span><span class="cc">&#11043; ABILITY</span><span class="sw2">&#8644; SWAP</span><span class="pz">II PAUSE</span></div>
+        <div class="lbl">CONTROLLER</div>
+        <div id="padRows"></div>
+      </div>
+    </div>
+    <div class="mrow"><button id="kReset" class="mbtn frame" type="button">RESET TO DEFAULTS</button><button id="cBack" class="mbtn frame" type="button">BACK</button></div>
   </div>
 </div>
 <div id="toasts"></div>

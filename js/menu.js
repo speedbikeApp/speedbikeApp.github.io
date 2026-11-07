@@ -8,6 +8,7 @@ import { ABILITIES, ABILITY_IDS } from './abilities.js';
 import { setBloom, setMaxDpr, initPreview, setPreviewParts, drawPreview } from './render.js';
 import * as audio from './audio.js';
 import { setPlayerName } from './hud.js';
+import { ACTIONS, ACTION_LABEL, groups, codeLabel, rebind, defaultKeys, setBindings, getBindings, captureNextKey, GAMEPAD_LAYOUT } from './input.js';
 
 const $ = (id) => document.getElementById(id);
 let current = null;      // visible screen id or null
@@ -17,8 +18,8 @@ export function showScreen(name, backdrop = 'home') {
   current = name;
   $('menu').style.display = name ? 'flex' : 'none';
   $('menu').className = backdrop; // 'home' (3D visible) | 'dim' (over the paused game)
-  for (const id of ['scrMain', 'scrMode', 'scrAbilities', 'scrGarage', 'scrStats', 'scrSettings']) $(id).classList.toggle('on', id === name);
-  document.body.classList.toggle('menu', name === 'scrMain' || name === 'scrMode' || name === 'scrAbilities' || name === 'scrGarage' || name === 'scrStats' || (name === 'scrSettings' && settingsFrom === 'main'));
+  for (const id of ['scrMain', 'scrMode', 'scrAbilities', 'scrGarage', 'scrStats', 'scrSettings', 'scrControls']) $(id).classList.toggle('on', id === name);
+  document.body.classList.toggle('menu', name === 'scrMain' || name === 'scrMode' || name === 'scrAbilities' || name === 'scrGarage' || name === 'scrStats' || ((name === 'scrSettings' || name === 'scrControls') && settingsFrom === 'main'));
   if (name === 'scrMain') { $('mCoins').textContent = getSave().coins; $('mName').textContent = getSave().profile.username; }
   if (name === 'scrMode') syncDiff();
   if (name === 'scrAbilities') renderAbilities('');
@@ -26,6 +27,8 @@ export function showScreen(name, backdrop = 'home') {
   else stopPreview();
   if (name === 'scrStats') renderStats();
   if (name === 'scrSettings') syncSettingsUi();
+  if (name !== 'scrControls') cancelCapture();
+  if (name === 'scrControls') renderControls('');
 }
 export const currentScreen = () => current;
 
@@ -34,7 +37,8 @@ export function applySettings() {
   const s = getSave().settings;
   setBloom(s.bloom);
   setMaxDpr(CFG.quality[s.quality]);
-  audio.setMasterVolume(s.masterVol); audio.setMusicVolume(s.musicVol); audio.setSfxVolume(s.sfxVol); audio.setMuted(s.muted);
+  audio.setMasterVolume(s.masterVol); audio.setMusicVolume(s.musicVol); audio.setSfxVolume(s.sfxVol); audio.setMuted(s.muted); audio.setEngineVolume(s.engineVol);
+  setBindings(s.keys);
   setPlayerName(getSave().profile.username);
 }
 
@@ -112,8 +116,8 @@ function syncSettingsUi() {
   const s = getSave().settings;
   $('sName').value = getSave().profile.username;
   $('sBloom').value = s.bloom; $('vBloom').textContent = s.bloom === 0 ? 'OFF' : s.bloom.toFixed(2);
-  for (const [id, v, k] of [['sMaster', s.masterVol, 'vMaster'], ['sMusic', s.musicVol, 'vMusic'], ['sSfx', s.sfxVol, 'vSfx']]) {
-    $(id).value = pct(v); $(k).textContent = pct(v);
+  for (const [id, v, k] of [['sMaster', s.masterVol, 'vMaster'], ['sMusic', s.musicVol, 'vMusic'], ['sSfx', s.sfxVol, 'vSfx'], ['sEngine', s.engineVol, 'vEngine']]) {
+    $(id).value = pct(v); $(k).textContent = k === 'vEngine' && !v ? 'OFF' : pct(v);
   }
   $('sMute').textContent = s.muted ? 'MUTED' : 'ON';
   $('sMute').classList.toggle('sel', s.muted);
@@ -151,6 +155,10 @@ export function initMenu(h) {
   on('mSettings', () => { settingsFrom = 'main'; showScreen('scrSettings'); });
   on('pSettings', () => { settingsFrom = 'pause'; showScreen('scrSettings', 'dim'); });
   on('sBack', closeSettings);
+  on('sControls', () => showScreen('scrControls', settingsFrom === 'pause' ? 'dim' : 'home'));
+  on('cBack', closeSettings);
+  on('kReset', () => { cancelCapture(); commitKeys(defaultKeys()); renderControls('Defaults restored'); });
+  $('kRows').addEventListener('click', onCapClick);
   on('pRestart', h.onRestart);
   on('pQuit', h.onQuit);
 
@@ -165,8 +173,8 @@ export function initMenu(h) {
   $('sBloom').addEventListener('input', (e) => {
     const v = setSetting('bloom', +e.target.value); setBloom(v); $('vBloom').textContent = v === 0 ? 'OFF' : v.toFixed(2);
   });
-  for (const [id, key, fn, k] of [['sMaster', 'masterVol', audio.setMasterVolume, 'vMaster'], ['sMusic', 'musicVol', audio.setMusicVolume, 'vMusic'], ['sSfx', 'sfxVol', audio.setSfxVolume, 'vSfx']]) {
-    $(id).addEventListener('input', (e) => { const v = setSetting(key, +e.target.value / 100); fn(v); $(k).textContent = pct(v); });
+  for (const [id, key, fn, k] of [['sMaster', 'masterVol', audio.setMasterVolume, 'vMaster'], ['sMusic', 'musicVol', audio.setMusicVolume, 'vMusic'], ['sSfx', 'sfxVol', audio.setSfxVolume, 'vSfx'], ['sEngine', 'engineVol', audio.setEngineVolume, 'vEngine']]) {
+    $(id).addEventListener('input', (e) => { const v = setSetting(key, +e.target.value / 100); fn(v); $(k).textContent = k === 'vEngine' && !v ? 'OFF' : pct(v); });
   }
   on('sMute', () => { const m = setSetting('muted', !getSave().settings.muted); audio.setMuted(m); syncSettingsUi(); });
   $('sQuality').addEventListener('change', (e) => { const q = setSetting('quality', e.target.value); setMaxDpr(CFG.quality[q]); });
@@ -176,6 +184,42 @@ export function initMenu(h) {
 export function closeSettings() {
   const n = $('sName'); if (document.activeElement === n) n.blur();
   saveSoon();
+  if (current === 'scrControls') { showScreen('scrSettings', settingsFrom === 'pause' ? 'dim' : 'home'); return; }
   if (settingsFrom === 'pause') { settingsFrom = null; showScreen(null); } else { settingsFrom = null; showScreen('scrMain'); }
 }
-export const inSettings = () => current === 'scrSettings';
+export const inSettings = () => current === 'scrSettings' || current === 'scrControls';
+
+// ---- controls screen: keycaps, rebinding, touch / gamepad reference ----
+let cancelCap = null;
+function cancelCapture() { if (cancelCap) { cancelCap(); cancelCap = null; } }
+function commitKeys(map) { setBindings(map); getSave().settings.keys = getBindings(); saveSoon(); }
+const cap = (txt, cls, act, slot) => `<button type="button" class="kcap ${cls}" data-act="${act}" data-slot="${slot}">${txt}</button>`;
+function renderControls(msg, waiting) { // waiting: {act, slot}
+  const map = getBindings();
+  $('kRows').innerHTML = ACTIONS.map((a) => {
+    const gs = groups(map[a]);
+    let h = gs.map((g, i) => cap(waiting && waiting.act === a && waiting.slot === i ? 'press a key…' : codeLabel(g[0]), waiting && waiting.act === a && waiting.slot === i ? 'wait' : '', a, i)).join('');
+    if (a === 'pause') h = '<button type="button" class="kcap fixed" tabindex="-1" disabled>Esc</button>' + h;
+    if (gs.length < 2) h += waiting && waiting.act === a && waiting.slot === -1 ? cap('press a key…', 'wait', a, -1) : cap('+', 'add', a, -1);
+    return `<div class="krow"><span>${ACTION_LABEL[a]}</span><span class="kcaps">${h}</span></div>`;
+  }).join('');
+  $('padRows').innerHTML = GAMEPAD_LAYOUT.map(([n, k]) => `<div class="prow"><span>${n}</span><span>${k}</span></div>`).join('');
+  $('kMsg').textContent = msg || '';
+}
+const REASON = { last: 'Every action needs at least one key', full: 'Max 2 keys per action', bad: 'Key not allowed' };
+function onCapClick(e) {
+  const b = e.target.closest('button.kcap[data-act]');
+  if (!b || b.disabled) return;
+  cancelCapture();
+  const act = b.dataset.act, slot = +b.dataset.slot;
+  renderControls('Press a key (Esc cancels, Backspace removes)', { act, slot });
+  b.blur();
+  cancelCap = captureNextKey((code) => {
+    cancelCap = null;
+    if (code === null) { renderControls(''); return; }
+    const r = code === 'Backspace' || code === 'Delete' ? rebind(getBindings(), act, slot, null) : rebind(getBindings(), act, slot, code);
+    if (!r.ok) { renderControls(REASON[r.reason] || 'Not possible'); return; }
+    commitKeys(r.map);
+    renderControls(r.swapped ? `Swapped with ${ACTION_LABEL[r.swapped]}` : '');
+  });
+}

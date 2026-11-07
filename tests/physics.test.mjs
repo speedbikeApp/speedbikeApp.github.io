@@ -5,11 +5,12 @@ import { createBike, createState } from '../js/state.js';
 const dt = 1 / 120;
 const mk = (...bikes) => { const s = createState(); s.bikes.push(...bikes); return s; };
 
-{ // wall crash
+{ // no walls: driving off the platform edge = fall (killer null, cause void), only after dropping below the map
   const b = createBike(0, 0, 0, 0, 1, 0), s = mk(b);
-  let ev = [];
-  for (let i = 0; i < 120 * 5 && !ev.length; i++) ev = step(s, dt);
-  assert.equal(ev.length, 1); assert.equal(ev[0].killer, null); assert.ok(!b.alive); assert.ok(b.x < 51);
+  let ev = [], fallTicks = 0;
+  for (let i = 0; i < 120 * 5 && !ev.length; i++) { ev = step(s, dt); if (b.falling) fallTicks++; }
+  assert.equal(ev.length, 1); assert.equal(ev[0].killer, null); assert.equal(ev[0].cause, 'void'); assert.ok(!b.alive);
+  assert.ok(b.x > 51 && b.x < 51 + 15 * 1.2, 'dropped off the edge, kept moving forward'); assert.ok(fallTicks * dt > 0.5 && fallTicks * dt < 1.2);
 }
 { // trail crash credits owner
   const a = createBike(0, 0, 0, 0, 1, 0), o = createBike(1, 0, 10, 10, 0, 1);

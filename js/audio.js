@@ -2,7 +2,7 @@
 import { CFG } from './config.js';
 
 let ctx = null, master, musicBus, sfxBus, noiseBuf;
-const vol = { master: CFG.audio.master, music: CFG.audio.music, sfx: CFG.audio.sfx, muted: false };
+const vol = { master: CFG.audio.master, music: CFG.audio.music, sfx: CFG.audio.sfx, engine: 0.3, muted: false };
 let gamePaused = false, wantMusic = false, musicOn = false, timer = null, nextT = 0, step16 = 0;
 let engine = null;
 
@@ -17,6 +17,7 @@ const applyVol = () => {
 export const setMasterVolume = (v) => { vol.master = Math.min(1, Math.max(0, v)); applyVol(); };
 export const setMusicVolume = (v) => { vol.music = Math.min(1, Math.max(0, v)); applyVol(); };
 export const setSfxVolume = (v) => { vol.sfx = Math.min(1, Math.max(0, v)); applyVol(); };
+export const setEngineVolume = (v) => { vol.engine = Math.min(1, Math.max(0, +v || 0)); if (engine && engine.on) engine.g.gain.setTargetAtTime(engineLevel(true), ctx.currentTime, 0.05); };
 export const setMuted = (m) => { vol.muted = !!m; applyVol(); };
 export const getVolumes = () => ({ ...vol });
 
@@ -24,6 +25,7 @@ export const getVolumes = () => ({ ...vol });
 function syncSuspend() {
   if (!ctx) return;
   const stop = document.hidden || gamePaused;
+  if (stop) killEngine(); // never resume into a stale hum
   if (stop && ctx.state === 'running') ctx.suspend();
   else if (!stop && ctx.state === 'suspended') ctx.resume();
 }
@@ -96,20 +98,48 @@ export function roundWin() { arpeggio([69, 73, 76, 81], 0.11); }
 export function roundLose() { arpeggio([69, 65, 62, 57], 0.16); }
 
 // Engine hum for the player's bike: call every frame. active=false fades it out.
+// Design: soft, no beating. A low sine fundamental + a quiet low-passed triangle octave + a low-passed noise "rumble"
+// (single oscillators, no detuned pair). Pitch glides gently with speed. Level = vol.engine (0 = off).
+// A watchdog silences and tears it down if setEngine stops being called (menus, pause, tab hidden, round over).
+const engineLevel = (on) => (on ? vol.engine * 0.22 : 0);
+let engineLast = 0, engineWatch = null;
+function killEngine() {
+  if (engineWatch) { clearInterval(engineWatch); engineWatch = null; }
+  if (!engine) return;
+  const e = engine; engine = null;
+  try { e.g.gain.cancelScheduledValues(0); e.g.gain.value = 0; e.a.stop(); e.b.stop(); e.n.stop(); e.g.disconnect(); } catch { /* already stopped */ }
+}
+function watchEngine() {
+  if (!engine) return;
+  const now = performance.now();
+  if (now - engineLast > 200 && engine.on) { engine.on = false; engine.offAt = now; engine.g.gain.setTargetAtTime(0, ctx.currentTime, 0.08); }
+  if (!engine.on && now - engine.offAt > 1500) killEngine(); // fully off for a while: free the nodes
+}
 export function setEngine(active, speed, baseSpeed, boosting) {
-  if (!ctx) return;
-  if (!ok()) return;
+  if (!ok()) { if (engine && !active) killEngine(); return; }
+  const on = !!active && vol.engine > 0;
+  engineLast = performance.now();
   if (!engine) {
-    const g = ctx.createGain(), f = ctx.createBiquadFilter(), a = ctx.createOscillator(), b = ctx.createOscillator();
-    a.type = 'sawtooth'; b.type = 'square'; f.type = 'lowpass'; f.frequency.value = 500; g.gain.value = 0;
-    a.connect(f); b.connect(f); f.connect(g); g.connect(sfxBus); a.start(); b.start();
-    engine = { g, f, a, b };
+    if (!on) return;
+    const g = ctx.createGain(), fl = ctx.createBiquadFilter(), fn = ctx.createBiquadFilter();
+    const a = ctx.createOscillator(), b = ctx.createOscillator(), n = ctx.createBufferSource();
+    const ga = ctx.createGain(), gb = ctx.createGain(), gn = ctx.createGain();
+    a.type = 'sine'; b.type = 'triangle'; fl.type = 'lowpass'; fl.frequency.value = 260; fl.Q.value = 0.3;
+    fn.type = 'lowpass'; fn.frequency.value = 170; fn.Q.value = 0.3;
+    ga.gain.value = 0.55; gb.gain.value = 0.16; gn.gain.value = 2.2;
+    n.buffer = noiseBuf; n.loop = true;
+    a.connect(ga); b.connect(gb); ga.connect(fl); gb.connect(fl); n.connect(fn); fn.connect(gn); gn.connect(fl);
+    fl.connect(g); g.gain.value = 0; g.connect(sfxBus);
+    a.start(); b.start(); n.start();
+    engine = { g, f: fl, a, b, n, on: false, offAt: performance.now() };
+    engineWatch = setInterval(watchEngine, 100);
   }
-  const t = ctx.currentTime, r = speed / (baseSpeed || 1);
-  const fr = 48 + (r - 1) * 70 + (boosting ? 22 : 0);
-  engine.a.frequency.setTargetAtTime(fr, t, 0.08); engine.b.frequency.setTargetAtTime(fr * 1.005 * 2, t, 0.08);
-  engine.f.frequency.setTargetAtTime(350 + r * 250 + (boosting ? 500 : 0), t, 0.1);
-  engine.g.gain.setTargetAtTime(active ? 0.1 + (boosting ? 0.05 : 0) : 0, t, active ? 0.1 : 0.15);
+  const t = ctx.currentTime, r = Math.min(2.5, Math.max(0.5, speed / (baseSpeed || 1)));
+  const fr = 50 + (r - 1) * 22 + (boosting ? 6 : 0); // gentle glide
+  engine.a.frequency.setTargetAtTime(fr, t, 0.25); engine.b.frequency.setTargetAtTime(fr * 2, t, 0.25);
+  engine.f.frequency.setTargetAtTime(240 + (r - 1) * 60 + (boosting ? 80 : 0), t, 0.25);
+  if (on !== engine.on) { engine.on = on; if (!on) engine.offAt = performance.now(); engine.g.gain.setTargetAtTime(engineLevel(on), t, on ? 0.35 : 0.08); }
+  else if (on) engine.g.gain.setTargetAtTime(engineLevel(true) * (boosting ? 1.2 : 1), t, 0.2);
 }
 
 // ---- music: bass + arp + drums, 4-bar loop in A minor, scheduled with a look-ahead timer ----

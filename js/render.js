@@ -49,9 +49,11 @@ function resize() {
 addEventListener('resize', resize); addEventListener('orientationchange', resize); resize();
 setBloom(bloomStrength);
 
-// ---- Floor: black with a glowing white grid. Grid is a mipmapped/anisotropic texture (10x10 cells per tile, brighter tile
-// borders) kept near the bloom threshold, and fades to black with view distance so the horizon never washes out. ----
-const GRID_CELLS = 10;
+// ---- Floor: black with a glowing white grid. One grid cell = one tile = CFG.tile world units = one bike length. The texture
+// holds GRID_CELLS x GRID_CELLS tiles (mipmapped/anisotropic, kept near the bloom threshold); each platform's UVs are offset so
+// the lines fall on multiples of CFG.tile in WORLD coordinates (every platform shares one grid). The floor fades to black with
+// view distance so the horizon never washes out. ----
+const GRID_CELLS = 4;
 const gridTex = makeGridTexture(GRID_CELLS, 1024, renderer.capabilities.getMaxAnisotropy());
 const floorMat = new THREE.MeshBasicMaterial({ map: gridTex, color: 0xffffff });
 floorMat.onBeforeCompile = (sh) => {
@@ -63,19 +65,20 @@ floorMat.onBeforeCompile = (sh) => {
       `gl_FragColor.rgb *= (1.0 - smoothstep(${G.fadeNear.toFixed(1)}, ${G.fadeFar.toFixed(1)}, vDist)) * ${G.gain.toFixed(2)};`);
 };
 
-// ---- Map: platforms (dark slabs: gridded top, circuit-board sides, glowing top edges) + optional arena walls ----
-// Rebuilt whenever state.map changes. The default arena is one 100x100 platform at y=0 inside four walls.
+// ---- Map: platforms (dark slabs: gridded top, circuit-board sides, glowing top edges). No walls anywhere. ----
+// Rebuilt whenever state.map changes. The default arena is one 102x102 platform at y=0.
 const circuit = makeCircuitTexture();
-const WALL_H = 3, TILE_W = 12, SLAB_D = 8, EDGE_T = 0.3;
-const edgeMat = new THREE.MeshBasicMaterial({ color: glowColor0(0x33ff88, 1.4) });
+const TILE_W = 12, SLAB_D = 8, EDGE_T = 0.3;
 const slabEdgeMat = new THREE.MeshBasicMaterial({ color: glowColor0(0x00e5ff, 1.0) });
 function glowColor0(c, k) { return new THREE.Color(c).multiplyScalar(k); }
 function wallMat(len, hgt = 1) {
   const t = circuit.clone(); t.needsUpdate = true; t.repeat.set(len / TILE_W, hgt);
   return new THREE.MeshBasicMaterial({ map: t });
 }
-function floorMaterial(w, d) {
-  const t = gridTex.clone(); t.needsUpdate = true; t.repeat.set(w / GRID_CELLS, d / GRID_CELLS);
+// Top face UV: u = (x - x0)/P, v = (z1 - z)/P with P = world size of the texture = GRID_CELLS * tile.
+function floorMaterial(p) {
+  const w = p.x1 - p.x0, d = p.z1 - p.z0, P = GRID_CELLS * CFG.tile;
+  const t = gridTex.clone(); t.needsUpdate = true; t.repeat.set(w / P, d / P); t.offset.set(p.x0 / P, -p.z1 / P);
   const m = new THREE.MeshBasicMaterial({ map: t, color: 0xffffff });
   m.onBeforeCompile = floorMat.onBeforeCompile;
   return m;
@@ -87,7 +90,7 @@ function disposeGroup(g) {
   g.traverse((o) => {
     if (!o.isMesh) return;
     o.geometry.dispose();
-    for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (m !== edgeMat && m !== slabEdgeMat) { if (m.map) m.map.dispose(); m.dispose(); } }
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) { if (m !== slabEdgeMat) { if (m.map) m.map.dispose(); m.dispose(); } }
   });
   g.clear();
 }
@@ -96,24 +99,14 @@ function buildMap(map) {
   for (const p of map.platforms) {
     const w = p.x1 - p.x0, d = p.z1 - p.z0, cx = (p.x0 + p.x1) / 2, cz = (p.z0 + p.z1) / 2;
     // BoxGeometry material order: +x, -x, +y, -y, +z, -z. Sides are dim circuit boards; the top is the glowing grid.
-    const side = (len) => { const m = wallMat(len, SLAB_D / 3); m.color.setScalar(0.55); return m; };
-    const mats = [side(d), side(d), floorMaterial(w, d), new THREE.MeshBasicMaterial({ color: 0x050508 }), side(w), side(w)];
+    const side = (len) => { const m = wallMat(len, SLAB_D / 3); m.color.setScalar(0.85); return m; };
+    const mats = [side(d), side(d), floorMaterial(p), new THREE.MeshBasicMaterial({ color: 0x050508 }), side(w), side(w)];
     const slab = new THREE.Mesh(new THREE.BoxGeometry(w, SLAB_D, d), mats);
     slab.position.set(cx, p.y - 0.01 - SLAB_D / 2, cz); mapGroup.add(slab);
-    if (!map.walls) { // glowing frame around the top edge (arena walls already glow)
-      for (const [ex, ez, sx, sz] of [[cx, p.z0, w, EDGE_T], [cx, p.z1, w, EDGE_T], [p.x0, cz, EDGE_T, d], [p.x1, cz, EDGE_T, d]]) {
-        const e = new THREE.Mesh(new THREE.BoxGeometry(sx, EDGE_T, sz), slabEdgeMat);
-        e.position.set(ex, p.y, ez); mapGroup.add(e);
-      }
-    }
-  }
-  if (map.walls) {
-    const H = map.half;
-    for (const [x, z, sx, sz] of [[0, -H, 2 * H, 1], [0, H, 2 * H, 1], [-H, 0, 1, 2 * H], [H, 0, 1, 2 * H]]) {
-      const m = wallMat(2 * H);
-      const mats = sx > sz ? [edgeMat, edgeMat, edgeMat, edgeMat, m, m] : [m, m, edgeMat, edgeMat, edgeMat, edgeMat];
-      const w = new THREE.Mesh(new THREE.BoxGeometry(sx, WALL_H, sz), mats);
-      w.position.set(x, WALL_H / 2, z); mapGroup.add(w);
+    // glowing frame around the top edge (there are no walls: the edge itself is the border)
+    for (const [ex, ez, sx, sz] of [[cx, p.z0, w, EDGE_T], [cx, p.z1, w, EDGE_T], [p.x0, cz, EDGE_T, d], [p.x1, cz, EDGE_T, d]]) {
+      const e = new THREE.Mesh(new THREE.BoxGeometry(sx, EDGE_T, sz), slabEdgeMat);
+      e.position.set(ex, p.y, ez); mapGroup.add(e);
     }
   }
 }
@@ -269,7 +262,7 @@ function viewFor(b) {
   let v = bikeViews.get(b.id);
   if (!v) {
     const { group, wheels, mats } = makeBikeMesh(b.color);
-    v = { group, wheels, mats, fin: 0, first: null, dying: -1, px: 0, pz: 0,
+    v = { group, wheels, mats, fin: 0, first: null, dying: -1, fall: 0, px: 0, pz: 0,
       trailMat: new THREE.MeshBasicMaterial({ color: glowColor(b.color, 1.25), map: trailTex }) };
     v.cap = INIT_CAP; v.mesh = makeTrailMesh(v, v.cap);
     scene.add(group); bikeViews.set(b.id, v);
@@ -396,7 +389,7 @@ function updateFx(dt) {
 // Chase: yaw eased toward the heading (~cameraSwing s, frame-rate independent). Boost widens the FOV, jump height raises
 // the camera. After the player dies: damped chase of a surviving bike, or a slow orbit when nobody is left.
 let orbitR = 60;
-const cam = { yaw: null, fx: 0, fz: 0, y: 0, fov: CFG.camera.fov, specId: null, orbit: 0 };
+const cam = { yaw: null, fx: 0, fz: 0, y: 0, fall: 0, fov: CFG.camera.fov, specId: null, orbit: 0 };
 const look = new THREE.Vector3(), want = new THREE.Vector3();
 const damp = (k, dt) => 1 - Math.exp(-k * dt);
 
@@ -407,10 +400,13 @@ function updateChase(b, px, pz, dt, k) {
   if (cam.yaw === null) { cam.yaw = target; cam.y = b.y; }
   let d = target - cam.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
   cam.yaw += d * damp(4 / CFG.cameraSwing, dt);                 // ~98% done in cameraSwing
-  cam.y += (b.y - cam.y) * damp(14, dt);
+  // Falling off an edge: the camera sinks only slowly (hovers near the platform) and looks down at the falling bike.
+  cam.y += ((b.falling && b.y < cam.y - 0.5 ? b.y * 0.25 : b.y) - cam.y) * damp(b.falling ? 6 : 14, dt);
+  cam.fall += ((b.falling ? 1 : 0) - cam.fall) * damp(8, dt);
   const fx = Math.sin(cam.yaw), fz = Math.cos(cam.yaw);
   camera.position.set(cam.fx - fx * c.back, c.up + cam.y * 0.6, cam.fz - fz * c.back);
-  look.set(cam.fx + fx * c.lookAhead, c.lookY + cam.y * 0.5, cam.fz + fz * c.lookAhead);
+  const ly = c.lookY + cam.y * 0.5;
+  look.set(cam.fx + fx * c.lookAhead * (1 - 0.6 * cam.fall), ly + (b.y - ly) * cam.fall, cam.fz + fz * c.lookAhead * (1 - 0.6 * cam.fall));
   camera.lookAt(look);
   const tf = c.fov + (b.speed > b.baseSpeed * 1.01 ? c.fovBoost : 0);
   cam.fov += (tf - cam.fov) * damp(c.fovLerp, dt);
@@ -426,7 +422,7 @@ function updateOrbit(dt) {
   if (Math.abs(camera.fov - cam.fov) > 0.01) { camera.fov = cam.fov; camera.updateProjectionMatrix(); }
 }
 // Call at every round start: snap the camera back to the player and clear leftover effects.
-export function resetCamera() { cam.yaw = null; cam.specId = null; cam.y = 0; }
+export function resetCamera() { cam.yaw = null; cam.specId = null; cam.y = 0; cam.fall = 0; }
 export function resetEffects() {
   nf = 0; fragMesh.count = 0;
   for (const f of flashes) { f.on = false; f.m.visible = false; }
@@ -444,7 +440,12 @@ export function render(state, dt, followId, extra = 0) {
     v.px = b.x + b.dx * ex; v.pz = b.z + b.dz * ex;
     v.group.visible = b.alive;
     v.group.position.set(v.px, b.y, v.pz);
+    v.group.rotation.order = 'YXZ';
     v.group.rotation.y = Math.atan2(b.dx, b.dz);
+    // falling off an edge: nose dips and the bike rolls as it drops (visual only)
+    v.fall = b.alive && b.falling ? v.fall + dt : 0;
+    const tum = Math.max(0, v.fall - 0.12);
+    v.group.rotation.x = Math.min(1.25, tum * 2.2); v.group.rotation.z = Math.sin(tum * 2.5) * Math.min(1, tum * 3) * 0.6;
     if (b.alive) { const sp = b.speed * dt / WHEEL_R; v.wheels[0].rotation.x += sp; v.wheels[1].rotation.x += sp; }
     syncTrail(b, v, ex, dt);
     if (b.alive) { if (b.id === followId) follow = b; else if (b.id === cam.specId) alt = b; }

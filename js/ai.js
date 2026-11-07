@@ -61,7 +61,7 @@ export function freeDist(state, b, dx, dz, max) { return probe(state, b, dx, dz,
 
 // Is there a safe platform to jump onto beyond the hazard `f` units ahead? -> {w, g} (gap width, landing height) or null.
 function findLanding(state, b, dx, dz, f) {
-  const map = mapOf(state), r = ratio(b), maxW = 11 * r;
+  const map = mapOf(state), r = ratio(b), maxW = 8 * r;
   for (let w = 0.5; w <= maxW; w += 0.5) {
     const lx = b.x + dx * (f + w), lz = b.z + dz * (f + w), g = groundAt(map, lx, lz);
     if (g === -Infinity) continue;
@@ -71,14 +71,39 @@ function findLanding(state, b, dx, dz, f) {
   return null;
 }
 
-// Will a jump from here come down on solid ground? The arc lasts ~1.2 s, so the bike is back at takeoff height about
-// 1.2*speed units ahead. Needs a platform there that is not higher than the jump can climb. (Walled single-platform arenas
-// keep the phase-3 behaviour and skip this.)
+// Is any trail across the straight line ahead between `from` and `to` units from the head (ignoring heights)? Used to make sure
+// a jump does not come down inside another trail.
+function trailBetween(state, b, from, to) {
+  const m = 0.6;
+  for (const o of state.bikes) {
+    if (!o.alive) continue;
+    const last = o.trail[o.trail.length - 1];
+    for (const s of o.trail) {
+      if (o === b && s === last) continue;
+      const x0 = Math.min(s.x1, s.x2), x1 = Math.max(s.x1, s.x2), z0 = Math.min(s.z1, s.z2), z1 = Math.max(s.z1, s.z2);
+      let t0, t1;
+      if (b.dx !== 0) {
+        if (b.z < z0 - m || b.z > z1 + m) continue;
+        t0 = b.dx > 0 ? x0 - b.x : b.x - x1; t1 = b.dx > 0 ? x1 - b.x : b.x - x0;
+      } else {
+        if (b.x < x0 - m || b.x > x1 + m) continue;
+        t0 = b.dz > 0 ? z0 - b.z : b.z - z1; t1 = b.dz > 0 ? z1 - b.z : b.z - z0;
+      }
+      if (t1 >= from && t0 <= to) return true;
+    }
+  }
+  return false;
+}
+
+// Will a jump from here come down on solid ground and clear of other trails? The arc (CFG.jump rise+fall) brings the bike back to
+// takeoff height about T*speed units ahead; it is below trail height for the last ~20% of it. Needs a platform there that is not
+// higher than the jump can climb, and no trail in that landing stretch.
 function jumpLandsSafely(state, b) {
   const map = mapOf(state);
+  const L = (CFG.jump.rise + CFG.jump.float + CFG.jump.fall) * b.speed;
+  if (trailBetween(state, b, L * 0.78, L + 1)) return false;
   if (map.walls && map.platforms.length === 1) return true;
-  const L = (CFG.jump.rise + CFG.jump.float + CFG.jump.fall) * b.speed * 0.95;
-  const g = groundAt(map, b.x + b.dx * L, b.z + b.dz * L);
+  const g = groundAt(map, b.x + b.dx * L * 0.95, b.z + b.dz * L * 0.95);
   return g > -Infinity && g <= b.y + JUMP_UP;
 }
 
