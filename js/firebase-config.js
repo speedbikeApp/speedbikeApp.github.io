@@ -7,12 +7,12 @@
 // While any required value still starts with "YOUR_" (or is empty) the game runs fully offline as before and the
 // ACCOUNT screen says "Online accounts not configured".
 export const firebaseConfig = {
-  apiKey: 'YOUR_API_KEY',
-  authDomain: 'YOUR_PROJECT_ID.firebaseapp.com',
-  projectId: 'YOUR_PROJECT_ID',
-  storageBucket: 'YOUR_PROJECT_ID.appspot.com',
-  messagingSenderId: 'YOUR_SENDER_ID',
-  appId: 'YOUR_APP_ID',
+  apiKey: 'AIzaSyABu0WFgNP_scfWtJ4kIrHkUKCmTGQTBMM',
+  authDomain: 'speedbike-9a552.firebaseapp.com',
+  projectId: 'speedbike-9a552',
+  storageBucket: 'speedbike-9a552.firebasestorage.app',
+  messagingSenderId: '526006764314',
+  appId: '1:526006764314:web:73570f9891531760ce62a3',
 };
 
 // Pinned Firebase JS SDK version loaded from Google's CDN (no build step).
