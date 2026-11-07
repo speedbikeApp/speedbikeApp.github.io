@@ -26,8 +26,9 @@ function showHint(input, text) { hintOf(input).textContent = text || ''; input.c
 // Each form: field validators (id -> () => error string), optional extra enable-check, and run() -> success text.
 const FORMS = {
   acLogin: {
-    fields: { acLoginEmail: () => auth.validateEmail(val('acLoginEmail')), acLoginPw: () => (val('acLoginPw') ? '' : 'Enter your password') },
-    run: async () => { await auth.login(val('acLoginEmail'), val('acLoginPw')); },
+    // Value with '@' = email login, anything else = username login (validated server-side; bad names just get the generic error).
+    fields: { acLoginEmail: () => { const v = val('acLoginEmail').trim(); return !v ? 'Enter your email or username' : v.includes('@') ? auth.validateEmail(v) : ''; }, acLoginPw: () => (val('acLoginPw') ? '' : 'Enter your password') },
+    run: async () => { await auth.login(val('acLoginEmail'), val('acLoginPw'), { onStatus: (s) => { if (s === 'waking') setMsg($('acLogin'), 'Waking up the login server… (can take up to a minute)', 'wait'); } }); },
   },
   acReg: {
     fields: {
@@ -82,10 +83,11 @@ async function submit(id, e) {
   const ctl = [...form.querySelectorAll('input, button')], was = ctl.map((c) => c.disabled), btn = form.querySelector('button[type=submit]'), label = btn.textContent;
   ctl.forEach((c) => { c.disabled = true; }); btn.textContent = 'PLEASE WAIT...'; setMsg(form, '');
   let text = null;
-  try { text = await f.run(); } catch (err) { setMsg(form, err && err.message ? err.message : 'Something went wrong', 'err'); text = undefined; }
+  try { text = await f.run(); } catch (err) { setMsg(form, err && err.message ? err.message : 'Something went wrong', 'err'); text = false; }
   form.dataset.busy = '0'; btn.textContent = label;
   ctl.forEach((c, i) => { c.disabled = was[i]; });
   if (text) setMsg(form, text, 'ok');
+  else if (text !== false && msgOf(form).classList.contains('wait')) setMsg(form, ''); // success after waiting for the login server
   if (id === 'acDelForm') validateForm(id, false);
 }
 
@@ -145,7 +147,7 @@ export async function initAccountUi(h) {
   }
   $('acForgot').addEventListener('click', async () => {
     const form = $('acLogin'), err = auth.validateEmail(val('acLoginEmail'));
-    if (err) { touched.add('acLoginEmail'); showHint($('acLoginEmail'), err); $('acLoginEmail').focus(); return; }
+    if (err) { touched.add('acLoginEmail'); showHint($('acLoginEmail'), 'Password reset: enter your account email'); $('acLoginEmail').focus(); return; }
     setMsg(form, 'Sending...');
     try { await auth.resetPassword(val('acLoginEmail')); setMsg(form, 'If that email has an account, a reset link was sent', 'ok'); } catch (e) { setMsg(form, e.message, 'err'); }
   });

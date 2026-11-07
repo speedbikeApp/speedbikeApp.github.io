@@ -122,6 +122,8 @@
   .acBtns .mbtn { min-width: 0; flex: 1; }
   .acMsg { min-height: 14px; font-size: 11px; letter-spacing: 1px; text-align: center; font-family: sans-serif; color: #fc3; }
   .acMsg.err { color: #f88; } .acMsg.ok { color: #7f7; }
+  .acMsg.wait::before { content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 6px; vertical-align: -1px; border: 2px solid #fc3; border-top-color: transparent; border-radius: 50%; animation: acSpin .8s linear infinite; }
+  @keyframes acSpin { to { transform: rotate(360deg); } }
   .acWho { display: flex; flex-direction: column; align-items: center; gap: 2px; } .acWho b { font-size: 20px; color: #fff; text-shadow: 0 0 8px #0ff; letter-spacing: 3px; overflow-wrap: anywhere; } .acWho small { font-size: 11px; opacity: .8; font-family: sans-serif; letter-spacing: 1px; overflow-wrap: anywhere; }
   .acMock { font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #fc3; border: 1px dashed #fc3; padding: 3px 10px; }
   .acNote { display: flex; flex-direction: column; gap: 4px; align-items: center; font-size: 15px; letter-spacing: 2px; } .acNote small { font-size: 11px; opacity: .8; font-family: sans-serif; letter-spacing: 0; }
@@ -393,9 +395,9 @@
     <div id="acOut" class="acBox" hidden>
       <div id="acTabs" class="mrow"><button class="mbtn frame sel" type="button" data-tab="login">LOGIN</button><button class="mbtn frame" type="button" data-tab="register">REGISTER</button></div>
       <form id="acLogin" class="acForm" novalidate>
-        <label class="fld"><span>EMAIL</span><input id="acLoginEmail" type="email" autocomplete="email" spellcheck="false" autocapitalize="off" maxlength="254" inputmode="email"><small class="hint" aria-live="polite"></small></label>
+        <label class="fld"><span>EMAIL OR USERNAME</span><input id="acLoginEmail" type="text" autocomplete="username" spellcheck="false" autocapitalize="off" maxlength="254"><small class="hint" aria-live="polite"></small></label>
         <label class="fld"><span>PASSWORD</span><input id="acLoginPw" type="password" autocomplete="current-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label>
-        <div class="acBtns"><button class="mbtn frame primary" type="submit">LOGIN</button><button id="acForgot" class="mbtn frame" type="button">FORGOT PASSWORD?</button></div>
+        <div class="acBtns"><button class="mbtn frame primary" type="submit">LOGIN</button><button id="acForgot" class="mbtn frame" type="button" title="Enter your account email, then press this to get a reset link">FORGOT PASSWORD?</button></div>
         <div class="acMsg" role="status"></div>
       </form>
       <form id="acReg" class="acForm" novalidate hidden>

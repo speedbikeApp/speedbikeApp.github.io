@@ -11,12 +11,15 @@ import { createJsonStore, createFirestoreStore } from './store.js';
 import { Matchmaker } from './matchmaker.js';
 import { Room } from './room.js';
 import { settleMatch } from './ranking.js';
+import { createLoginHandler, createFirebaseLoginDeps } from './login.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // opts: { auth, store, port, timeScale (TEST ONLY: speeds the sim up), countdownMs, allowedOrigins:[...] , log, loopMs (scheduler interval, default 16) }
 export function createGameServer(opts) {
   const { auth, store, timeScale = 1, allowedOrigins = [], log = console.log } = opts;
+  // POST /auth/login (server/login.js). Without opts.login (dev auth / tests) the endpoint answers 503 {code:'unavailable'}.
+  const loginHandler = opts.login || createLoginHandler({ enabled: false, allowedOrigins, production: !!opts.production });
   const sessions = new Set(), byUid = new Map(), rooms = new Map();
   let featured = featuredMode(Date.now()), onlineTimer = null, nextRoomId = 0;
 
@@ -132,6 +135,7 @@ export function createGameServer(opts) {
   }
 
   const server = http.createServer((req, res) => {
+    if (req.url.split('?')[0] === '/auth/login') return void loginHandler(req, res).catch((e) => { log('[login] crashed:', e.message); if (!res.headersSent) res.writeHead(500); res.end(); });
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -206,14 +210,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const env = process.env;
   const mode = resolveAuthMode(env);
   if (mode === 'dev' && env.NODE_ENV === 'production' && env.DEV_AUTH !== '1') throw new Error('refusing dev auth in production; set Firebase credentials (or DEV_AUTH=1 to force)');
-  let auth, store;
-  if (mode === 'firebase') { const fb = await createFirebaseAuth(env); auth = fb.auth; store = createFirestoreStore(fb.db); }
+  const allowedOrigins = (env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean), production = env.NODE_ENV === 'production';
+  let auth, store, login;
+  if (mode === 'firebase') {
+    const fb = await createFirebaseAuth(env); auth = fb.auth; store = createFirestoreStore(fb.db);
+    login = createLoginHandler({ enabled: true, allowedOrigins, production, log: console.log, ...createFirebaseLoginDeps({ db: fb.db, auth: fb.fbAuth }, env) });
+  }
   else { auth = createDevAuth(); store = createJsonStore(env.RANKS_FILE || path.join(HERE, 'data', 'ranks.json')); }
   console.log(`[server] auth=${auth.mode} ranks=${store.kind}`);
   const app = createGameServer({
     auth, store, timeScale: Number(env.TIME_SCALE) || 1, // TIME_SCALE is for tests only
     countdownMs: Number(env.LOBBY_COUNTDOWN_MS) || undefined,
-    allowedOrigins: (env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean),
+    allowedOrigins, login, production,
   });
   const port = await app.listen(Number(env.PORT) || 8787);
   console.log(`[server] listening on :${port}  (health: http://localhost:${port}/health)`);

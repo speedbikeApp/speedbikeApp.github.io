@@ -24,6 +24,27 @@ Dev auth lets anyone claim any uid: never expose it to the internet. Open the ga
 3. The server then verifies client ID tokens (`verifyIdToken`, project `speedbike-9a552`), reads the username from `users/{uid}`
    and keeps ranks in Firestore `ranks/{uid}` (Admin SDK bypasses rules; clients may only read, see `../firestore.rules`: publish them).
 
+## Username login: `POST /auth/login`
+
+Lets the client log in with a username without ever learning the email. Body (JSON only, `Content-Type: application/json`, max 2 KB): `{"username","password"}`.
+The server reads `usernames/{lowercase}` -> uid, gets the email with `admin.auth().getUser(uid)`, verifies the password via the Firebase Auth REST API
+(`accounts:signInWithPassword`, Node `fetch`), and answers `200 {ok:true, token}` where `token` is `admin.auth().createCustomToken(uid)` (the client calls `signInWithCustomToken`).
+The email and the REST id/refresh tokens are never returned or logged.
+
+| status | body | when |
+|---|---|---|
+| 200 | `{ok:true, token}` | success |
+| 401 | `{ok:false, code:'invalid_credentials'}` | unknown/malformed username, wrong password, disabled user (identical, and padded to >= 700 ms) |
+| 429 | `{ok:false, code:'rate_limited', retryAfter}` | per-IP 10 / 5 min, per-username 10 / 15 min (in memory, resets on restart), or Firebase `TOO_MANY_ATTEMPTS` (+ `Retry-After` header) |
+| 400 / 413 / 415 / 405 | `{ok:false, code}` | bad JSON or shape / body over 2 KB / not JSON / not POST |
+| 403 | `{ok:false, code:'forbidden_origin'}` | `Origin` not in `ALLOWED_ORIGINS` (localhost origins are also allowed when `NODE_ENV` is not `production`) |
+| 503 | `{ok:false, code:'unavailable'}` | dev-auth mode (no Firebase credentials), or Firestore/Firebase unreachable |
+
+CORS: only allowed origins get `Access-Control-Allow-Origin` (echoed, never `*`); `OPTIONS` preflight is answered. Client IP = first hop of `x-forwarded-for`
+(Render/Cloudflare), else the socket address. Caveat: a client can prepend its own `x-forwarded-for` entry to dodge the per-IP limit; the per-username limit still caps guessing per account
+(and lets an attacker lock a known username out for 15 min: accepted trade-off). Code: `login.js` (dependency-injected: lookup / verifyPassword / createToken / now / sleep), tests: `test/login.test.mjs`.
+The Firebase service account must be allowed to sign custom tokens (a normal service-account key is).
+
 ## Environment variables
 
 | var | default | meaning |
@@ -33,7 +54,8 @@ Dev auth lets anyone claim any uid: never expose it to the internet. Open the ga
 | `DEV_AUTH` | auto | `1` force dev auth, `0` forbid it (fail without credentials); unset = dev only when no credentials |
 | `FIREBASE_PROJECT_ID` | speedbike-9a552 | project for token verification |
 | `RANKS_FILE` | server/data/ranks.json | JSON rank file (dev mode) |
-| `ALLOWED_ORIGINS` | any | comma-separated browser origins allowed to connect |
+| `ALLOWED_ORIGINS` | any (websocket) / none (login CORS in production) | comma-separated browser origins allowed to connect; also the CORS allow-list of `/auth/login` |
+| `FIREBASE_WEB_API_KEY` | public key from `js/firebase-config.js` | web API key for the Auth REST password check (public by design) |
 | `LOBBY_COUNTDOWN_MS` | 30000 | lobby countdown (tests) |
 | `TIME_SCALE` | 1 | TEST ONLY: runs the sim N times faster than real time |
 | `NODE_ENV=production` | | refuses dev auth unless `DEV_AUTH=1` is explicit |
@@ -41,7 +63,7 @@ Dev auth lets anyone claim any uid: never expose it to the internet. Open the ga
 ## Files
 
 `index.js` http + ws + glue, shared 16 ms loop (rooms, lobby timers, rotation, heartbeat) | `protocol.js` message validation + rate limiter |
-`auth.js` dev / Firebase auth | `store.js` ranks (atomic JSON file or Firestore) | `ranking.js` applies results + announcements |
+`auth.js` dev / Firebase auth | `login.js` `POST /auth/login` (username login) | `store.js` ranks (atomic JSON file or Firestore) | `ranking.js` applies results + announcements |
 `matchmaker.js` queues and lobbies (clock-injected, no timers) | `room.js` one match | `test/` (`npm test`; `e2e.test.mjs` plays full matches over real sockets).
 
 ## How a room runs

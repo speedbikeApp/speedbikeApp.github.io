@@ -35,7 +35,7 @@ export async function createFirebaseAuth(env = process.env) {
   const db = admin.firestore(app), fbAuth = admin.auth(app);
   console.log(`[auth] FIREBASE mode: verifying ID tokens for project ${projectId}`);
   return {
-    db,
+    db, fbAuth,
     auth: {
       mode: 'firebase',
       async verify(hello) {

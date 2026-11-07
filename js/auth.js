@@ -5,6 +5,7 @@
 // Firestore data model: users/{uid} = {username, createdAt}; usernames/{lowercaseName} = {uid, createdAt}.
 import { sanitizeName, NAME_MAX } from './save.js';
 import { firebaseConfig, isConfigured, FIREBASE_VERSION } from './firebase-config.js';
+import { CFG } from './config.js';
 
 export const USERNAME_MIN = 3;
 export const PASSWORD_MIN = 8;
@@ -19,6 +20,8 @@ const MESSAGES = {
   'username-taken': 'That username is already taken',
   'email-in-use': 'An account with that email already exists',
   'invalid-credential': 'Wrong email or password',
+  'invalid-login': 'Wrong username or password',
+  'login-unavailable': 'Login server unavailable — try logging in with your email',
   'wrong-password': 'Current password is incorrect',
   'too-many-requests': 'Too many attempts. Try again later',
   'user-disabled': 'This account has been disabled',
@@ -86,11 +89,69 @@ export async function register(email, password, username) {
   await b.register(String(email).trim(), password, normalizeUsername(username));
   return currentUser();
 }
-export async function login(email, password) {
+/** True when the login identifier is an email address (contains '@'; usernames can never contain it). */
+export const isEmailIdentifier = (v) => typeof v === 'string' && v.includes('@');
+
+/** HTTP(S) URL of the game server's login endpoint, derived from the WebSocket URL (ws->http, wss->https). '' when it cannot be derived. */
+export function loginServerUrl(wsUrl = serverWsUrl()) {
+  try {
+    const u = new URL(String(wsUrl));
+    if (u.protocol !== 'ws:' && u.protocol !== 'wss:') return '';
+    u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+    u.pathname = '/auth/login'; u.search = ''; u.hash = ''; u.username = ''; u.password = '';
+    return u.toString();
+  } catch { return ''; }
+}
+function serverWsUrl() { // same rule as net.js serverUrl: ?server=ws://... wins over CFG.net.url
+  try { const q = new URLSearchParams(globalThis.location?.search || '').get('server'); if (q && /^wss?:\/\/[^\s]+$/i.test(q)) return q; } catch { /* ignore */ }
+  return CFG.net.url;
+}
+
+export const LOGIN_WAKE_MS = 60000; // how long we keep retrying while the (sleeping) login server wakes up
+
+/** POST {username,password} to the login server -> custom token string. Retries network errors / 5xx for up to LOGIN_WAKE_MS (Render free tier sleeps).
+ *  deps: {fetch, sleep, now, onStatus('waking'), wakeMs, retryMs, timeoutMs}. Throws fail('invalid-login' | 'rate-limited' | 'login-unavailable'). */
+export async function fetchLoginToken(url, username, password, deps = {}) {
+  const doFetch = deps.fetch || globalThis.fetch, now = deps.now || (() => Date.now());
+  const sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const wakeMs = deps.wakeMs ?? LOGIN_WAKE_MS, retryMs = deps.retryMs ?? 2500, timeoutMs = deps.timeoutMs ?? 15000;
+  if (!url || typeof doFetch !== 'function') throw fail('login-unavailable');
+  const deadline = now() + wakeMs;
+  let waking = false;
+  for (;;) {
+    let res = null, body = null;
+    try {
+      res = await doFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }), cache: 'no-store', credentials: 'omit', signal: globalThis.AbortSignal?.timeout ? AbortSignal.timeout(timeoutMs) : undefined });
+      try { body = await res.json(); } catch { body = null; }
+    } catch { res = null; } // unreachable / asleep (no CORS headers on the proxy's wake-up page) / timed out
+    if (res) {
+      if (res.status === 200 && body && body.ok === true && typeof body.token === 'string' && body.token) return body.token;
+      if (res.status === 401 || res.status === 400) throw fail('invalid-login');
+      if (res.status === 429) {
+        const secs = Number(body && body.retryAfter) || Number(res.headers?.get?.('retry-after')) || 60;
+        const e = fail('too-many-requests'); e.code = 'rate-limited'; e.retryAfter = secs;
+        e.message = `Too many attempts, try again in ${Math.max(1, Math.ceil(secs / 60))} min`; throw e;
+      }
+      if (body && body.code === 'unavailable') throw fail('login-unavailable'); // the server itself says it cannot do username login: do not wait
+    }
+    if (now() >= deadline) throw fail('login-unavailable');
+    if (!waking) { waking = true; try { deps.onStatus && deps.onStatus('waking'); } catch { /* ignore */ } }
+    await sleep(retryMs);
+  }
+}
+
+/** Log in with an email (contains '@') or a username. opts.onStatus('waking') fires if the login server is asleep. */
+export async function login(identifier, password, opts = {}) {
   const b = need();
-  if (validateEmail(email)) throw fail('invalid-email');
-  if (typeof password !== 'string' || !password) throw fail('invalid-credential');
-  await b.login(String(email).trim(), password);
+  const id = typeof identifier === 'string' ? identifier.trim() : '';
+  if (typeof password !== 'string' || !password) throw fail(isEmailIdentifier(id) ? 'invalid-credential' : 'invalid-login');
+  if (isEmailIdentifier(id)) {
+    if (validateEmail(id)) throw fail('invalid-email');
+    await b.login(id, password);
+  } else {
+    if (validateUsername(id) || password.length > 128) throw fail('invalid-login'); // malformed name: same generic error, no request
+    await b.loginUsername(normalizeUsername(id), password, opts);
+  }
   return currentUser();
 }
 export async function logout() { if (backend) await backend.logout(); }
@@ -137,6 +198,11 @@ function createMock(emitUser, storage) {
       if (!uid || d.users[uid].password !== password) throw fail('invalid-credential');
       d.session = uid; save(d); emitUser(pub(d, uid));
     },
+    async loginUsername(username, password) { // same generic failure for unknown name and wrong password
+      const d = load(), uid = d.names[nameKey(username)];
+      if (!uid || !d.users[uid] || d.users[uid].password !== password) throw fail('invalid-login');
+      d.session = uid; save(d); emitUser(pub(d, uid));
+    },
     async logout() { const d = load(); d.session = null; save(d); emitUser(null); },
     async changeUsername(name) {
       const d = load(), uid = d.session, k = nameKey(name);
@@ -170,7 +236,7 @@ const FB_CODES = {
   'auth/invalid-credential': 'invalid-credential', 'auth/invalid-login-credentials': 'invalid-credential', 'auth/email-already-in-use': 'email-in-use',
   'auth/weak-password': 'weak-password', 'auth/too-many-requests': 'too-many-requests', 'auth/network-request-failed': 'unavailable',
   'auth/requires-recent-login': 'recent-login', 'auth/user-disabled': 'user-disabled', 'permission-denied': 'denied', unavailable: 'unavailable',
-  'failed-precondition': 'unavailable', 'auth/operation-not-allowed': 'unconfigured',
+  'failed-precondition': 'unavailable', 'auth/operation-not-allowed': 'unconfigured', 'auth/invalid-custom-token': 'unavailable', 'auth/custom-token-mismatch': 'unavailable',
 };
 export function mapFirebaseError(err, reauth = false) {
   if (err && err.ours) return err; // already one of ours
@@ -217,6 +283,11 @@ async function createFirebase(emitUser, cfg) {
       emitUser({ uid: cred.user.uid, email: cred.user.email || email, username });
     }),
     login: (email, password) => wrap(async () => { await authM.signInWithEmailAndPassword(auth, email, password); }),
+    // Username login: the game server checks the password and returns a custom token (the email never reaches the browser).
+    loginUsername: (username, password, opts) => wrap(async () => {
+      const token = await fetchLoginToken(loginServerUrl(), username, password, { onStatus: opts && opts.onStatus });
+      await authM.signInWithCustomToken(auth, token);
+    }),
     logout: () => wrap(async () => { await authM.signOut(auth); }),
     changeUsername: (name) => wrap(async () => {
       const uid = auth.currentUser.uid, old = user.username;

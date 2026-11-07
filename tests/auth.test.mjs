@@ -78,7 +78,8 @@ assert.equal(A.status().mode, 'mock');
   await rejects(A.register('v@b.co', 'password123', 'ab'), 'invalid-username');
   await rejects(A.register('v@b.co', 'password123', 'bad<name>'), 'invalid-username');
   await rejects(A.register('v@b.co', 'password123', 'x'.repeat(13)), 'invalid-username');
-  await rejects(A.login('bad', 'x'), 'invalid-email');
+  await rejects(A.login('bad@', 'x'), 'invalid-email'); // '@' = email path
+  await rejects(A.login('bad', 'x'), 'invalid-login');   // no '@' = username path
   await rejects(A.resetPassword('bad'), 'invalid-email');
   await A.resetPassword('anyone@example.com');
   assert.equal(A.validateUsername('  Good  Name '), '');
@@ -92,5 +93,57 @@ assert.equal(A.status().mode, 'mock');
   assert.equal(A.mapFirebaseError({ code: 'auth/invalid-credential' }).code, 'invalid-credential');
   assert.equal(A.mapFirebaseError({ code: 'auth/network-request-failed' }).code, 'unavailable');
   assert.equal(A.mapFirebaseError({ code: 'weird', message: 'raw internal' }).message, 'Something went wrong. Try again');
+}
+{ // username login (mock backend): case-insensitive, generic errors, '@' routes to the email path
+  await fresh();
+  await A.register('Zed@Example.com', 'zedzedzed1', 'Zed_9'); await A.logout();
+  let u = await A.login('zed_9', 'zedzedzed1'); assert.equal(u.username, 'Zed_9'); await A.logout();
+  u = await A.login('  ZED_9 ', 'zedzedzed1'); assert.equal(u.username, 'Zed_9'); await A.logout();
+  u = await A.login('zed@example.com', 'zedzedzed1'); assert.equal(u.username, 'Zed_9'); await A.logout(); // email still works
+  const msgs = new Set();
+  for (const [id, pw] of [['zed_9', 'wrongwrong'], ['nobody1', 'zedzedzed1'], ['ab', 'zedzedzed1'], ['bad<name>', 'zedzedzed1'], ['x'.repeat(13), 'zedzedzed1'], ['zed_9', '']]) {
+    try { await A.login(id, pw); assert.fail('should reject'); } catch (e) { assert.equal(e.code, 'invalid-login'); msgs.add(e.message); }
+  }
+  assert.deepEqual([...msgs], ['Wrong username or password']); // unknown user / wrong password / malformed all identical
+  assert.equal(A.currentUser(), null);
+  await rejects(A.login('zed_9@example.com', 'zedzedzed1'), 'invalid-credential'); // has '@': treated as an email, never as a username
+  await rejects(A.login('not an email@', 'zedzedzed1'), 'invalid-email');
+  await A.login('zed_9', 'zedzedzed1'); await A.changeUsername('Zed_10'); await A.logout();
+  await rejects(A.login('zed_9', 'zedzedzed1'), 'invalid-login'); // old name released
+  assert.equal((await A.login('zed_10', 'zedzedzed1')).username, 'Zed_10');
+}
+{ // server URL derivation (ws -> http, wss -> https, fixed path)
+  assert.equal(A.loginServerUrl('ws://localhost:8787'), 'http://localhost:8787/auth/login');
+  assert.equal(A.loginServerUrl('wss://speedbike-server.onrender.com'), 'https://speedbike-server.onrender.com/auth/login');
+  assert.equal(A.loginServerUrl('wss://host.example/some/path/?x=1#h'), 'https://host.example/auth/login');
+  assert.equal(A.loginServerUrl('http://nope'), ''); assert.equal(A.loginServerUrl('garbage'), '');
+  assert.equal(A.loginServerUrl(), 'wss://speedbike-server.onrender.com'.replace('wss', 'https') + '/auth/login'); // default = CFG.net.url (not localhost in node)
+  assert.equal(A.isEmailIdentifier('a@b'), true); assert.equal(A.isEmailIdentifier('abc'), false);
+}
+{ // fetchLoginToken: statuses, retry while the server wakes up, give-up, no waiting when the server says "unavailable"
+  const res = (status, body, headers = {}) => ({ status, json: async () => body, headers: { get: (k) => headers[k.toLowerCase()] ?? null } });
+  const clock = { t: 0 }, deps = (fetchFn, extra = {}) => ({ fetch: fetchFn, now: () => clock.t, sleep: async (ms) => { clock.t += ms; }, ...extra });
+  let sent = null;
+  assert.equal(await A.fetchLoginToken('http://x/auth/login', 'Ann', 'pw', deps(async (url, init) => { sent = { url, init }; return res(200, { ok: true, token: 'T' }); })), 'T');
+  assert.equal(sent.init.method, 'POST'); assert.deepEqual(JSON.parse(sent.init.body), { username: 'Ann', password: 'pw' });
+  assert.equal(sent.init.headers['Content-Type'], 'application/json'); assert.equal(sent.init.credentials, 'omit');
+  await rejects(A.fetchLoginToken('u', 'a', 'b', deps(async () => res(401, { ok: false, code: 'invalid_credentials' }))), 'invalid-login');
+  try { await A.fetchLoginToken('u', 'a', 'b', deps(async () => res(429, { code: 'rate_limited', retryAfter: 130 }))); assert.fail('429'); } catch (e) { assert.equal(e.code, 'rate-limited'); assert.equal(e.message, 'Too many attempts, try again in 3 min'); }
+  { // asleep: network errors and a 503 HTML page, then it answers; onStatus fires once
+    let n = 0, waking = 0; clock.t = 0;
+    const tok = await A.fetchLoginToken('u', 'a', 'b', deps(async () => { n++; if (n === 1) throw new TypeError('Failed to fetch'); if (n === 2) return { status: 503, json: async () => { throw new Error('html'); }, headers: { get: () => null } }; if (n === 3) return res(502, null); return res(200, { ok: true, token: 'LATE' }); }, { onStatus: (s) => { if (s === 'waking') waking++; } }));
+    assert.equal(tok, 'LATE'); assert.equal(n, 4); assert.equal(waking, 1);
+  }
+  { // never wakes: gives up after ~60 s with the "try your email" message
+    let n = 0; clock.t = 0;
+    try { await A.fetchLoginToken('u', 'a', 'b', deps(async () => { n++; throw new TypeError('Failed to fetch'); })); assert.fail('gave up'); } catch (e) { assert.equal(e.code, 'login-unavailable'); assert.match(e.message, /try logging in with your email/); }
+    assert.ok(clock.t >= 60000 && clock.t < 70000 && n > 10, `t=${clock.t} n=${n}`);
+  }
+  { // server in dev-auth mode answers {code:'unavailable'}: fail at once, no 60 s wait
+    let n = 0; clock.t = 0;
+    await rejects(A.fetchLoginToken('u', 'a', 'b', deps(async () => { n++; return res(503, { ok: false, code: 'unavailable' }); })), 'login-unavailable');
+    assert.equal(n, 1); assert.equal(clock.t, 0);
+  }
+  await rejects(A.fetchLoginToken('', 'a', 'b', deps(async () => res(200, { ok: true, token: 'x' }))), 'login-unavailable');
 }
 console.log('auth tests ok');

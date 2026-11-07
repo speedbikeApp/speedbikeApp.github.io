@@ -32,6 +32,8 @@ Accounts (register / login / user panel) use Firebase Auth + Firestore, loaded f
 7. **Authentication -> Settings -> Authorized domains -> Add domain**: `<your-github-username>.github.io` (and make sure `localhost` is listed for local testing).
 8. Optional: Authentication -> Templates lets you customise the password-reset email.
 
+Login accepts an **email or a username**. A username login goes through the game server (`POST /auth/login`, see `server/README.md`): it looks the email up privately, checks the password and returns a Firebase custom token, so emails are never exposed. The free Render server sleeps when idle, so the first username login can show "Waking up the login server..." for up to a minute; logging in with the email always works without the server. Registration stays email + username + password; "Forgot password" needs the account email.
+
 Dev / testing without Firebase: open `http://localhost:8000/?backend=mock`. This uses a localStorage-only fake backend (labelled "DEV MOCK" in the UI; never used unless that URL parameter is present).
 
 ## Multiplayer (ranked, up to 4 players)
