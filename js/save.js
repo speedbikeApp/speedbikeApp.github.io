@@ -17,6 +17,8 @@ export const defaults = () => ({
     muted: false, aiDifficulty: CFG.ai.difficulty, quality: 'high', keys: defaultKeys() },
   profile: { username: DEFAULT_NAME },
   coins: 0,
+  updatedAt: 0, // ms of the last progress change (cloud merge: newer save wins coins)
+  cloudUid: '', // account uid this save's progress belongs to ('' = guest / never synced)
   stats: { matches: 0, wins: 0, winStreak: 0, bestStreak: 0, kills: 0, distance: 0, boosts: 0, jumps: 0,
     bestRoundBoosts: 0, bestRoundJumps: 0, dmFlawless: 0, wins3d: 0, winsHyper: 0 },
   // parts: owned part ids per category (free ones are always present); achievements: earned ids
@@ -57,7 +59,7 @@ function clamp(d) {
   s.aiDifficulty = Math.min(2, Math.max(0, Math.round(s.aiDifficulty)));
   if (!(s.quality in CFG.quality)) s.quality = 'high';
   d.profile.username = sanitizeName(d.profile.username);
-  d.coins = Math.max(0, Math.floor(d.coins));
+  d.coins = Math.max(0, Math.floor(d.coins)); d.updatedAt = Math.max(0, Math.floor(d.updatedAt));
   // abilities: only known ids; free ones are always unlocked; equipped must be unlocked, unique, <= maxSlots
   const un = new Set(d.unlocks.abilities.filter(isAbilityId));
   for (const id of FREE_ABILITIES()) un.add(id);
@@ -85,12 +87,18 @@ export function parseSave(text) {
   return clamp(d);
 }
 
-let data = null, timer = null;
+let data = null, timer = null, lastP = '', onProgress = null;
+
+// Everything that is progress (synced to the account); settings / profile stay per device.
+export const progressOf = (d) => ({ coins: d.coins, updatedAt: d.updatedAt, stats: d.stats, unlocks: d.unlocks, equipped: d.equipped });
+const progressKey = (d) => JSON.stringify([d.coins, d.stats, d.unlocks, d.equipped]);
+/** fn() is called after a flush that changed progress (cloud sync hook). */
+export function setProgressListener(fn) { onProgress = fn; }
 
 export function loadSave() {
   let text = null;
   try { text = globalThis.localStorage.getItem(KEY); } catch { text = null; }
-  data = parseSave(text);
+  data = parseSave(text); lastP = progressKey(data);
   return data;
 }
 export const getSave = () => data || loadSave();
@@ -98,8 +106,19 @@ export const getSave = () => data || loadSave();
 export function flushSave() {
   if (timer) { clearTimeout(timer); timer = null; }
   if (!data) return;
+  const changed = progressKey(data) !== lastP;
+  if (changed) { lastP = progressKey(data); data.updatedAt = Date.now(); }
   try { globalThis.localStorage.setItem(KEY, JSON.stringify(data)); } catch { /* storage unavailable / full */ }
+  if (changed && onProgress) { try { onProgress(); } catch { /* sync bug must not break saving */ } }
 }
+/** Replace the progress fields with `p` (sanitized like a loaded save) and tag the save as belonging to account `uid`. */
+export function applyProgress(p, uid) {
+  const d = getSave(), n = parseSave(JSON.stringify({ ...d, ...p, cloudUid: uid || '' }));
+  for (const k of ['coins', 'updatedAt', 'stats', 'unlocks', 'equipped', 'cloudUid']) d[k] = n[k];
+  lastP = progressKey(d); flushSave();
+  return d;
+}
+export function setCloudUid(uid) { getSave().cloudUid = uid || ''; saveSoon(); }
 // Debounced write (call after every mutation).
 export function saveSoon(ms = 400) {
   if (timer) clearTimeout(timer);

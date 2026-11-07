@@ -3,6 +3,7 @@
 import * as auth from './auth.js';
 import { setUsername, saveSoon } from './save.js';
 import { setPlayerName } from './hud.js';
+import { cloudUserChanged, flushCloud, initCloudSave, setOnApplied } from './cloudsave.js';
 
 const $ = (id) => document.getElementById(id);
 const val = (id) => $(id).value;
@@ -132,12 +133,13 @@ function onUser(u) {
   const changed = (user && user.uid) !== (u && u.uid);
   user = u;
   if (u) { const n = setUsername(u.username); setPlayerName(n); saveSoon(); }
+  cloudUserChanged(u); // load + merge account progress (silent on failure)
   if (changed) { resetForms(); if (!u) tab = 'login'; }
   renderAccount();
 }
 
 export async function initAccountUi(h) {
-  onBack = h.back;
+  onBack = h.back; setOnApplied(h.refresh || (() => {})); initCloudSave();
   $('acBack').addEventListener('click', () => onBack());
   for (const b of $('acTabs').children) b.addEventListener('click', () => { setTab(b.dataset.tab); });
   for (const id of Object.keys(FORMS)) {
@@ -151,7 +153,7 @@ export async function initAccountUi(h) {
     setMsg(form, 'Sending...');
     try { await auth.resetPassword(val('acLoginEmail')); setMsg(form, 'If that email has an account, a reset link was sent', 'ok'); } catch (e) { setMsg(form, e.message, 'err'); }
   });
-  $('acLogout').addEventListener('click', async () => { $('acLogout').disabled = true; try { await auth.logout(); } finally { $('acLogout').disabled = false; } });
+  $('acLogout').addEventListener('click', async () => { $('acLogout').disabled = true; try { await Promise.race([flushCloud(), new Promise((r) => setTimeout(r, 2000))]); await auth.logout(); } finally { $('acLogout').disabled = false; } });
   $('acDelShow').addEventListener('click', () => { $('acDelShow').hidden = true; $('acDelForm').hidden = false; validateForm('acDelForm', false); $('acDelPw').focus(); });
   $('acDelCancel').addEventListener('click', () => { resetForms(); $('acDelShow').focus(); });
   statusLine();

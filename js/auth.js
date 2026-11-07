@@ -2,7 +2,7 @@
 // No DOM. Never logs passwords. All failures are Errors with .code and a friendly .message.
 //
 // User object everywhere: { uid, email, username }.
-// Firestore data model: users/{uid} = {username, createdAt}; usernames/{lowercaseName} = {uid, createdAt}.
+// Firestore data model: users/{uid} = {username, createdAt, progress}; progress = synced save fields (see cloudsave.js); usernames/{lowercaseName} = {uid, createdAt}.
 import { sanitizeName, NAME_MAX } from './save.js';
 import { firebaseConfig, isConfigured, FIREBASE_VERSION } from './firebase-config.js';
 import { CFG } from './config.js';
@@ -166,6 +166,10 @@ export async function changePassword(currentPw, newPw) {
   if (validatePassword(newPw)) throw fail('weak-password');
   await b.changePassword(String(currentPw ?? ''), newPw);
 }
+/** Cloud progress of the signed-in user: object, or null when none stored yet. Throws on network errors. */
+export async function loadProgress() { const b = needUser(); return b.loadProgress(); }
+/** Store progress (plain JSON object) in the signed-in user's own doc. */
+export async function saveProgress(p) { const b = needUser(); await b.saveProgress(p); }
 export async function deleteAccount(currentPw) { const b = needUser(); await b.deleteAccount(String(currentPw ?? '')); }
 export async function resetPassword(email) {
   const b = need();
@@ -221,9 +225,11 @@ function createMock(emitUser, storage) {
       const d = load(), uid = d.session;
       if (!uid || !d.users[uid]) throw fail('not-signed-in');
       if (d.users[uid].password !== currentPw) throw fail('wrong-password');
-      delete d.names[nameKey(d.users[uid].username)]; delete d.users[uid]; d.session = null; save(d);
+      delete d.names[nameKey(d.users[uid].username)]; delete d.users[uid]; if (d.progress) delete d.progress[uid]; d.session = null; save(d);
       emitUser(null);
     },
+    async loadProgress() { const d = load(), p = d.progress && d.progress[d.session]; return p ? JSON.parse(JSON.stringify(p)) : null; },
+    async saveProgress(p) { const d = load(); (d.progress ||= {})[d.session] = JSON.parse(JSON.stringify(p)); save(d); },
     async resetPassword() { /* pretend an email was sent, same answer for unknown addresses */ },
     _dump: () => load(),
   };
@@ -317,6 +323,9 @@ async function createFirebase(emitUser, cfg) {
       emitUser(null);
     }),
     resetPassword: (email) => wrap(async () => { await authM.sendPasswordResetEmail(auth, email); }),
+    // users/{uid}.progress (own doc, covered by the existing owner rule); merge keeps username / createdAt
+    loadProgress: () => wrap(async () => { const s = await fsM.getDoc(uref(auth.currentUser.uid)); return s.exists() && s.data().progress ? s.data().progress : null; }),
+    saveProgress: (p) => wrap(async () => { await fsM.setDoc(uref(auth.currentUser.uid), { progress: p }, { merge: true }); }),
     idToken: () => (auth.currentUser ? auth.currentUser.getIdToken() : Promise.resolve(null)),
   };
 }

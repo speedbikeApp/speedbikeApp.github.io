@@ -144,7 +144,7 @@ export function initMenu(h) {
   on('mGarage', () => showScreen('scrGarage'));
   on('mStats', () => showScreen('scrStats'));
   on('mAccount', () => showScreen('scrAccount'));
-  initAccountUi({ back: () => showScreen('scrMain') });
+  initAccountUi({ back: () => showScreen('scrMain'), refresh: () => { if (['scrMain', 'scrAbilities', 'scrGarage', 'scrStats'].includes(current)) showScreen(current); } });
   // Esc: close the delete confirmation first, else back to the main menu (capture phase: runs before the pause handler)
   addEventListener('keydown', (e) => { if (e.code === 'Escape' && current === 'scrAccount') { e.preventDefault(); if (!accountEsc()) showScreen('scrMain'); } });
   on('gBack', () => { saveSoon(); showScreen('scrMain'); });
