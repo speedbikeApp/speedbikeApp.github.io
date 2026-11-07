@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>SpeedBike</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;800&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; touch-action: none; user-select: none; -webkit-user-select: none; font-family: 'Orbitron', monospace; color: #0ff; }
+  canvas:not(#minimap) { display: block; position: fixed; inset: 0; }
+  :root { --neon: #0ff; }
+  .frame { border: 2px solid var(--neon); box-shadow: 0 0 10px var(--neon), inset 0 0 8px rgba(0,255,255,.25); background: rgba(0,20,30,.55); }
+  #hudTL { position: fixed; top: 10px; left: 10px; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+  #hudTL .row { display: flex; align-items: center; gap: 8px; font-size: 14px; letter-spacing: 1px; }
+  #hudIcon { width: 30px; height: 18px; }
+  #hudPts { display: flex; gap: 3px; }
+  #hudPts i { width: 20px; height: 8px; border: 1px solid var(--neon); background: transparent; }
+  #hudPts i.on { background: var(--c, #ff5a1f); box-shadow: 0 0 6px var(--c, #ff5a1f); }
+  #top { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  #timer { font-size: 28px; padding: 4px 16px; pointer-events: none; min-width: 7ch; text-align: center; }
+  button.neon { font: inherit; color: var(--neon); cursor: pointer; padding: 4px 18px; letter-spacing: 2px; font-size: 14px; }
+  button.neon:active { background: rgba(0,255,255,.25); }
+  #minimap { position: fixed; top: 10px; right: 10px; width: 140px; height: 140px; pointer-events: none; }
+  .abtn { position: fixed; bottom: 16px; width: 92px; height: 92px; padding: 0; font: inherit; color: var(--neon); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; touch-action: none; -webkit-tap-highlight-color: transparent; z-index: 2;
+    background: linear-gradient(to top, rgba(0,255,255,.5) calc(var(--f, 100) * 1%), rgba(0,20,30,.55) 0); }
+  #boostBtn { left: 16px; } #jumpBtn { right: 16px; }
+  .abtn b { font-size: 20px; font-weight: 800; letter-spacing: 1px; } .abtn small { font-size: 11px; letter-spacing: 2px; }
+  .abtn.ready { background: rgba(0,255,255,.3); } .abtn.ready b { color: #fff; text-shadow: 0 0 10px #0ff; }
+  .abtn.active { border-color: #fff; box-shadow: 0 0 18px #fff, inset 0 0 10px rgba(255,255,255,.5); }
+  /* ---- ability hexagon (bottom centre) + turn chevrons ---- */
+  #abBar { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; pointer-events: none; z-index: 2; }
+  #abWrap { width: 94px; height: 82px; filter: drop-shadow(0 0 7px #0ff); }
+  #abilityBtn { pointer-events: auto; position: relative; width: 100%; height: 100%; padding: 0; border: 0; font: inherit; color: var(--neon); cursor: pointer; background: #0ff; touch-action: none; -webkit-tap-highlight-color: transparent;
+    clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; }
+  #abilityBtn::before { content: ''; position: absolute; inset: 3px; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+    background: linear-gradient(to top, rgba(0,255,255,.45) calc(var(--f, 100) * 1%), rgba(0,20,30,.88) 0); }
+  #abilityBtn > * { position: relative; }
+  #abIcon { font-size: 16px; font-weight: 800; letter-spacing: 1px; line-height: 1; }
+  #abName { font-size: 9px; letter-spacing: 1px; margin-top: 2px; }
+  #abState { font-size: 17px; font-weight: 800; letter-spacing: 1px; line-height: 1.1; }
+  #abilityBtn.ready::before { background: rgba(0,90,100,.92); } #abilityBtn.ready #abState { color: #fff; text-shadow: 0 0 10px #0ff; }
+  #abilityBtn.active { background: #fff; } #abilityBtn.active #abState { color: #fff; }
+  #abilityBtn.none { background: #357; cursor: default; } #abilityBtn.none::before { background: rgba(0,20,30,.88); }
+  .chev { width: 24px; height: 38px; background: rgba(0,255,255,.2); transition: background .25s, filter .25s; }
+  #chevL { clip-path: polygon(100% 0, 0 50%, 100% 100%, 70% 50%); } #chevR { clip-path: polygon(0 0, 100% 50%, 0 100%, 30% 50%); }
+  .chev.lit { background: #0ff; filter: drop-shadow(0 0 6px #0ff); transition: none; }
+  #swapBtn { pointer-events: auto; position: absolute; top: 50%; left: calc(100% + 6px); transform: translateY(-50%); font: inherit; font-size: 12px; letter-spacing: 1px; color: var(--neon); padding: 4px 10px; cursor: pointer; white-space: nowrap; touch-action: none; visibility: hidden; -webkit-tap-highlight-color: transparent; }
+  #swapBtn:active { background: rgba(0,255,255,.25); }
+  /* ---- abilities screen ---- */
+  #abList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
+  .abItem { padding: 6px 10px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; letter-spacing: 1px; text-align: left; }
+  .abItem b { font-size: 14px; letter-spacing: 2px; } .abItem .tag { font-size: 9px; opacity: .7; letter-spacing: 2px; } .abItem p { margin: 0; font-size: 10px; opacity: .85; letter-spacing: .5px; font-family: sans-serif; }
+  .abItem.eq { border-color: #fff; } .abItem .mbtn { min-height: 32px; padding: 3px 10px; font-size: 12px; min-width: 0; }
+  #abMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; }
+  /* ---- menus ---- */
+  body.menu #hudTL, body.menu #top, body.menu #status, body.menu #boostBtn, body.menu #jumpBtn, body.menu #abBar, body.menu #minimap { display: none; }
+  #menu { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; touch-action: pan-y; }
+  #menu.dim { background: rgba(0,0,0,.6); }
+  #menu.home { background: radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, rgba(0,0,0,.65) 100%); }
+  .screen { display: none; flex-direction: column; align-items: center; gap: 10px; padding: 16px 28px; box-sizing: border-box; max-height: 94vh; max-width: 96vw; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin; }
+  .screen.on { display: flex; }
+  .screen { overflow-x: hidden; }
+  .screen h2 { margin: 0 0 4px; font-size: 22px; font-weight: 800; letter-spacing: 3px; text-shadow: 0 0 10px #0ff; }
+  #logo { margin: 0; text-align: center; line-height: .95; font-weight: 800; font-size: clamp(40px, 11vh, 84px); letter-spacing: 6px; color: #fff; text-shadow: 0 0 8px #0ff, 0 0 22px #0ff, 0 0 44px #08f; }
+  #logo span { display: block; color: #ff5a1f; text-shadow: 0 0 8px #f50, 0 0 22px #f50, 0 0 40px #a30; }
+  #tagline { font-size: 11px; letter-spacing: 4px; opacity: .8; margin-bottom: 6px; }
+  .mbtn { font: inherit; font-weight: 500; color: var(--neon); background: rgba(0,20,30,.6); cursor: pointer; min-width: 230px; min-height: 44px; padding: 8px 20px; font-size: 16px; letter-spacing: 3px; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  .mbtn:hover, .mbtn:focus-visible { background: rgba(0,255,255,.2); outline: none; }
+  .mbtn:active { background: rgba(0,255,255,.4); }
+  .mbtn.primary { font-weight: 800; font-size: 20px; color: #fff; text-shadow: 0 0 8px #0ff; }
+  .mbtn:disabled { opacity: .4; cursor: default; border-color: #357; box-shadow: none; color: #8ab; background: rgba(0,20,30,.4); }
+  .mbtn small { display: block; font-size: 9px; letter-spacing: 2px; margin-top: 2px; }
+  .mrow { display: flex; gap: 8px; align-items: stretch; justify-content: center; flex-wrap: wrap; }
+  .mrow .mbtn { min-width: 0; flex: 1; padding: 8px 14px; font-size: 14px; }
+  .mbtn.sel { background: rgba(0,255,255,.35); color: #fff; border-color: #fff; }
+  .lbl { font-size: 12px; letter-spacing: 3px; opacity: .85; margin-top: 4px; }
+  #coinLine { font-size: 13px; letter-spacing: 2px; }
+  .setrow { display: grid; grid-template-columns: 110px minmax(120px, 220px) 44px; align-items: center; gap: 10px; font-size: 13px; letter-spacing: 2px; width: 100%; }
+  .setrow span:last-child { text-align: right; font-size: 12px; }
+  .setrow input[type=range] { width: 100%; height: 32px; accent-color: #0ff; touch-action: pan-y; margin: 0; }
+  .setrow input[type=text], .setrow select { grid-column: 2 / span 2; font: inherit; font-size: 15px; color: #fff; background: rgba(0,20,30,.8); border: 2px solid var(--neon); padding: 8px; min-height: 22px; user-select: text; -webkit-user-select: text; box-sizing: border-box; width: 100%; letter-spacing: 2px; }
+  .setrow button { grid-column: 2 / span 2; }
+  .coins { color: #fc3; text-shadow: 0 0 8px #fa0; }
+  .panel .mbtn { min-width: 200px; }
+  @media (max-height: 460px) {
+    .screen { padding: 8px 18px; gap: 6px; } .screen h2 { font-size: 17px; margin: 0; }
+    #logo { font-size: 15vh; } #tagline { margin-bottom: 2px; }
+    .mbtn { min-height: 40px; padding: 5px 14px; font-size: 14px; } .mbtn.primary { font-size: 17px; }
+    .setrow input[type=range] { height: 28px; } .panel { padding: 10px 22px; gap: 6px; }
+    #countdown { font-size: 80px; }
+  }
+  /* ---- garage / stats / toasts ---- */
+  #gMain { display: flex; gap: 14px; align-items: stretch; width: min(740px, 86vw); }
+  #gLeft { flex: 0 0 38%; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  #gCanvas { width: 100%; height: 190px; display: block; position: static !important; }
+  #gInfo { font-size: 11px; letter-spacing: 2px; text-align: center; min-height: 28px; }
+  #gRight { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  #gTabs .mbtn { padding: 6px 4px; font-size: 12px; letter-spacing: 1px; min-height: 36px; }
+  #gList { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; }
+  .gcard { min-width: 0 !important; min-height: 50px !important; padding: 4px 6px !important; font-size: 11px !important; letter-spacing: 1px !important; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+  .gcard b { font-size: 12px; } .gcard small { margin-top: 0; font-size: 10px; } .gcard.locked { opacity: .7; } .gcard.sel { border-color: #fff; }
+  .sw { display: block; width: 26px; height: 8px; border-radius: 2px; box-shadow: 0 0 6px currentColor; margin-bottom: 1px; }
+  #gAct { width: 100%; min-width: 0; font-size: 16px; } #gAct.dim { opacity: .55; }
+  #gMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; }
+  #stGrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; width: min(740px, 86vw); }
+  .stCell { padding: 4px 6px; display: flex; flex-direction: column; align-items: center; }
+  .stCell small { font-size: 9px; letter-spacing: 2px; opacity: .8; } .stCell b { font-size: 17px; color: #fff; }
+  #stAch { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; width: min(740px, 86vw); }
+  .achRow { padding: 5px 8px; font-size: 11px; letter-spacing: 1px; text-align: left; display: flex; flex-direction: column; gap: 3px; }
+  .achRow small { font-size: 10px; opacity: .8; font-family: sans-serif; letter-spacing: 0; } .achRow .tag { float: right; font-size: 10px; opacity: .85; }
+  .achRow .bar { height: 6px; border: 1px solid var(--neon); } .achRow .bar i { display: block; height: 100%; background: var(--neon); box-shadow: 0 0 6px var(--neon); }
+  .achRow.done { border-color: #fc3; } .achRow.done .bar i { background: #fc3; box-shadow: 0 0 6px #fc3; } .achRow.done .tag { color: #fc3; }
+  #toasts { position: fixed; top: 100px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
+  .toast { padding: 6px 18px; font-size: 15px; font-weight: 800; letter-spacing: 3px; color: #fff; text-align: center; border-color: #fc3; box-shadow: 0 0 14px #fc3; background: rgba(20,14,0,.8); animation: toastIn .3s ease-out, toastOut .5s ease-in 4.2s forwards; }
+  .toast small { display: block; font-size: 10px; font-weight: 500; letter-spacing: 1px; color: #fc3; margin-top: 2px; }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(-14px); } } @keyframes toastOut { to { opacity: 0; } }
+  @media (max-height: 460px) {
+    #gCanvas { height: 120px; } #gMain { gap: 8px; } #gList { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+    .gcard { min-height: 40px !important; } #stGrid { grid-template-columns: repeat(5, minmax(0, 1fr)); } .stCell b { font-size: 14px; }
+    #gTabs .mbtn { min-height: 30px; } .toast { padding: 4px 12px; font-size: 12px; } #toasts { top: 96px; }
+  }
+  .overlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; font-size: 28px; text-shadow: 0 0 12px currentColor; }
+  .overlay.modal { pointer-events: auto; background: rgba(0,0,0,.45); }
+  .panel { padding: 18px 32px; min-width: 260px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .panel h2 { margin: 0 0 6px; font-size: 26px; font-weight: 800; }
+  .panel .line { font-size: 18px; }
+  #status { inset: auto; top: 96px; left: 50%; transform: translateX(-50%); font-size: 18px; letter-spacing: 3px; color: #fff; white-space: nowrap; padding: 4px 14px; background: rgba(0,20,30,.55); border: 1px solid var(--neon); }
+  #countdown { font-size: 120px; font-weight: 800; color: #fff; text-shadow: 0 0 24px #0ff; }
+  #rotate { background: #000; color: #0ff; z-index: 40; pointer-events: auto; }
+  @media (pointer: coarse) and (orientation: portrait) { #rotate { display: flex; } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body class="menu">
+<div id="hudTL" class="frame">
+  <div class="row">
+    <svg id="hudIcon" viewBox="0 0 30 18"><rect x="3" y="7" width="24" height="5" fill="currentColor"/><circle cx="6" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="2"/><rect x="17" y="3" width="8" height="4" fill="#fff"/></svg>
+    <span id="hudName">PLAYER</span>
+  </div>
+  <div id="hudPts"></div>
+</div>
+<div id="top">
+  <div id="timer" class="frame">100.000</div>
+  <button id="pause" class="neon frame" type="button">PAUSE</button>
+</div>
+<button id="boostBtn" class="abtn frame" type="button" tabindex="-1"><b>OK!!</b><small>BOOST</small></button>
+<button id="jumpBtn" class="abtn frame" type="button" tabindex="-1"><b>OK!!</b><small>JUMP</small></button>
+<div id="abBar">
+  <button id="swapBtn" class="frame" type="button" tabindex="-1"></button>
+  <div id="chevL" class="chev"></div>
+  <div id="abWrap"><button id="abilityBtn" class="none" type="button" tabindex="-1"><span id="abIcon">--</span><span id="abName">NONE</span><b id="abState"></b></button></div>
+  <div id="chevR" class="chev"></div>
+</div>
+<canvas id="minimap" class="frame" width="280" height="280"></canvas>
+<div id="status" class="overlay"></div>
+<div id="countdown" class="overlay"></div>
+<div id="roundResult" class="overlay"></div>
+<div id="matchResult" class="overlay modal" data-ui></div>
+<div id="pauseOverlay" class="overlay modal" data-ui>
+  <div class="panel frame"><h2>PAUSED</h2>
+    <button id="resume" class="mbtn frame primary" type="button">RESUME</button>
+    <button id="pRestart" class="mbtn frame" type="button">RESTART MATCH</button>
+    <button id="pSettings" class="mbtn frame" type="button">SETTINGS</button>
+    <button id="pQuit" class="mbtn frame" type="button">QUIT TO MENU</button>
+  </div>
+</div>
+<div id="menu" data-ui>
+  <div id="scrMain" class="screen">
+    <h1 id="logo">SPEED<span>BIKE</span></h1>
+    <div id="tagline">NEON LIGHT-CYCLE ARENA</div>
+    <button id="mPlay" class="mbtn frame primary" type="button">PLAY</button>
+    <div class="mrow" style="width:100%">
+      <button id="mSettings" class="mbtn frame" type="button">SETTINGS</button>
+      <button id="mAbilities" class="mbtn frame" type="button">ABILITIES</button>
+    </div>
+    <div class="mrow" style="width:100%">
+      <button id="mGarage" class="mbtn frame" type="button">GARAGE</button>
+      <button id="mStats" class="mbtn frame" type="button">STATS</button>
+    </div>
+    <div id="coinLine"><span class="coins">SBCOINS <b id="mCoins">0</b></span> &nbsp; <span id="mName"></span></div>
+  </div>
+  <div id="scrMode" class="screen frame">
+    <h2>SELECT MODE</h2>
+    <button id="modeStd" class="mbtn frame primary" type="button" data-mode="standard">STANDARD<small>FIRST TO 5 POINTS</small></button>
+    <div class="mrow" style="width:100%">
+      <button class="mbtn frame" type="button" data-mode="hyper">HYPER<small>25 U/S - FAST</small></button>
+      <button class="mbtn frame" type="button" data-mode="deathmatch">DEATH MATCH<small>3 LIVES - RESPAWN</small></button>
+      <button class="mbtn frame" type="button" data-mode="3d">3D<small>MULTI-LEVEL MAP</small></button>
+    </div>
+    <div class="lbl">AI DIFFICULTY</div>
+    <div id="diffRow" class="mrow" style="width:100%">
+      <button class="mbtn frame" type="button" data-diff="0">EASY</button>
+      <button class="mbtn frame" type="button" data-diff="1">NORMAL</button>
+      <button class="mbtn frame" type="button" data-diff="2">HARD</button>
+    </div>
+    <button id="modeBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrAbilities" class="screen frame">
+    <h2>ABILITIES</h2>
+    <div id="abHead" class="coins"></div>
+    <div id="abList"></div>
+    <div id="abMsg"></div>
+    <button id="abBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrGarage" class="screen frame">
+    <h2>GARAGE</h2>
+    <div id="gHead" class="coins"></div>
+    <div id="gMain">
+      <div id="gLeft"><canvas id="gCanvas"></canvas><div id="gInfo"></div><button id="gAct" class="mbtn frame primary" type="button"></button></div>
+      <div id="gRight">
+        <div id="gTabs" class="mrow"><button class="mbtn frame" type="button" data-cat="body">BODY</button><button class="mbtn frame" type="button" data-cat="tire">TIRES</button><button class="mbtn frame" type="button" data-cat="rim">RIMS</button><button class="mbtn frame" type="button" data-cat="glow">COLOR</button></div>
+        <div id="gList"></div>
+      </div>
+    </div>
+    <div id="gMsg"></div>
+    <button id="gBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrStats" class="screen frame">
+    <h2>STATS</h2>
+    <div id="stGrid"></div>
+    <div id="stSum" class="lbl"></div>
+    <div id="stAch"></div>
+    <button id="stBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrSettings" class="screen frame">
+    <h2>SETTINGS</h2>
+    <label class="setrow"><span>NAME</span><input id="sName" type="text" maxlength="12" autocomplete="off" spellcheck="false"></label>
+    <label class="setrow"><span>BLOOM</span><input id="sBloom" type="range" min="0" max="2" step="0.05"><span id="vBloom"></span></label>
+    <label class="setrow"><span>MASTER</span><input id="sMaster" type="range" min="0" max="100" step="1"><span id="vMaster"></span></label>
+    <label class="setrow"><span>MUSIC</span><input id="sMusic" type="range" min="0" max="100" step="1"><span id="vMusic"></span></label>
+    <label class="setrow"><span>SFX</span><input id="sSfx" type="range" min="0" max="100" step="1"><span id="vSfx"></span></label>
+    <div class="setrow"><span>SOUND</span><button id="sMute" class="mbtn frame" type="button"></button></div>
+    <label class="setrow"><span>QUALITY</span><select id="sQuality"><option value="low">LOW (1x)</option><option value="medium">MEDIUM (1.5x)</option><option value="high">HIGH (2x)</option></select></label>
+    <button id="sBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+</div>
+<div id="toasts"></div>
+<div id="rotate" class="overlay">Rotate your phone to landscape</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

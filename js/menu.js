@@ -1,0 +1,181 @@
+// Menu screens (main / mode select / settings) + pause-panel buttons. DOM only; game flow is injected by main.js.
+// Settings are applied live (render + audio) and persisted through save.js.
+import { CFG } from './config.js';
+import { getSave, setSetting, setUsername, saveSoon, buyAbility, toggleEquip, buyPart, equipPart, partOwned } from './save.js';
+import { CATS, CAT_LABEL, partList, getPart, glowHex } from './parts.js';
+import { ACHIEVEMENTS, getAchievement, achValue, achProgress } from './achievements.js';
+import { ABILITIES, ABILITY_IDS } from './abilities.js';
+import { setBloom, setMaxDpr, initPreview, setPreviewParts, drawPreview } from './render.js';
+import * as audio from './audio.js';
+import { setPlayerName } from './hud.js';
+
+const $ = (id) => document.getElementById(id);
+let current = null;      // visible screen id or null
+let settingsFrom = null; // 'main' | 'pause'
+
+export function showScreen(name, backdrop = 'home') {
+  current = name;
+  $('menu').style.display = name ? 'flex' : 'none';
+  $('menu').className = backdrop; // 'home' (3D visible) | 'dim' (over the paused game)
+  for (const id of ['scrMain', 'scrMode', 'scrAbilities', 'scrGarage', 'scrStats', 'scrSettings']) $(id).classList.toggle('on', id === name);
+  document.body.classList.toggle('menu', name === 'scrMain' || name === 'scrMode' || name === 'scrAbilities' || name === 'scrGarage' || name === 'scrStats' || (name === 'scrSettings' && settingsFrom === 'main'));
+  if (name === 'scrMain') { $('mCoins').textContent = getSave().coins; $('mName').textContent = getSave().profile.username; }
+  if (name === 'scrMode') syncDiff();
+  if (name === 'scrAbilities') renderAbilities('');
+  if (name === 'scrGarage') openGarage();
+  else stopPreview();
+  if (name === 'scrStats') renderStats();
+  if (name === 'scrSettings') syncSettingsUi();
+}
+export const currentScreen = () => current;
+
+// Push saved settings into render / audio. Call once at startup.
+export function applySettings() {
+  const s = getSave().settings;
+  setBloom(s.bloom);
+  setMaxDpr(CFG.quality[s.quality]);
+  audio.setMasterVolume(s.masterVol); audio.setMusicVolume(s.musicVol); audio.setSfxVolume(s.sfxVol); audio.setMuted(s.muted);
+  setPlayerName(getSave().profile.username);
+}
+
+// ABILITIES screen: buy with SBCoins, equip / unequip into the limited slots.
+function renderAbilities(msg) {
+  const d = getSave(), own = d.unlocks.abilities, eq = d.equipped.abilities;
+  $('abHead').textContent = `SBCOINS ${d.coins}   SLOTS ${eq.length}/${CFG.abilities.maxSlots}`;
+  $('abMsg').textContent = msg;
+  $('abList').innerHTML = ABILITY_IDS.map((id) => {
+    const a = ABILITIES[id], owned = own.includes(id), on = eq.includes(id);
+    const btn = !owned ? `<button class="mbtn frame" type="button" data-id="${id}" data-act="buy"${d.coins < a.price ? ' style="opacity:.55"' : ''}>BUY <span class="coins">${a.price}</span></button>`
+      : `<button class="mbtn frame${on ? ' sel' : ''}" type="button" data-id="${id}" data-act="eq">${on ? 'EQUIPPED' : 'EQUIP'}</button>`;
+    return `<div class="abItem frame${on ? ' eq' : ''}"><b>${a.name.toUpperCase()}</b><span class="tag">${a.type.toUpperCase()}${a.price ? '' : ' - FREE'}</span><p>${a.desc}</p>${btn}</div>`;
+  }).join('');
+}
+// ---- GARAGE: category tabs, part cards (preview on select), buy / equip. 3D preview = separate small renderer. ----
+let gCat = 'body', gSel = null, gPreview = null, gRaf = 0, gLast = 0, gInit = false;
+const unlockText = (p) => { const a = p.ach && getAchievement(p.ach); return a ? a.desc : ''; };
+const swatch = (p) => (p.color ? `<i class="sw" style="background:#${p.color.toString(16).padStart(6, '0')}"></i>` : '');
+function previewParts() { const eq = getSave().equipped.parts; return { ...eq, ...(gPreview || {}) }; }
+function openGarage() {
+  if (!gInit) { initPreview($('gCanvas')); gInit = true; }
+  gCat = 'body'; gSel = null; gPreview = null;
+  renderGarage('');
+  gLast = performance.now();
+  const loop = (now) => { drawPreview(Math.min(0.1, (now - gLast) / 1000)); gLast = now; gRaf = requestAnimationFrame(loop); };
+  cancelAnimationFrame(gRaf); gRaf = requestAnimationFrame(loop);
+}
+function stopPreview() { cancelAnimationFrame(gRaf); gRaf = 0; }
+function renderGarage(msg) {
+  const d = getSave(), eqId = d.equipped.parts[gCat];
+  if (!gSel || !getPart(gCat, gSel)) gSel = eqId;
+  $('gHead').textContent = `SBCOINS ${d.coins}`;
+  $('gMsg').textContent = msg;
+  for (const b of $('gTabs').children) b.classList.toggle('sel', b.dataset.cat === gCat);
+  $('gList').innerHTML = partList(gCat).map((p) => {
+    const owned = partOwned(gCat, p.id), tag = p.id === eqId ? 'EQUIPPED' : owned ? 'OWNED' : p.ach ? 'LOCKED' : `${p.price}`;
+    return `<button class="mbtn frame gcard${p.id === gSel ? ' sel' : ''}${owned ? '' : ' locked'}" type="button" data-id="${p.id}">${swatch(p)}<b>${p.name.toUpperCase()}</b><small class="${owned || p.ach ? '' : 'coins'}">${tag}</small></button>`;
+  }).join('');
+  const p = getPart(gCat, gSel), owned = partOwned(gCat, gSel), eqd = gSel === eqId;
+  const act = $('gAct');
+  act.dataset.act = owned ? 'equip' : p.ach ? '' : 'buy';
+  act.disabled = eqd || (!owned && !!p.ach);
+  act.classList.toggle('dim', !owned && !p.ach && d.coins < p.price);
+  act.innerHTML = eqd ? 'EQUIPPED' : owned ? 'EQUIP' : p.ach ? 'LOCKED' : `BUY <span class="coins">${p.price}</span>`;
+  $('gInfo').textContent = `${p.name.toUpperCase()}${owned ? '' : p.ach ? ' - ' + unlockText(p).toUpperCase() : ` - ${p.price} SBCOINS`}`;
+  gPreview = { [gCat]: gSel };
+  setPreviewParts(previewParts());
+}
+const G_MSG = { coins: 'NOT ENOUGH SBCOINS', ach: 'EARN THE ACHIEVEMENT TO UNLOCK' };
+
+// ---- STATS ----
+const fmt = (n) => Math.floor(n).toLocaleString('en-US');
+function renderStats() {
+  const d = getSave(), st = d.stats, pctWin = st.matches ? Math.round((st.wins / st.matches) * 100) : 0;
+  const cells = [['MATCHES', st.matches], ['WINS', st.wins], ['WIN %', pctWin + '%'], ['STREAK', st.winStreak], ['BEST STREAK', st.bestStreak],
+    ['KILLS', st.kills], ['DISTANCE', fmt(st.distance)], ['BOOSTS', st.boosts], ['JUMPS', st.jumps], ['SBCOINS', d.coins]];
+  $('stGrid').innerHTML = cells.map(([k, v]) => `<div class="stCell frame"><small>${k}</small><b>${v}</b></div>`).join('');
+  const own = new Set(d.unlocks.achievements);
+  $('stAch').innerHTML = ACHIEVEMENTS.map((a) => {
+    const done = own.has(a.id), p = done ? 1 : achProgress(a, st), r = getPart(a.reward.cat, a.reward.id);
+    return `<div class="achRow frame${done ? ' done' : ''}"><div><b>${a.name.toUpperCase()}</b> <span class="tag">${done ? 'UNLOCKED' : fmt(Math.min(achValue(a, st), a.target)) + ' / ' + fmt(a.target)}</span></div>
+      <small>${a.desc} - reward: ${r.name} ${CAT_LABEL[a.reward.cat].toLowerCase()}</small><div class="bar"><i style="width:${Math.round(p * 100)}%"></i></div></div>`;
+  }).join('');
+  $('stSum').textContent = `ACHIEVEMENTS ${own.size}/${ACHIEVEMENTS.length}`;
+}
+const AB_MSG = { coins: 'NOT ENOUGH SBCOINS', full: 'ALL SLOTS FULL - UNEQUIP ONE FIRST' };
+
+function syncDiff() {
+  const d = getSave().settings.aiDifficulty;
+  for (const b of $('diffRow').children) b.classList.toggle('sel', +b.dataset.diff === d);
+}
+const pct = (v) => Math.round(v * 100);
+function syncSettingsUi() {
+  const s = getSave().settings;
+  $('sName').value = getSave().profile.username;
+  $('sBloom').value = s.bloom; $('vBloom').textContent = s.bloom === 0 ? 'OFF' : s.bloom.toFixed(2);
+  for (const [id, v, k] of [['sMaster', s.masterVol, 'vMaster'], ['sMusic', s.musicVol, 'vMusic'], ['sSfx', s.sfxVol, 'vSfx']]) {
+    $(id).value = pct(v); $(k).textContent = pct(v);
+  }
+  $('sMute').textContent = s.muted ? 'MUTED' : 'ON';
+  $('sMute').classList.toggle('sel', s.muted);
+  $('sQuality').value = s.quality;
+}
+
+// h: {onPlay(modeId), onResume, onRestart, onQuit}
+export function initMenu(h) {
+  const on = (id, fn) => $(id).addEventListener('click', fn);
+  on('mPlay', () => showScreen('scrMode'));
+  on('modeBack', () => showScreen('scrMain'));
+  on('mAbilities', () => showScreen('scrAbilities'));
+  on('mGarage', () => showScreen('scrGarage'));
+  on('mStats', () => showScreen('scrStats'));
+  on('gBack', () => { saveSoon(); showScreen('scrMain'); });
+  on('stBack', () => showScreen('scrMain'));
+  $('gTabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-cat]'); if (b) { gCat = b.dataset.cat; gSel = null; renderGarage(''); } });
+  $('gList').addEventListener('click', (e) => { const b = e.target.closest('button[data-id]'); if (b) { gSel = b.dataset.id; renderGarage(''); } });
+  on('gAct', () => {
+    const a = $('gAct').dataset.act;
+    if (!a) return;
+    const r = a === 'buy' ? buyPart(gCat, gSel) : equipPart(gCat, gSel);
+    if (r.ok && a === 'buy') equipPart(gCat, gSel);
+    renderGarage(r.ok ? '' : G_MSG[r.reason] || '');
+  });
+  on('abBack', () => { saveSoon(); showScreen('scrMain'); });
+  $('abList').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-id]');
+    if (!b) return;
+    const r = b.dataset.act === 'buy' ? buyAbility(b.dataset.id) : toggleEquip(b.dataset.id);
+    renderAbilities(r.ok ? '' : AB_MSG[r.reason] || '');
+  });
+  for (const b of $('scrMode').querySelectorAll('button[data-mode]')) b.addEventListener('click', () => h.onPlay(b.dataset.mode));
+  for (const b of $('diffRow').children) b.addEventListener('click', () => { setSetting('aiDifficulty', +b.dataset.diff); syncDiff(); });
+  on('mSettings', () => { settingsFrom = 'main'; showScreen('scrSettings'); });
+  on('pSettings', () => { settingsFrom = 'pause'; showScreen('scrSettings', 'dim'); });
+  on('sBack', closeSettings);
+  on('pRestart', h.onRestart);
+  on('pQuit', h.onQuit);
+
+  const name = $('sName');
+  const commitName = () => { const n = setUsername(name.value); name.value = n; setPlayerName(n); };
+  name.addEventListener('change', commitName);
+  name.addEventListener('blur', commitName);
+  name.addEventListener('input', () => { // keep the field within the safe charset while typing (full trim on commit)
+    const v = name.value.replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 12);
+    if (v !== name.value) name.value = v;
+  });
+  $('sBloom').addEventListener('input', (e) => {
+    const v = setSetting('bloom', +e.target.value); setBloom(v); $('vBloom').textContent = v === 0 ? 'OFF' : v.toFixed(2);
+  });
+  for (const [id, key, fn, k] of [['sMaster', 'masterVol', audio.setMasterVolume, 'vMaster'], ['sMusic', 'musicVol', audio.setMusicVolume, 'vMusic'], ['sSfx', 'sfxVol', audio.setSfxVolume, 'vSfx']]) {
+    $(id).addEventListener('input', (e) => { const v = setSetting(key, +e.target.value / 100); fn(v); $(k).textContent = pct(v); });
+  }
+  on('sMute', () => { const m = setSetting('muted', !getSave().settings.muted); audio.setMuted(m); syncSettingsUi(); });
+  $('sQuality').addEventListener('change', (e) => { const q = setSetting('quality', e.target.value); setMaxDpr(CFG.quality[q]); });
+}
+
+// Back out of settings (also bound to Esc by main).
+export function closeSettings() {
+  const n = $('sName'); if (document.activeElement === n) n.blur();
+  saveSoon();
+  if (settingsFrom === 'pause') { settingsFrom = null; showScreen(null); } else { settingsFrom = null; showScreen('scrMain'); }
+}
+export const inSettings = () => current === 'scrSettings';
