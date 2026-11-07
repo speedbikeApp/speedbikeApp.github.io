@@ -8,6 +8,7 @@ import { ABILITIES, ABILITY_IDS } from './abilities.js';
 import { setBloom, setMaxDpr, initPreview, setPreviewParts, drawPreview } from './render.js';
 import * as audio from './audio.js';
 import { setPlayerName } from './hud.js';
+import { initAccountUi, openAccount, accountEsc, isSignedIn } from './account-ui.js';
 import { ACTIONS, ACTION_LABEL, groups, codeLabel, rebind, defaultKeys, setBindings, getBindings, captureNextKey, GAMEPAD_LAYOUT } from './input.js';
 
 const $ = (id) => document.getElementById(id);
@@ -18,14 +19,15 @@ export function showScreen(name, backdrop = 'home') {
   current = name;
   $('menu').style.display = name ? 'flex' : 'none';
   $('menu').className = backdrop; // 'home' (3D visible) | 'dim' (over the paused game)
-  for (const id of ['scrMain', 'scrMode', 'scrAbilities', 'scrGarage', 'scrStats', 'scrSettings', 'scrControls']) $(id).classList.toggle('on', id === name);
-  document.body.classList.toggle('menu', name === 'scrMain' || name === 'scrMode' || name === 'scrAbilities' || name === 'scrGarage' || name === 'scrStats' || ((name === 'scrSettings' || name === 'scrControls') && settingsFrom === 'main'));
+  for (const id of ['scrMain', 'scrMode', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrSettings', 'scrControls']) $(id).classList.toggle('on', id === name);
+  document.body.classList.toggle('menu', name === 'scrMain' || name === 'scrMode' || name === 'scrAbilities' || name === 'scrGarage' || name === 'scrStats' || name === 'scrAccount' || ((name === 'scrSettings' || name === 'scrControls') && settingsFrom === 'main'));
   if (name === 'scrMain') { $('mCoins').textContent = getSave().coins; $('mName').textContent = getSave().profile.username; }
   if (name === 'scrMode') syncDiff();
   if (name === 'scrAbilities') renderAbilities('');
   if (name === 'scrGarage') openGarage();
   else stopPreview();
   if (name === 'scrStats') renderStats();
+  if (name === 'scrAccount') openAccount();
   if (name === 'scrSettings') syncSettingsUi();
   if (name !== 'scrControls') cancelCapture();
   if (name === 'scrControls') renderControls('');
@@ -115,6 +117,7 @@ const pct = (v) => Math.round(v * 100);
 function syncSettingsUi() {
   const s = getSave().settings;
   $('sName').value = getSave().profile.username;
+  $('sName').disabled = isSignedIn(); $('sName').title = isSignedIn() ? 'Set by your account (ACCOUNT screen)' : '';
   $('sBloom').value = s.bloom; $('vBloom').textContent = s.bloom === 0 ? 'OFF' : s.bloom.toFixed(2);
   for (const [id, v, k] of [['sMaster', s.masterVol, 'vMaster'], ['sMusic', s.musicVol, 'vMusic'], ['sSfx', s.sfxVol, 'vSfx'], ['sEngine', s.engineVol, 'vEngine']]) {
     $(id).value = pct(v); $(k).textContent = k === 'vEngine' && !v ? 'OFF' : pct(v);
@@ -132,6 +135,10 @@ export function initMenu(h) {
   on('mAbilities', () => showScreen('scrAbilities'));
   on('mGarage', () => showScreen('scrGarage'));
   on('mStats', () => showScreen('scrStats'));
+  on('mAccount', () => showScreen('scrAccount'));
+  initAccountUi({ back: () => showScreen('scrMain') });
+  // Esc: close the delete confirmation first, else back to the main menu (capture phase: runs before the pause handler)
+  addEventListener('keydown', (e) => { if (e.code === 'Escape' && current === 'scrAccount') { e.preventDefault(); if (!accountEsc()) showScreen('scrMain'); } });
   on('gBack', () => { saveSoon(); showScreen('scrMain'); });
   on('stBack', () => showScreen('scrMain'));
   $('gTabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-cat]'); if (b) { gCat = b.dataset.cat; gSel = null; renderGarage(''); } });

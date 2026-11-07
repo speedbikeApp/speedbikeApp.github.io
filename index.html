@@ -10,13 +10,19 @@
   canvas:not(#minimap) { display: block; position: fixed; inset: 0; }
   :root { --neon: #0ff; }
   .frame { border: 2px solid var(--neon); box-shadow: 0 0 10px var(--neon), inset 0 0 8px rgba(0,255,255,.25); background: rgba(0,20,30,.55); }
-  #hudTL { position: fixed; top: 10px; left: 10px; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+  #hudTL { position: fixed; top: 10px; left: 10px; padding: 5px 7px; display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
   #hudTL .row { display: flex; align-items: center; gap: 8px; font-size: 14px; letter-spacing: 1px; }
-  #hudIcon { width: 30px; height: 18px; }
-  #hudPts { display: flex; gap: 3px; }
-  #shieldTag { display: none; font-size: 12px; letter-spacing: 2px; color: #bff; text-shadow: 0 0 8px #0ff; }
-  #hudPts i { width: 20px; height: 8px; border: 1px solid var(--neon); background: transparent; }
-  #hudPts i.on { background: var(--c, #ff5a1f); box-shadow: 0 0 6px var(--c, #ff5a1f); }
+  .hrow { display: flex; align-items: center; gap: 5px; font-size: 11px; letter-spacing: .5px; line-height: 1; padding: 2px 3px; border: 1px solid transparent; }
+  .hrow.me { border-color: var(--neon); background: rgba(0,255,255,.10); font-size: 12px; }
+  .hrow.dim { opacity: .38; }
+  .hrow svg { width: 20px; height: 12px; flex: none; color: var(--c); }
+  .hrow .hn { width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c); text-shadow: 0 0 6px var(--c); }
+  .hrow .hp { display: flex; gap: 2px; }
+  .hrow .hp i { width: 9px; height: 6px; border: 1px solid var(--neon); }
+  .hrow.me .hp i { width: 10px; height: 7px; }
+  .hrow .hp i.on { background: var(--c); box-shadow: 0 0 5px var(--c); }
+  .hrow .hv { min-width: 16px; text-align: right; }
+  #shieldTag { display: none; font-size: 11px; letter-spacing: 2px; color: #bff; text-shadow: 0 0 8px #0ff; }
   #top { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
   #timer { font-size: 28px; padding: 4px 16px; pointer-events: none; min-width: 7ch; text-align: center; }
   button.neon { font: inherit; color: var(--neon); cursor: pointer; padding: 4px 18px; letter-spacing: 2px; font-size: 14px; }
@@ -90,6 +96,32 @@
     .setrow input[type=range] { height: 28px; } .panel { padding: 10px 22px; gap: 6px; }
     #countdown { font-size: 80px; }
   }
+  /* ---- account screen ---- */
+  [hidden] { display: none !important; }
+  #mAcct { font-size: 11px; letter-spacing: 2px; opacity: .85; }
+  #scrAccount { width: min(640px, 94vw); }
+  .acBox { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .acForm { width: 100%; display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+  .acGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; width: 100%; align-items: start; }
+  .fld { display: flex; flex-direction: column; gap: 2px; text-align: left; font-size: 10px; letter-spacing: 2px; }
+  .fld input { font: inherit; font-size: 16px; letter-spacing: 1px; color: #fff; background: rgba(0,20,30,.8); border: 2px solid var(--neon); padding: 6px 8px; min-height: 22px; box-sizing: border-box; width: 100%; user-select: text; -webkit-user-select: text; border-radius: 0; }
+  .fld input:focus { outline: none; box-shadow: 0 0 10px var(--neon); }
+  .fld input.bad { border-color: #f66; }
+  .hint { min-height: 12px; font-size: 10px; letter-spacing: 0; color: #f88; font-family: sans-serif; }
+  #acTabs { width: 100%; max-width: 360px; } #acTabs .mbtn { padding: 6px 8px; letter-spacing: 2px; white-space: nowrap; }
+  .acBtns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .acBtns .mbtn { min-width: 0; flex: 1; }
+  .acMsg { min-height: 14px; font-size: 11px; letter-spacing: 1px; text-align: center; font-family: sans-serif; color: #fc3; }
+  .acMsg.err { color: #f88; } .acMsg.ok { color: #7f7; }
+  .acWho { display: flex; flex-direction: column; align-items: center; gap: 2px; } .acWho b { font-size: 20px; color: #fff; text-shadow: 0 0 8px #0ff; letter-spacing: 3px; overflow-wrap: anywhere; } .acWho small { font-size: 11px; opacity: .8; font-family: sans-serif; letter-spacing: 1px; overflow-wrap: anywhere; }
+  .acMock { font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #fc3; border: 1px dashed #fc3; padding: 3px 10px; }
+  .acNote { display: flex; flex-direction: column; gap: 4px; align-items: center; font-size: 15px; letter-spacing: 2px; } .acNote small { font-size: 11px; opacity: .8; font-family: sans-serif; letter-spacing: 0; }
+  .acDanger { width: 100%; border-top: 1px solid #f55; padding-top: 8px; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+  .mbtn.danger { color: #f88; border-color: #f55; box-shadow: 0 0 10px #f55, inset 0 0 8px rgba(255,80,80,.25); }
+  .acWarn { font-size: 11px; color: #f88; font-family: sans-serif; text-align: center; }
+  @media (max-height: 460px) { #scrMain { gap: 4px; padding-top: 4px; padding-bottom: 4px; } #scrMain #logo { font-size: 12vh; } #scrMain .mbtn { min-height: 36px; padding: 3px 14px; } #scrMain #tagline { margin-bottom: 0; } #mAcct { font-size: 10px; } }
+  @media (max-width: 560px) { .acGrid { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-height: 460px) { .fld input { padding: 4px 8px; font-size: 15px; } .hint { min-height: 10px; } #scrAccount { gap: 5px; } .acBox { gap: 5px; } .acForm { gap: 4px; } .acGrid { gap: 2px 12px; } }
   /* ---- controls screen ---- */
   #ctlCols { display: flex; gap: 22px; align-items: flex-start; justify-content: center; flex-wrap: wrap; width: min(760px, 88vw); }
   #ctlKeys, #ctlOther { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
@@ -161,11 +193,7 @@
 </head>
 <body class="menu">
 <div id="hudTL" class="frame">
-  <div class="row">
-    <svg id="hudIcon" viewBox="0 0 30 18"><rect x="3" y="7" width="24" height="5" fill="currentColor"/><circle cx="6" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="2"/><rect x="17" y="3" width="8" height="4" fill="#fff"/></svg>
-    <span id="hudName">PLAYER</span>
-  </div>
-  <div id="hudPts"></div>
+  <div id="hudRows"></div>
   <div id="shieldTag">SHIELD</div>
 </div>
 <div id="top">
@@ -206,7 +234,9 @@
       <button id="mGarage" class="mbtn frame" type="button">GARAGE</button>
       <button id="mStats" class="mbtn frame" type="button">STATS</button>
     </div>
+    <button id="mAccount" class="mbtn frame" type="button">ACCOUNT</button>
     <div id="coinLine"><span class="coins">SBCOINS <b id="mCoins">0</b></span> &nbsp; <span id="mName"></span></div>
+    <div id="mAcct"></div>
   </div>
   <div id="scrMode" class="screen frame">
     <h2>SELECT MODE</h2>
@@ -250,6 +280,61 @@
     <div id="stSum" class="lbl"></div>
     <div id="stAch"></div>
     <button id="stBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrAccount" class="screen frame">
+    <h2>ACCOUNT</h2>
+    <div id="acMock" class="acMock" hidden>DEV MOCK BACKEND - NOT REAL ACCOUNTS</div>
+    <div id="acOff" class="acNote" hidden><b id="acOffMsg">Online accounts not configured</b><small>The game works fully offline. See README: Online accounts (Firebase setup).</small></div>
+    <div id="acOut" class="acBox" hidden>
+      <div id="acTabs" class="mrow"><button class="mbtn frame sel" type="button" data-tab="login">LOGIN</button><button class="mbtn frame" type="button" data-tab="register">REGISTER</button></div>
+      <form id="acLogin" class="acForm" novalidate>
+        <label class="fld"><span>EMAIL</span><input id="acLoginEmail" type="email" autocomplete="email" spellcheck="false" autocapitalize="off" maxlength="254" inputmode="email"><small class="hint" aria-live="polite"></small></label>
+        <label class="fld"><span>PASSWORD</span><input id="acLoginPw" type="password" autocomplete="current-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label>
+        <div class="acBtns"><button class="mbtn frame primary" type="submit">LOGIN</button><button id="acForgot" class="mbtn frame" type="button">FORGOT PASSWORD?</button></div>
+        <div class="acMsg" role="status"></div>
+      </form>
+      <form id="acReg" class="acForm" novalidate hidden>
+        <div class="acGrid">
+        <label class="fld"><span>USERNAME</span><input id="acRegUser" type="text" autocomplete="nickname" spellcheck="false" autocapitalize="off" maxlength="12"><small class="hint" aria-live="polite"></small></label>
+        <label class="fld"><span>EMAIL</span><input id="acRegEmail" type="email" autocomplete="email" spellcheck="false" autocapitalize="off" maxlength="254" inputmode="email"><small class="hint" aria-live="polite"></small></label>
+        <label class="fld"><span>PASSWORD (8+)</span><input id="acRegPw" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label>
+        <label class="fld"><span>CONFIRM PASSWORD</span><input id="acRegPw2" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label>
+        </div>
+        <div class="acBtns"><button class="mbtn frame primary" type="submit">REGISTER</button></div>
+        <div class="acMsg" role="status"></div>
+      </form>
+    </div>
+    <div id="acIn" class="acBox" hidden>
+      <div class="acWho"><b id="acName"></b><small id="acMail"></small></div>
+      <div class="acGrid">
+        <form id="acNameForm" class="acForm" novalidate>
+          <label class="fld"><span>NEW USERNAME</span><input id="acNewName" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" maxlength="12"><small class="hint" aria-live="polite"></small></label>
+          <div class="acBtns"><button class="mbtn frame" type="submit">CHANGE USERNAME</button></div>
+          <div class="acMsg" role="status"></div>
+        </form>
+        <form id="acPwForm" class="acForm" novalidate>
+          <label class="fld"><span>CURRENT PASSWORD</span><input id="acCurPw" type="password" autocomplete="current-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label>
+          <label class="fld"><span>NEW PASSWORD (8+)</span><input id="acNewPw" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label>
+          <label class="fld"><span>CONFIRM NEW PASSWORD</span><input id="acNewPw2" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label>
+          <div class="acBtns"><button class="mbtn frame" type="submit">CHANGE PASSWORD</button></div>
+          <div class="acMsg" role="status"></div>
+        </form>
+      </div>
+      <button id="acLogout" class="mbtn frame" type="button">LOG OUT</button>
+      <div class="acDanger">
+        <button id="acDelShow" class="mbtn frame danger" type="button">DELETE ACCOUNT</button>
+        <form id="acDelForm" class="acForm" novalidate hidden>
+          <div class="acWarn">This permanently deletes your account and username. Local coins and stats stay on this device.</div>
+          <div class="acGrid">
+          <label class="fld"><span>CURRENT PASSWORD</span><input id="acDelPw" type="password" autocomplete="current-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label>
+          <label class="fld"><span>TYPE YOUR USERNAME</span><input id="acDelName" type="text" autocomplete="off" spellcheck="false" autocapitalize="off" maxlength="12"><small class="hint" aria-live="polite"></small></label>
+          </div>
+          <div class="acBtns"><button class="mbtn frame danger" type="submit" disabled>DELETE FOREVER</button><button id="acDelCancel" class="mbtn frame" type="button">CANCEL</button></div>
+          <div class="acMsg" role="status"></div>
+        </form>
+      </div>
+    </div>
+    <button id="acBack" class="mbtn frame" type="button">BACK</button>
   </div>
   <div id="scrSettings" class="screen frame">
     <h2>SETTINGS</h2>

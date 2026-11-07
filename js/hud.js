@@ -16,15 +16,14 @@ const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 
 // Player's display name (HUD + results). textContent only.
 export function setPlayerName(name) {
-  if (bikes[0]) bikes[0].name = name;
-  $('hudName').textContent = name;
+  if (bikes[0]) setBikeInfo(bikes[0].id, name, bikes[0].color);
 }
 // Name + colour of a bike (player glow colour / AI colour reassignment). Player: also HUD icon + points bar.
 export function setBikeInfo(id, name, color) {
   const b = bikes.find((v) => v.id === id);
   if (!b) return;
   b.name = name; b.color = color;
-  if (id === bikes[0].id) { $('hudName').textContent = name; $('hudIcon').style.color = css(color); $('hudPts').style.setProperty('--c', css(color)); }
+  delete cache['sb' + id]; // scoreboard row refreshes on next setScoreboard
 }
 // "UNLOCKED: ..." toast for earned achievements (ids). Stacks, fades out by itself.
 export function showUnlocks(ids) {
@@ -44,11 +43,7 @@ export function setMatchReward(r) { reward = r; }
 // info: [{id,name,color}]; handlers: {onPause,onResume,onBoost,onJump,onAbility,onSwap,onPlayAgain,onMenu}
 export function initHud(info, handlers) {
   bikes = info;
-  const me = info[0];
-  $('hudName').textContent = me.name;
-  $('hudIcon').style.color = css(me.color);
-  $('hudPts').style.setProperty('--c', css(me.color));
-  setBarSegments(CFG.match.winPoints);
+  buildScoreboard();
   mapCtx = $('minimap').getContext('2d');
   $('pause').addEventListener('click', handlers.onPause);
   $('resume').addEventListener('click', handlers.onResume);
@@ -118,20 +113,44 @@ export function flashTurn(side) {
   chevTimers[id] = setTimeout(() => el.classList.remove('lit'), 160);
 }
 
-// Top-left bar: round points toward winPoints (rounds) or lives left (Death Match). Rebuilt only when the length changes.
-let barLen = 0;
-export function setBarSegments(n) {
-  if (n === barLen) return;
-  barLen = n; $('hudPts').innerHTML = '<i></i>'.repeat(n);
+// Top-left scoreboard: one row per bike (player first, fixed order): dot, name, bar, number. Bar = round points toward
+// winPoints, or lives in Death Match. Rows are rebuilt only when their own key changes.
+const BIKE_SVG = '<svg viewBox="0 0 30 18"><rect x="3" y="7" width="24" height="5" fill="currentColor"/><circle cx="6" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="2"/><rect x="17" y="3" width="8" height="4" fill="#fff"/></svg>';
+let rowEls = [];
+function buildScoreboard() {
+  const box = $('hudRows'); box.innerHTML = ''; rowEls = [];
+  bikes.forEach((b, i) => {
+    const el = document.createElement('div'); el.className = 'hrow' + (i === 0 ? ' me' : '');
+    box.appendChild(el); rowEls.push(el);
+    if (i === 0) box.appendChild($('shieldTag')); // SHIELD tag sits right under the player row
+  });
+  for (const k of Object.keys(cache)) if (k.startsWith('sb')) delete cache[k];
+}
+// Pure: what a row shows. segs = bar length, n = filled value, out = Death Match eliminated, dim = crashed this round / out.
+export function scoreRow(dm, id, match, alive) {
+  const n = dm ? (match.lives[id] || 0) : (match.scores[id] || 0);
+  const segs = dm ? CFG.deathMatch.lives : CFG.match.winPoints;
+  const out = dm && n <= 0 && match.phase !== 'countdown' && match.phase !== 'idle';
+  const dim = out || (!alive && (match.phase === "running" || match.phase === "roundEnd"));
+  return { n, segs, out, dim };
+}
+export function setScoreboard(state, match, dm) {
+  for (let i = 0; i < bikes.length; i++) {
+    const b = bikes[i], r = scoreRow(dm, b.id, match, state.bikes[b.id].alive);
+    const key = `${b.name}|${b.color}|${r.n}|${r.segs}|${r.out}|${r.dim}`;
+    if (cache['sb' + b.id] === key) continue;
+    cache['sb' + b.id] = key;
+    const el = rowEls[i], c = css(b.color);
+    el.style.setProperty('--c', c);
+    el.classList.toggle('dim', r.dim);
+    let segs = ''; for (let k = 0; k < r.segs; k++) segs += k < r.n ? '<i class="on"></i>' : '<i></i>';
+    el.innerHTML = `${BIKE_SVG}<span class="hn">${esc(b.name)}</span><span class="hp">${segs}</span><span class="hv">${r.out ? 'OUT' : r.n}</span>`;
+  }
 }
 // Small centred status line under the timer (Death Match: respawn countdown / eliminated). '' hides it.
 export function setStatus(text) { setHtml('status', text); show($('status'), !!text); }
 
 export function setTimer(seconds) { setHtml('timer', Math.max(0, seconds).toFixed(3)); }
-export function setPoints(n) {
-  const segs = $('hudPts').children;
-  for (let i = 0; i < segs.length; i++) segs[i].classList.toggle('on', i < n);
-}
 export function showPause(on) { show($('pauseOverlay'), on); }
 
 const nameOf = (id) => esc(bikes.find((b) => b.id === id).name);

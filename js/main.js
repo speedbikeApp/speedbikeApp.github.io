@@ -4,7 +4,7 @@ import { step, turnBike, canTurn, isAirborne, startBoost, startJump } from './ph
 import { initInput, popTurn, popAction, pushAction, clearQueue, setOnPause } from './input.js';
 import { render, burst, resetCamera, resetEffects, setBikeStyle } from './render.js';
 import * as audio from './audio.js';
-import { initHud, setTimer, setPoints, setBarSegments, setStatus, showPause, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks } from './hud.js';
+import { initHud, setTimer, setScoreboard, setStatus, showPause, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks } from './hud.js';
 import { createAI, updateAIs } from './ai.js';
 import { useAbility, cycleAbility, setLoadout } from './abilities.js';
 import { createMatch, MODES } from './modes.js';
@@ -186,8 +186,7 @@ function frame(now) {
   render(state, dt, state.playerId, running ? acc : 0);
   setTimer(match.clock());
   const dm = match.mode.kind === 'deathmatch' && screen === 'game';
-  if (dm) { setBarSegments(CFG.deathMatch.lives); setPoints(match.lives[state.playerId] || 0); }
-  else { setBarSegments(CFG.match.winPoints); setPoints(match.scores[state.playerId] || 0); }
+  setScoreboard(state, match, dm);
   setStatus(dm ? dmStatus() : '');
   syncOverlays(match);
   drawMinimap(state);

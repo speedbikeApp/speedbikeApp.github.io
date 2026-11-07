@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { scoreRow } from '../js/hud.js';
+import { CFG } from '../js/config.js';
+const m = { phase: 'running', scores: { 0: 7, 1: 2 }, lives: { 0: 3, 1: 0 } };
+assert.deepEqual(scoreRow(false, 0, m, true), { n: 7, segs: CFG.match.winPoints, out: false, dim: false });
+assert.equal(scoreRow(false, 1, m, false).dim, true);
+const d = scoreRow(true, 1, m, false);
+assert.ok(d.out && d.dim && d.n === 0 && d.segs === CFG.deathMatch.lives);
+assert.equal(scoreRow(true, 1, { ...m, phase: 'countdown' }, true).out, false);
+console.log('hudrow ok');
