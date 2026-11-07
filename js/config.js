@@ -7,7 +7,7 @@ export const CFG = {
   trailHeight: 2,
   trailThickness: 0.3,
   gravity: 45,                    // u/s^2 while falling off a platform (not during a jump arc)
-  bikeHeight: 1.0,                // collision height of a bike: it occupies [y, y+bikeHeight] vertically
+  bikeHeight: 2.1,                // collision height of a bike: it occupies [y, y+bikeHeight] vertically (= rendered bike+rider top: helmet 1.72+0.23 local x bikeScale 1.1 = 2.15)
   // Boost: pressing burns the whole meter as a one-shot burst (mult x speed for `duration` s), then it refills over `recharge` s.
   boost: { mult: 1.5, duration: 1.5, recharge: 6.5 },
   // Jump arc: smooth parabola, rise (ease-out) for `rise` s up to `height`, then fall (ease-in) for `fall` s (float = 0).

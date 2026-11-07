@@ -14,6 +14,7 @@
   #hudTL .row { display: flex; align-items: center; gap: 8px; font-size: 14px; letter-spacing: 1px; }
   #hudIcon { width: 30px; height: 18px; }
   #hudPts { display: flex; gap: 3px; }
+  #shieldTag { display: none; font-size: 12px; letter-spacing: 2px; color: #bff; text-shadow: 0 0 8px #0ff; }
   #hudPts i { width: 20px; height: 8px; border: 1px solid var(--neon); background: transparent; }
   #hudPts i.on { background: var(--c, #ff5a1f); box-shadow: 0 0 6px var(--c, #ff5a1f); }
   #top { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; }
@@ -165,6 +166,7 @@
     <span id="hudName">PLAYER</span>
   </div>
   <div id="hudPts"></div>
+  <div id="shieldTag">SHIELD</div>
 </div>
 <div id="top">
   <div id="timer" class="frame">100.000</div>

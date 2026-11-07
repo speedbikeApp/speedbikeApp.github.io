@@ -4,6 +4,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { CFG } from './config.js';
+import { protectLeft } from './abilities.js';
 import { MAPS } from './maps.js';
 import { glowHex, DEFAULT_PARTS } from './parts.js';
 import { makeCircuitTexture, makeTrailTexture, makeGridTexture } from './textures.js';
@@ -252,6 +253,17 @@ const trailTex = makeTrailTexture();
 const bikeViews = new Map(); // id -> view
 const INIT_CAP = 256;
 
+// Protector / spawn-protection shield: one additive ellipsoid shell per bike (cached on the view, never reallocated).
+const shieldGeo = new THREE.SphereGeometry(1, 20, 14);
+function makeShield(color) {
+  const m = new THREE.Mesh(shieldGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.35).multiplyScalar(0.55),
+    transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const k = 1 / CFG.bikeScale; // child of the bike group, which is scaled by bikeScale
+  m.scale.set(1.0 * k, CFG.bikeHeight * 0.58 * k, CFG.tile * 0.62 * k); m.position.y = CFG.bikeHeight * 0.5 * k; // wraps the bike + rider
+  m.visible = false; m.frustumCulled = false;
+  return m;
+}
+
 function makeTrailMesh(v, cap) {
   const m = new THREE.InstancedMesh(unitBox, v.trailMat, cap);
   m.frustumCulled = false; m.count = 0; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -265,6 +277,7 @@ function viewFor(b) {
     v = { group, wheels, mats, fin: 0, first: null, dying: -1, fall: 0, px: 0, pz: 0,
       trailMat: new THREE.MeshBasicMaterial({ color: glowColor(b.color, 1.25), map: trailTex }) };
     v.cap = INIT_CAP; v.mesh = makeTrailMesh(v, v.cap);
+    v.shield = makeShield(b.color); group.add(v.shield);
     scene.add(group); bikeViews.set(b.id, v);
   }
   return v;
@@ -275,6 +288,7 @@ export function setBikeStyle(b, parts) {
   scene.remove(v.group); for (const m of v.mats) m.dispose();
   const mm = makeBikeMesh(b.color, parts);
   v.group = mm.group; v.wheels = mm.wheels; v.mats = mm.mats; scene.add(v.group);
+  v.shield.material.color.copy(new THREE.Color(b.color).lerp(new THREE.Color(0xffffff), 0.35).multiplyScalar(0.55)); v.group.add(v.shield);
   v.trailMat.color.copy(glowColor(b.color, 1.25));
 }
 function growTrail(v, need) {
@@ -447,6 +461,8 @@ export function render(state, dt, followId, extra = 0) {
     const tum = Math.max(0, v.fall - 0.12);
     v.group.rotation.x = Math.min(1.25, tum * 2.2); v.group.rotation.z = Math.sin(tum * 2.5) * Math.min(1, tum * 3) * 0.6;
     if (b.alive) { const sp = b.speed * dt / WHEEL_R; v.wheels[0].rotation.x += sp; v.wheels[1].rotation.x += sp; }
+    const pl = b.alive ? protectLeft(b) : 0; // shield shell: solid, then blinking for the last 0.5 s
+    v.shield.visible = pl > 0 && (pl > 0.5 || Math.floor(pl * 10) % 2 === 0);
     syncTrail(b, v, ex, dt);
     if (b.alive) { if (b.id === followId) follow = b; else if (b.id === cam.specId) alt = b; }
   }

@@ -1,6 +1,6 @@
 // DOM HUD: score bar, timer, pause, minimap, countdown / result overlays, ability hexagon.
 import { CFG } from './config.js';
-import { activeDef, ABILITIES, isActive, canUse } from './abilities.js';
+import { activeDef, ABILITIES, isActive, canUse, protectLeft } from './abilities.js';
 import { MAPS } from './maps.js';
 import { getAchievement } from './achievements.js';
 import { getPart } from './parts.js';
@@ -100,6 +100,14 @@ export function setAbilityHud(b) {
   const sw = $('swapBtn');
   sw.style.visibility = actives.length > 1 ? 'visible' : 'hidden';
   sw.textContent = def ? `${actives.indexOf(def.id) + 1}/${actives.length} ⇄` : '';
+}
+
+// Small "SHIELD 2.4" tag under the player's name while trails can't hurt (Protector / spawn protection). DOM only on change.
+export function setShieldTag(b) {
+  const left = b.alive ? protectLeft(b) : 0, txt = left > 0 ? 'SHIELD ' + left.toFixed(1) : '';
+  if (cache.shield === txt) return;
+  cache.shield = txt;
+  const el = $('shieldTag'); el.textContent = txt; el.style.display = txt ? 'block' : 'none';
 }
 
 // Briefly light the left (-1) / right (+1) chevron when a turn is input.

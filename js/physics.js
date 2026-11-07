@@ -7,9 +7,10 @@ import { hooks, tickAbilities, speedMult, boostDuration, jumpRecharge, canDouble
 const EPS = 1e-6;
 
 // Vertical overlap: bike occupies [y, y+bikeHeight], segment [y0, y0+h]. Touching edges do not collide.
-export function segBlocks(y, s) {
+// yTop (optional) = top of the bike's swept base height range [y, yTop]; the bike then occupies [y, yTop+bikeHeight].
+export function segBlocks(y, s, yTop = y) {
   const y0 = s.y0 || 0;
-  return y < y0 + s.h && y + CFG.bikeHeight > y0;
+  return y < y0 + s.h && yTop + CFG.bikeHeight > y0;
 }
 
 // Airborne = in a jump arc or falling off an edge (no turning, no new jump).
@@ -114,19 +115,20 @@ export function canTurn(b) {
 }
 
 // Returns undefined (no hit), null (wall) or owner id of the trail hit.
-function hit(state, b, x0, z0) {
+function hit(state, b, x0, z0, yPrev = b.y) {
   const map = mapOf(state), half = map.half;
   if (map.walls && (Math.abs(b.x) >= half || Math.abs(b.z) >= half)) return null;
   // movement box; start point excluded so touching our own previous segment's corner isn't a hit
   let ax = Math.min(x0, b.x), bx = Math.max(x0, b.x), az = Math.min(z0, b.z), bz = Math.max(z0, b.z);
   if (b.dx > 0) ax += EPS; else if (b.dx < 0) bx -= EPS;
   if (b.dz > 0) az += EPS; else if (b.dz < 0) bz -= EPS;
+  const yLo = Math.min(yPrev, b.y), yHi = Math.max(yPrev, b.y); // vertical sweep over the tick
   if (isProtected(b) || b.spawnProt > 0) return undefined; // Protector / spawn protection: trails are harmless (walls still kill)
   for (const o of state.bikes) {
     const last = o.trail[o.trail.length - 1];
     for (const s of o.trail) {
       if (s === last && o === b) continue; // own newest segment
-      if (!segBlocks(b.y, s)) continue;    // above / below this segment (jump)
+      if (!segBlocks(yLo, s, yHi)) continue; // above / below this segment (jump), swept over the tick
       if (ax <= Math.max(s.x1, s.x2) && bx >= Math.min(s.x1, s.x2) &&
           az <= Math.max(s.z1, s.z2) && bz >= Math.min(s.z1, s.z2)) return s.owner;
     }
@@ -153,12 +155,12 @@ export function step(state, dt) {
     b.x += b.dx * d; b.z += b.dz * d;
     const s = b.trail[b.trail.length - 1];
     s.x2 = b.x; s.z2 = b.z;
-    moved.push([b, x0, z0, settle(b, map, yPrev, dt)]);
+    moved.push([b, x0, z0, settle(b, map, yPrev, dt), yPrev]);
   }
   const events = [];
-  for (const [b, x0, z0, cause] of moved) { // all checked before any removal => head-on kills both
+  for (const [b, x0, z0, cause, yPrev] of moved) { // all checked before any removal => head-on kills both
     if (cause) { events.push({ victim: b.id, killer: null, cause }); continue; }
-    const k = hit(state, b, x0, z0);
+    const k = hit(state, b, x0, z0, yPrev);
     if (k !== undefined) events.push({ victim: b.id, killer: k });
   }
   for (const e of events) {

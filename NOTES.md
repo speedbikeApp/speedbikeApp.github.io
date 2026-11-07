@@ -93,3 +93,8 @@ Bike: `{id,color,x,z,y,dx,dz,speed,alive,trail[]}`; dir is a unit axis vector. S
 - Not done / risky (phase 7): Death Match shows only the player's lives (no per-bike lives UI); no ramps, no low walls on TIERS; AI cannot plan routes across levels (only opportunistic gap jumps); spawn protection has no visual cue; AI 3D/Hyper tuned only headlessly + one visual pass.
 - Known: Orbitron loaded from Google Fonts; page auto-pauses on a visibilitychange to hidden during countdown/running (never starts paused); "rotate" overlay only on `(pointer: coarse)` portrait.
 - Risky (phase 8): AIs always use default parts; garage preview uses no bloom so it looks flatter than in-game; round counters are lost if the player quits mid-round; achievements only evaluated at round/match end and session commits (not live); saves from before phase 8 get the new fields by merge (no version bump).
+
+## Collision height / shield cue (fix pass)
+- `CFG.bikeHeight` = 2.1 (rendered bike+rider top: helmet 1.72+0.23 local x bikeScale 1.1 = 2.15). A grounded bike now only passes under trail segments with y0 >= 2.1 (jump plateau); clearing a trail by jumping is still "bike bottom y >= trail top".
+- `hit()` sweeps y over the tick: `segBlocks(yLo, s, yHi)` tests [min(yPrev,y), max(yPrev,y)+bikeHeight]; `yPrev` travels in the `moved` tuple of `step()`. AI `probe` uses the same `segBlocks` (point y).
+- Protector / spawn protection cue: `render.js` per-bike cached additive ellipsoid shell (`v.shield`, child of the bike group), blinks for the last 0.5 s; `abilities.protectLeft(b)` = seconds left. Player HUD tag `#shieldTag` ("SHIELD 2.4") via `hud.setShieldTag`.

@@ -4,7 +4,7 @@ import { step, turnBike, canTurn, isAirborne, startBoost, startJump } from './ph
 import { initInput, popTurn, popAction, pushAction, clearQueue, setOnPause } from './input.js';
 import { render, burst, resetCamera, resetEffects, setBikeStyle } from './render.js';
 import * as audio from './audio.js';
-import { initHud, setTimer, setPoints, setBarSegments, setStatus, showPause, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, flashTurn, setBikeInfo, showUnlocks } from './hud.js';
+import { initHud, setTimer, setPoints, setBarSegments, setStatus, showPause, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks } from './hud.js';
 import { createAI, updateAIs } from './ai.js';
 import { useAbility, cycleAbility, setLoadout } from './abilities.js';
 import { createMatch, MODES } from './modes.js';
@@ -193,6 +193,7 @@ function frame(now) {
   drawMinimap(state);
   setAbilityButtons(state.bikes[state.playerId]);
   setAbilityHud(state.bikes[state.playerId]);
+  setShieldTag(state.bikes[state.playerId]);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

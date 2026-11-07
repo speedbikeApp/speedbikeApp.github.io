@@ -97,6 +97,8 @@ export function cycleAbility(b) {
 
 export const isActive = (b, id) => (b.active && b.active[id] || 0) > 0;
 export const isProtected = (b) => isActive(b, 'protector');
+// Seconds of trail immunity left (Protector or spawn protection), 0 if none.
+export const protectLeft = (b) => Math.max((b.active && b.active.protector) || 0, b.spawnProt || 0);
 export const onCooldown = (b, id) => (b.cd[id] || 0) > 0;
 export const canUse = (b, id) => !!b.alive && ABILITIES[id].type === 'active' && !onCooldown(b, id) && !(ABILITIES[id].once && b.used[id]);
 

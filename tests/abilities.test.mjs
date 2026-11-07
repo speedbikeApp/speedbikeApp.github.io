@@ -78,12 +78,32 @@ const wallAt = (id, x, z1, z2, y0 = 0) => { // static vertical trail wall along 
   for (let i = 1; i < b.trail.length; i++) { near(b.trail[i].x1, b.trail[i - 1].x2, 1e-9); }
   assert.ok(b.alive);
 }
-{ // vertical overlap rule: bike [y, y+1] vs segment [y0, y0+2]
-  const seg = (y0) => ({ y0, h: 2 });
+{ // vertical overlap rule: bike [y, y+bikeHeight] vs segment [y0, y0+2]
+  const seg = (y0) => ({ y0, h: 2 }), BH = CFG.bikeHeight;
+  assert.ok(BH > 2 && BH < 2.3, 'bike collision height matches the rendered bike+rider (~2.1)');
   assert.ok(segBlocks(0, seg(0))); assert.ok(segBlocks(1.9, seg(0))); assert.ok(!segBlocks(2, seg(0)));
-  assert.ok(segBlocks(0, seg(0.9))); assert.ok(!segBlocks(0, seg(1))); assert.ok(!segBlocks(0, seg(3)));
-  assert.ok(segBlocks(3.5, seg(3.5)) && segBlocks(3.5, seg(2.6)) && !segBlocks(3.5, seg(4.5)));
+  assert.ok(segBlocks(0, seg(BH - 0.1))); assert.ok(!segBlocks(0, seg(BH))); assert.ok(!segBlocks(0, seg(BH + 1)));
+  assert.ok(segBlocks(3.5, seg(3.5)) && segBlocks(3.5, seg(2.6)) && !segBlocks(3.5, seg(3.5 + BH)));
   assert.ok(segBlocks(0, { h: 2 }), 'segments without y0 are grounded');
+  // swept range: a bike rising from 1.9 to 2.3 in one tick overlaps a trail [0,2] even though its end y clears the top
+  assert.ok(!segBlocks(2.3, seg(0)) && segBlocks(1.9, seg(0), 2.3));
+  assert.ok(!segBlocks(0, seg(3), 0.8) && segBlocks(0, seg(3), 0.95), 'sweep also raises the bike top');
+}
+{ // swept collision in step(): rising through a trail's top edge within one tick is caught, a clean pass is not
+  const mkRise = (y0, y1) => { // bike at x=-0.05 heading +x, trail wall at x=0; settle() is bypassed by a scripted jump arc
+    const b = createBike(0, 0, -0.05, 0, 1, 0); b.y = y0; b.jumpT = 0.1; b.jumpY0 = y0; b.jumpG = 0; b.jumpH = y1 - y0; b.jumpDur = 1;
+    return b;
+  };
+  const w = wallAt(1, 0, -5, 5, 0);
+  const b = mkRise(1.95, 0); const s = mk(b, w);
+  // force this tick's end height to 2.2 (above the trail top of 2.0) while the start height 1.95 overlaps it
+  b.jumpY0 = 1.95; b.jumpH = 0.25; b.jumpT = CFG.jump.rise - 0.0001; // ease-out end of the rise: y ~ y0+H
+  b.y = 1.95; b.speed = b.baseSpeed = 15;
+  const ev = step(s, DT);
+  assert.ok(b.y > 2, `end y ${b.y} is above the trail top`);
+  assert.deepEqual(ev, [{ victim: 0, killer: 1 }], 'caught by the swept range');
+  const c = mkRise(2.5, 0); c.jumpY0 = 2.5; c.jumpH = 0.25; c.jumpT = CFG.jump.rise - 0.0001; c.y = 2.5; c.speed = c.baseSpeed = 15;
+  assert.deepEqual(step(mk(c, wallAt(1, 0, -5, 5, 0)), DT), [], 'range entirely above the top: clean');
 }
 { // bike passes over a trail while airborne (jump started 10 units before a wall at x=0)
   const w = wallAt(1, 0, -10, 10);
@@ -147,9 +167,9 @@ const wallAt = (id, x, z1, z2, y0 = 0) => { // static vertical trail wall along 
   startJump(j); 
   const s = mk(j);
   run(s, 1.3);
-  const plateau = j.trail.filter((t) => t.y0 >= 1.5);
+  const plateau = j.trail.filter((t) => t.y0 >= CFG.bikeHeight + 0.5).sort((a, c) => Math.abs(c.x2 - c.x1) - Math.abs(a.x2 - a.x1)); // the raised part clear of a grounded bike
   assert.ok(plateau.length >= 1);
-  const ramp = j.trail.filter((t) => t.y0 < 1 && Math.abs(t.x2 - t.x1) > 0.01);
+  const ramp = j.trail.filter((t) => t.y0 < CFG.bikeHeight - 1 && Math.abs(t.x2 - t.x1) > 0.01);
   assert.ok(ramp.length >= 1);
   // grounded bike driving along z across the plateau
   const px = (plateau[0].x1 + plateau[0].x2) / 2;
@@ -159,7 +179,7 @@ const wallAt = (id, x, z1, z2, y0 = 0) => { // static vertical trail wall along 
   assert.equal(run(s3, 0.8, () => g.z > 5).length, 0, 'passes under the plateau');
   const rx = (ramp[0].x1 + ramp[0].x2) / 2;
   const g2 = createBike(2, 0, rx, -5, 0, 1);
-  assert.deepEqual(run(mk(g2, o), 0.8), [{ victim: 2, killer: 1 }], 'ramp segment (y0 < 1) is solid');
+  assert.deepEqual(run(mk(g2, o), 0.8), [{ victim: 2, killer: 1 }], 'ramp segment (low y0) is solid');
 }
 { // no walls: a jump over the arena edge is fine in the air but the bike still falls afterwards (void, killer null)
   const b = createBike(0, 0, 47, 0, 1, 0), s = mk(b);
