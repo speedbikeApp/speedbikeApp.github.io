@@ -69,6 +69,16 @@ export const CFG = {
     { name: 'GREEN', color: 0xc8ff00 },
     { name: 'PURPLE', color: 0xb04dff },
   ],
+  // Multiplayer client (docs/MULTIPLAYER.md). url = game server (override with ?server=ws://host:port). Never used by singleplayer.
+  net: {
+    url: 'ws://localhost:8787',
+    pingMs: 2000,                 // ping interval (clock offset + RTT)
+    reconnectMs: [1000, 2000, 4000, 8000, 15000, 30000], // backoff while in menus
+    helloTimeoutMs: 8000,
+    snapEps: 0.35,                // units: authoritative snap vs local bike position before the bike is corrected
+    maxCatchup: 60,               // ticks the online sim may run in one frame to catch the server tick estimate
+    lobbySec: 30,
+  },
   ai: {
     difficulty: 1,                // 0 easy, 1 normal, 2 hard
     cell: 4,                      // flood-fill coarse grid cell size (units)

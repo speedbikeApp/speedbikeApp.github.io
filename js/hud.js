@@ -4,6 +4,7 @@ import { activeDef, ABILITIES, isActive, canUse, protectLeft } from './abilities
 import { MAPS } from './maps.js';
 import { getAchievement } from './achievements.js';
 import { getPart } from './parts.js';
+import { badgeHtml, badgeInfo, rankChange } from './rankview.js';
 
 const $ = (id) => document.getElementById(id);
 const css = (c) => '#' + c.toString(16).padStart(6, '0');
@@ -12,10 +13,12 @@ const cache = {}; // only touch the DOM when a value changed
 function setHtml(id, html) { if (cache[id] !== html) { cache[id] = html; $(id).innerHTML = html; } }
 
 let bikes = [], mapCtx = null, mapFrame = 0, reward = null;
+let baseBikes = [], meId = 0, onlineHud = false, onlineResult = null; // online: bikes carry {rank}, meId = our bike id
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Player's display name (HUD + results). textContent only.
 export function setPlayerName(name) {
+  if (onlineHud) return; // online names come from the server
   if (bikes[0]) setBikeInfo(bikes[0].id, name, bikes[0].color);
 }
 // Name + colour of a bike (player glow colour / AI colour reassignment). Player: also HUD icon + points bar.
@@ -37,6 +40,31 @@ export function showUnlocks(ids) {
     setTimeout(() => el.remove(), 4800);
   }
 }
+// Top-centre announcement toast (server `announce`: rank milestones). Cyan variant of the unlock toast; stacks, fades by itself.
+export function showAnnounce(text, kind = '') {
+  const el = document.createElement('div');
+  el.className = 'toast frame ann' + (kind === 'tierUp' ? ' up' : '');
+  el.textContent = String(text).slice(0, 120);
+  $('toasts').appendChild(el);
+  while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
+  setTimeout(() => el.remove(), 4800);
+}
+// Online match: scoreboard rows for the room's players [{id,name,color,rank}] (meId's row is highlighted); resetHudPlayers() returns
+// to the four singleplayer rows.
+export function setHudPlayers(list, me) {
+  if (!baseBikes.length) baseBikes = bikes;
+  bikes = list.map((p) => ({ ...p })); meId = me; onlineHud = true; onlineResult = null;
+  buildScoreboard();
+}
+export function resetHudPlayers() {
+  if (baseBikes.length) bikes = baseBikes;
+  meId = 0; onlineHud = false; onlineResult = null;
+  buildScoreboard();
+}
+// {meId, rows:[{id,username,place,scores,left,rankBefore,rankAfter,change}], mode} for the online results panel (null = none).
+export function setOnlineResult(r) { onlineResult = r; }
+// Online "Leave match?" panel (the game never pauses online).
+export function showLeave(on) { show($('leaveOverlay'), on); }
 // {placement, earned, total, won} for the results screen (null = not rewarded yet).
 export function setMatchReward(r) { reward = r; }
 
@@ -47,6 +75,8 @@ export function initHud(info, handlers) {
   mapCtx = $('minimap').getContext('2d');
   $('pause').addEventListener('click', handlers.onPause);
   $('resume').addEventListener('click', handlers.onResume);
+  $('leaveResume').addEventListener('click', handlers.onLeaveResume);
+  $('leaveConfirm').addEventListener('click', handlers.onLeaveConfirm);
   // pointerdown (not click) for instant response; preventDefault keeps focus off the button so Space never re-triggers it
   for (const [id, fn] of [['boostBtn', handlers.onBoost], ['jumpBtn', handlers.onJump], ['abilityBtn', handlers.onAbility], ['swapBtn', handlers.onSwap]]) {
     $(id).addEventListener('pointerdown', (e) => { e.preventDefault(); fn(); });
@@ -117,12 +147,15 @@ export function flashTurn(side) {
 // winPoints, or lives in Death Match. Rows are rebuilt only when their own key changes.
 const BIKE_SVG = '<svg viewBox="0 0 30 18"><rect x="3" y="7" width="24" height="5" fill="currentColor"/><circle cx="6" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="24" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="2"/><rect x="17" y="3" width="8" height="4" fill="#fff"/></svg>';
 let rowEls = [];
+let shieldEl = null;
 function buildScoreboard() {
+  if (!shieldEl) shieldEl = $('shieldTag');
+  $('hudTL').appendChild(shieldEl); // park the SHIELD tag outside the rows while they are rebuilt
   const box = $('hudRows'); box.innerHTML = ''; rowEls = [];
   bikes.forEach((b, i) => {
-    const el = document.createElement('div'); el.className = 'hrow' + (i === 0 ? ' me' : '');
+    const el = document.createElement('div'); el.className = 'hrow' + (b.id === meId ? ' me' : '');
     box.appendChild(el); rowEls.push(el);
-    if (i === 0) box.appendChild($('shieldTag')); // SHIELD tag sits right under the player row
+    if (b.id === meId) box.appendChild(shieldEl); // SHIELD tag sits right under the player row
   });
   for (const k of Object.keys(cache)) if (k.startsWith('sb')) delete cache[k];
 }
@@ -137,14 +170,15 @@ export function scoreRow(dm, id, match, alive) {
 export function setScoreboard(state, match, dm) {
   for (let i = 0; i < bikes.length; i++) {
     const b = bikes[i], r = scoreRow(dm, b.id, match, state.bikes[b.id].alive);
-    const key = `${b.name}|${b.color}|${r.n}|${r.segs}|${r.out}|${r.dim}`;
+    const rk = b.rank ? `${b.rank.tier}${b.rank.div}${b.rank.wins}` : '';
+    const key = `${b.name}|${b.color}|${r.n}|${r.segs}|${r.out}|${r.dim}|${rk}`;
     if (cache['sb' + b.id] === key) continue;
     cache['sb' + b.id] = key;
     const el = rowEls[i], c = css(b.color);
     el.style.setProperty('--c', c);
     el.classList.toggle('dim', r.dim);
     let segs = ''; for (let k = 0; k < r.segs; k++) segs += k < r.n ? '<i class="on"></i>' : '<i></i>';
-    el.innerHTML = `${BIKE_SVG}<span class="hn">${esc(b.name)}</span><span class="hp">${segs}</span><span class="hv">${r.out ? 'OUT' : r.n}</span>`;
+    el.innerHTML = `${BIKE_SVG}<span class="hn">${esc(b.name)}</span>${b.rank ? badgeHtml(b.rank) : ''}<span class="hp">${segs}</span><span class="hv">${r.out ? 'OUT' : r.n}</span>`;
   }
 }
 // Small centred status line under the timer (Death Match: respawn countdown / eliminated). '' hides it.
@@ -169,7 +203,27 @@ function roundResultHtml(match) {
   return `<div class="panel frame"><h2>${title}</h2>${lines}<div class="line" style="font-size:14px">${board}</div></div>`;
 }
 
+// Online results: placements with rank badges, then our rank change (badge before -> after, win pip +/-, PROMOTED / DEMOTED banner).
+function onlineResultHtml(match) {
+  const R = onlineResult, dm = match.mode.kind === 'deathmatch';
+  const rows = R.rows.slice().sort((a, b) => a.place - b.place || a.id - b.id);
+  const me = R.rows.find((r) => r.id === R.meId);
+  const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${badgeHtml(r.rankAfter || r.rankBefore)} ${colored(r.id, esc(r.username))} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
+  const first = rows.filter((r) => r.place === 1);
+  const title = me && me.won ? 'YOU WIN!' : me && me.place === 1 ? 'TIED FOR 1ST' : first.length === 1 ? `${esc(first[0].username).toUpperCase()} WINS` : 'DRAW';
+  let rank = '';
+  if (me && me.rankBefore && me.rankAfter) {
+    const c = rankChange(me.rankBefore, me.rankAfter, me.change);
+    const delta = c.banner ? '' : c.pipDelta > 0 ? '<div class="rkd up">+1 WIN PIP</div>' : c.pipDelta < 0 ? '<div class="rkd down">-1 WIN PIP</div>' : '';
+    const banner = c.banner ? `<div class="rkbanner ${c.banner === 'PROMOTED' ? 'up' : 'down'}">${c.banner}<small>${esc(badgeLabel(me.rankAfter))}</small></div>` : '';
+    rank = `<div class="rkbox"><div class="rkswap"><span class="rkb">${badgeHtml(me.rankBefore, 'big')}</span><span class="rka">${badgeHtml(me.rankAfter, 'big')}</span></div>${delta}${banner}</div>`;
+  }
+  return `<div class="panel frame"><h2>${title}</h2>${lines}${rank}<button class="mbtn frame primary" type="button" data-act="again">PLAY AGAIN</button><button class="mbtn frame" type="button" data-act="menu">MAIN MENU</button></div>`;
+}
+const badgeLabel = (r) => badgeInfo(r).label;
+
 function matchResultHtml(match) {
+  if (onlineResult) return onlineResultHtml(match);
   const dm = match.mode.kind === 'deathmatch';
   const rows = match.placements.map((id) =>
     `<div class="line">${match.ranks[id]}. ${colored(id, nameOf(id))} &nbsp; ${match.scores[id]}${dm ? ' KILLS' : ''}</div>`).join('');

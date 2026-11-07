@@ -7,7 +7,7 @@ const fresh = async () => { mem.clear(); await A.init({ backend: 'mock' }); };
 const rejects = async (p, code) => { try { await p; } catch (e) { assert.equal(e.code, code, e.message); assert.ok(e.message); return; } assert.fail('expected rejection ' + code); };
 
 { // no backend / unconfigured firebase: offline, clear error
-  await A.init({ backend: 'firebase' });
+  await A.init({ backend: 'firebase', config: { apiKey: 'YOUR_API_KEY', authDomain: '', projectId: '', appId: '' } }); // real config is set now; test the placeholder path
   assert.equal(A.status().configured, false);
   await rejects(A.login('a@b.co', 'password1'), 'unconfigured');
   assert.equal(A.currentUser(), null);

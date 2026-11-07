@@ -4,13 +4,15 @@ import { step, turnBike, canTurn, isAirborne, startBoost, startJump } from './ph
 import { initInput, popTurn, popAction, pushAction, clearQueue, setOnPause } from './input.js';
 import { render, burst, resetCamera, resetEffects, setBikeStyle } from './render.js';
 import * as audio from './audio.js';
-import { initHud, setTimer, setScoreboard, setStatus, showPause, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks } from './hud.js';
+import { initHud, setTimer, setScoreboard, setStatus, showPause, showLeave, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks, showAnnounce } from './hud.js';
 import { createAI, updateAIs } from './ai.js';
 import { useAbility, cycleAbility, setLoadout } from './abilities.js';
 import { createMatch, MODES } from './modes.js';
 import { getSave, addSessionStats, recordMatch, recordRound, flushSave } from './save.js';
 import { glowHex, DEFAULT_PARTS, resolveAiColors } from './parts.js';
-import { initMenu, showScreen, applySettings, closeSettings, inSettings, currentScreen } from './menu.js';
+import { initMenu, showScreen, applySettings, closeSettings, inSettings, currentScreen, menuBack } from './menu.js';
+import * as online from './online.js';
+import { queueMode } from './multi-ui.js';
 
 const DT = 1 / CFG.tickHz;
 const state = createState();
@@ -21,6 +23,7 @@ CFG.players.forEach((p, i) => {
   state.bikes.push(b);
 });
 state.playerId = 0;
+const spBikes = state.bikes; // singleplayer bikes: state.bikes is swapped for the room's bikes during an online match
 
 let modeId = 'standard';
 const match = createMatch(state, MODES.standard, Math.random, {
@@ -28,7 +31,8 @@ const match = createMatch(state, MODES.standard, Math.random, {
   onRespawn(b) { if (b.id === state.playerId) { clearQueue(); resetCamera(); } }, // Death Match
 });
 let paused = false;
-let screen = 'menu'; // 'menu' | 'game'
+let screen = 'menu'; // 'menu' | 'game' (singleplayer) | 'online' (multiplayer match, see online.js)
+let leaveOpen = false;
 let session = { kills: 0, distance: 0, boosts: 0, jumps: 0 }; // player tallies not yet written to the save
 let rewarded = false;
 let roundCnt = { boosts: 0, jumps: 0 }; // player's boosts / jumps this round (Death Match: whole match) for achievements
@@ -45,7 +49,7 @@ function setPaused(p) {
   paused = p; showPause(p); clearQueue(); audio.setPaused(p);
   if (!p && currentScreen()) showScreen(null); // settings opened from the pause panel
 }
-function clearPause() { paused = false; showPause(false); audio.setPaused(false); showScreen(null); }
+function clearPause() { paused = false; showPause(false); audio.setPaused(false); showLeave(false); leaveOpen = false; showScreen(null); }
 
 function startGame(id) {
   if (typeof id === 'string' && MODES[id]) modeId = id; // play again / restart keep the current mode
@@ -78,15 +82,29 @@ function quitToMenu() {
   showScreen('scrMain');
 }
 
+// ---- online match glue (the sim / HUD feed lives in online.js) ----
+function startOnline(msg) {
+  commitSession(); flushSave();
+  screen = 'online'; clearPause(); clearQueue();
+  online.begin(msg, state, spBikes, (why) => { quitToMenu(); if (why) showAnnounce(why); });
+}
+function setLeave(on) { if (screen !== 'online' || online.match.phase === 'matchEnd') on = false; leaveOpen = on; showLeave(on); }
+function leaveOnline() { online.leave(); quitToMenu(); }
+function playAgainOnline() { const m = online.currentMode(); leaveOnline(); showScreen('scrMulti'); if (m) queueMode(m); }
+online.net.on('start', (msg) => startOnline(msg));
+online.watchAuth();
+
 initHud(CFG.players.map((p, i) => ({ id: i, name: p.name, color: p.color })), {
-  onPause: () => setPaused(true),
+  onPause: () => (screen === 'online' ? setLeave(true) : setPaused(true)),
+  onLeaveResume: () => setLeave(false),
+  onLeaveConfirm: leaveOnline,
   onResume: () => setPaused(false),
   onBoost: () => pushAction('boost'),
   onJump: () => pushAction('jump'),
   onAbility: () => pushAction('ability'),
   onSwap: () => pushAction('swap'),
-  onPlayAgain: () => startGame(),
-  onMenu: quitToMenu,
+  onPlayAgain: () => (screen === 'online' ? playAgainOnline() : startGame()),
+  onMenu: () => (screen === 'online' ? leaveOnline() : quitToMenu()),
 });
 initMenu({ onPlay: (id) => startGame(id), onResume: () => setPaused(false), onRestart: () => startGame(), onQuit: quitToMenu });
 initInput();
@@ -94,8 +112,9 @@ audio.initAudio();
 applySettings();
 setOnPause(() => {
   if (screen === 'menu') { // Esc backs out of menu screens
-    if (inSettings()) closeSettings(); else if (['scrMode', 'scrAbilities', 'scrGarage', 'scrStats'].includes(currentScreen())) showScreen('scrMain');
-  } else if (inSettings()) closeSettings();
+    if (inSettings()) closeSettings(); else menuBack();
+  } else if (screen === 'online') setLeave(!leaveOpen);
+  else if (inSettings()) closeSettings();
   else setPaused(!paused);
 });
 // Never starts paused: only a visibilitychange to hidden while a round is in progress pauses.
@@ -132,7 +151,7 @@ function tick() {
 
 // Audio cues derived from match phase changes + player engine (render-rate, not tick-rate).
 let prevPhase = match.phase, prevCd = 0;
-function trackAudio() {
+function trackAudio(match) {
   const ph = match.phase;
   if (ph === 'countdown') { const c = Math.ceil(match.cd); if (c !== prevCd && c > 0) audio.countdownBeep(); prevCd = c; }
   if (ph !== prevPhase) {
@@ -174,14 +193,27 @@ function dmStatus() {
 }
 
 let last = performance.now(), acc = 0;
+function frameOnline(now, dt) {
+  const m = online.match, extra = online.update(now, dt), me = state.bikes[state.playerId];
+  trackAudio(m);
+  render(state, dt, state.playerId, extra);
+  setTimer(m.clock());
+  setScoreboard(state, m, m.mode.kind === 'deathmatch');
+  setStatus(online.status());
+  syncOverlays(m);
+  drawMinimap(state);
+  setAbilityButtons(me);
+  setShieldTag(me);
+}
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1); last = now;
+  if (screen === 'online' && online.isActive()) { frameOnline(now, dt); requestAnimationFrame(frame); return; }
   if (screen === 'game' && !paused) {
     acc += dt;
     while (acc >= DT) { tick(); acc -= DT; }
   }
   trackMatch();
-  trackAudio();
+  trackAudio(match);
   const running = screen === 'game' && match.phase === 'running' && !paused;
   render(state, dt, state.playerId, running ? acc : 0);
   setTimer(match.clock());

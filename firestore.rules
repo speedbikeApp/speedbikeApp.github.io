@@ -21,6 +21,13 @@ service cloud.firestore {
       allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
     }
 
+    // ranks/{uid}: multiplayer rank {tier, div, wins, matches, totalWins, updatedAt, username}.
+    // Written ONLY by the game server (Admin SDK bypasses these rules); clients may read, never write.
+    match /ranks/{uid} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // Reserved for later (leaderboards etc.): add new collections here. Everything else is denied by default.
   }
 }

@@ -1,0 +1,78 @@
+# SpeedBike game server
+
+Authoritative multiplayer server (Node >= 20, ES modules, `ws`). It imports the game's pure modules from `../js/` (config, state,
+physics, rules, modes, maps, ranks, rotation) and runs 4-human matches. Protocol: [`../docs/MULTIPLAYER.md`](../docs/MULTIPLAYER.md).
+
+## Run locally (dev auth)
+
+```
+cd server
+npm install
+npm start            # ws://localhost:8787, health: http://localhost:8787/health
+npm test             # unit + end-to-end tests (no Firebase needed)
+```
+
+Without Firebase credentials the server starts in **DEV AUTH** mode (loud warning in the log): clients send
+`{t:'hello', dev:true, uid, username}` (the web client does this with `?backend=mock`) and ranks are stored in `server/data/ranks.json`.
+Dev auth lets anyone claim any uid: never expose it to the internet. Open the game with `?backend=mock&server=ws://localhost:8787`.
+
+## Real accounts (Firebase Admin)
+
+1. Firebase console -> Project settings -> Service accounts -> **Generate new private key**. Save the JSON outside the repo
+   (or somewhere matched by `server/.gitignore`). **Never commit it.**
+2. `GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json npm start` (or put the JSON in `FIREBASE_SERVICE_ACCOUNT` on hosts without files).
+3. The server then verifies client ID tokens (`verifyIdToken`, project `speedbike-9a552`), reads the username from `users/{uid}`
+   and keeps ranks in Firestore `ranks/{uid}` (Admin SDK bypasses rules; clients may only read, see `../firestore.rules`: publish them).
+
+## Environment variables
+
+| var | default | meaning |
+|---|---|---|
+| `PORT` | 8787 | listen port (hosts like Render/Fly set it) |
+| `GOOGLE_APPLICATION_CREDENTIALS` / `FIREBASE_SERVICE_ACCOUNT` | - | service-account file path / JSON string; presence selects Firebase mode |
+| `DEV_AUTH` | auto | `1` force dev auth, `0` forbid it (fail without credentials); unset = dev only when no credentials |
+| `FIREBASE_PROJECT_ID` | speedbike-9a552 | project for token verification |
+| `RANKS_FILE` | server/data/ranks.json | JSON rank file (dev mode) |
+| `ALLOWED_ORIGINS` | any | comma-separated browser origins allowed to connect |
+| `LOBBY_COUNTDOWN_MS` | 30000 | lobby countdown (tests) |
+| `TIME_SCALE` | 1 | TEST ONLY: runs the sim N times faster than real time |
+| `NODE_ENV=production` | | refuses dev auth unless `DEV_AUTH=1` is explicit |
+
+## Files
+
+`index.js` http + ws + glue, shared 4 ms loop (rooms, lobby timers, rotation, heartbeat) | `protocol.js` message validation + rate limiter |
+`auth.js` dev / Firebase auth | `store.js` ranks (atomic JSON file or Firestore) | `ranking.js` applies results + announcements |
+`matchmaker.js` queues and lobbies (clock-injected, no timers) | `room.js` one match | `test/` (`npm test`; `e2e.test.mjs` plays full matches over real sockets).
+
+## How a room runs
+
+`Room.update(now)` computes how many ticks are due from the absolute start time (`floor((now - t0) * 120 / 1000)`), so a late timer
+runs several ticks in a row instead of drifting; a stall over ~2 s is skipped. Per tick: apply leavers, apply queued inputs (turns
+wait up to 100 ms for the min turn gap, like the offline input buffer), `step()`, feed crashes to `match.onTick` (`resolveTick`, never
+`resolvePlayerOut`: `state.playerId = -1`), broadcast. `ev` = authoritative state right before server tick `tick`; `crash`/`round`/`snap`
+carry the tick counter after the iteration. Snapshots go out at 10 Hz. Leaving or dropping a socket crashes the bike and charges
+a rank loss immediately; fewer than 2 humans left ends the match (the remaining player wins).
+
+## Hosting notes (no decision made)
+
+The server is one long-lived process holding WebSockets and match state in memory, so it needs a host with persistent processes
+and WebSocket support, TLS termination (`wss://`), and a single instance (rooms are not shared between instances).
+
+- **Fly.io**: Docker/`fly launch`, always-on small VM, regions close to players, WebSockets work out of the box; free tier is limited; secrets via `fly secrets`.
+- **Render** (web service): simple git deploy, WebSockets OK, free tier sleeps when idle (bad for a game server), paid tier is always on.
+- **Railway**: easiest deploy, usage-based pricing, WebSockets fine.
+- **Small VPS** (Hetzner, DO, ...): cheapest per CPU and best latency control, but you run Node (pm2/systemd), TLS (Caddy/nginx) and updates yourself.
+
+CPU is light (a 4-player room is a few hundred microseconds per tick); the Firestore round trip only happens at match end.
+
+## Protocol notes / deviations from docs/MULTIPLAYER.md
+
+- `hello` may be up to 4 KB (a Firebase ID token is ~1 KB+); every other message is capped at 1 KB.
+- Tick numbering: `tick0` is always 0 (the sim starts in the 3 s countdown). `ev.tick` = state before iteration `tick`; `crash`/`round`/`snap` use the counter after the iteration.
+- `round` also carries `round` (number), `cd` (countdown seconds left), `lives` (Death Match) and, for `phase:'countdown'`, `bikes` (fresh spawn states). Phases: `countdown | running | roundEnd | matchEnd`.
+- `crash` has `cause`: `'trail' | 'wall' | 'void' | 'side' | 'leave'` and `lives` (remaining, Death Match only). `ev.kind` also includes `'respawn'` (Death Match, full bike state). `snap` also has `phase`, `roundTime` and per-bike `lives`.
+- `end` = `{t:'end', mode, reason:'normal'|'forfeit', ranks:[{id,uid,username,place,won,left,scores,rankBefore,rankAfter,change}]}`.
+- Extra server messages: `{t:'online', online}` (throttled to 1 per 2 s) and `{t:'rank', rank}` (sent to a player who left a match, after the loss is applied).
+- `colorIdx` is the index into `CFG.players` (0 orange, 1 blue, 2 green, 3 purple), distinct per lobby. Abilities/`ability`/`swap` inputs are ignored; `loadout` is `null`.
+- A second login with the same uid replaces the first connection (`error` code `replaced`). Queueing the same player twice or while in a match is `error busy`.
+- If a match ends because everyone else left (`forfeit`), the remaining player counts as the sole winner.

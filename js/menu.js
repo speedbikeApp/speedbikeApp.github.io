@@ -9,18 +9,21 @@ import { setBloom, setMaxDpr, initPreview, setPreviewParts, drawPreview } from '
 import * as audio from './audio.js';
 import { setPlayerName } from './hud.js';
 import { initAccountUi, openAccount, accountEsc, isSignedIn } from './account-ui.js';
+import { initMultiUi, onScreen as multiScreen, multiBack } from './multi-ui.js';
 import { ACTIONS, ACTION_LABEL, groups, codeLabel, rebind, defaultKeys, setBindings, getBindings, captureNextKey, GAMEPAD_LAYOUT } from './input.js';
 
 const $ = (id) => document.getElementById(id);
 let current = null;      // visible screen id or null
 let settingsFrom = null; // 'main' | 'pause'
 
+const SCREENS = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrSettings', 'scrControls'];
+const FULL_MENU = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount']; // screens shown over the empty arena (HUD hidden)
 export function showScreen(name, backdrop = 'home') {
   current = name;
   $('menu').style.display = name ? 'flex' : 'none';
   $('menu').className = backdrop; // 'home' (3D visible) | 'dim' (over the paused game)
-  for (const id of ['scrMain', 'scrMode', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrSettings', 'scrControls']) $(id).classList.toggle('on', id === name);
-  document.body.classList.toggle('menu', name === 'scrMain' || name === 'scrMode' || name === 'scrAbilities' || name === 'scrGarage' || name === 'scrStats' || name === 'scrAccount' || ((name === 'scrSettings' || name === 'scrControls') && settingsFrom === 'main'));
+  for (const id of SCREENS) $(id).classList.toggle('on', id === name);
+  document.body.classList.toggle('menu', FULL_MENU.includes(name) || ((name === 'scrSettings' || name === 'scrControls') && settingsFrom === 'main'));
   if (name === 'scrMain') { $('mCoins').textContent = getSave().coins; $('mName').textContent = getSave().profile.username; }
   if (name === 'scrMode') syncDiff();
   if (name === 'scrAbilities') renderAbilities('');
@@ -28,6 +31,7 @@ export function showScreen(name, backdrop = 'home') {
   else stopPreview();
   if (name === 'scrStats') renderStats();
   if (name === 'scrAccount') openAccount();
+  if (name === 'scrMulti' || name === 'scrQueue' || name === 'scrLobby') multiScreen(name);
   if (name === 'scrSettings') syncSettingsUi();
   if (name !== 'scrControls') cancelCapture();
   if (name === 'scrControls') renderControls('');
@@ -130,8 +134,12 @@ function syncSettingsUi() {
 // h: {onPlay(modeId), onResume, onRestart, onQuit}
 export function initMenu(h) {
   const on = (id, fn) => $(id).addEventListener('click', fn);
-  on('mPlay', () => showScreen('scrMode'));
-  on('modeBack', () => showScreen('scrMain'));
+  on('mPlay', () => showScreen('scrPlay'));
+  on('pSingle', () => showScreen('scrMode'));
+  on('pMulti', () => showScreen('scrMulti'));
+  on('playBack', () => showScreen('scrMain'));
+  on('modeBack', () => showScreen('scrPlay'));
+  initMultiUi({ show: showScreen, openAccount: () => showScreen('scrAccount') });
   on('mAbilities', () => showScreen('scrAbilities'));
   on('mGarage', () => showScreen('scrGarage'));
   on('mStats', () => showScreen('scrStats'));
@@ -193,6 +201,13 @@ export function closeSettings() {
   saveSoon();
   if (current === 'scrControls') { showScreen('scrSettings', settingsFrom === 'pause' ? 'dim' : 'home'); return; }
   if (settingsFrom === 'pause') { settingsFrom = null; showScreen(null); } else { settingsFrom = null; showScreen('scrMain'); }
+}
+// Esc inside a menu screen: step back one level. Returns true if the screen was handled.
+export function menuBack() {
+  if (current === 'scrMode' || current === 'scrMulti') { showScreen('scrPlay'); return true; }
+  if (current === 'scrQueue' || current === 'scrLobby') return multiBack(current);
+  if (current === 'scrPlay' || current === 'scrAbilities' || current === 'scrGarage' || current === 'scrStats') { showScreen('scrMain'); return true; }
+  return false;
 }
 export const inSettings = () => current === 'scrSettings' || current === 'scrControls';
 

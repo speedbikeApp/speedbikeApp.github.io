@@ -34,6 +34,21 @@ Accounts (register / login / user panel) use Firebase Auth + Firestore, loaded f
 
 Dev / testing without Firebase: open `http://localhost:8000/?backend=mock`. This uses a localStorage-only fake backend (labelled "DEV MOCK" in the UI; never used unless that URL parameter is present).
 
+## Multiplayer (ranked, up to 4 players)
+PLAY -> **MULTIPLAYER** needs a signed-in account (ACCOUNT screen) and a running game server. Singleplayer never needs the server: if it is unreachable the multiplayer screen just says "SERVER OFFLINE".
+
+Run it locally (two or more browsers / profiles, each with its own account):
+```
+cd server && npm install && npm start        # game server on ws://localhost:8787 (dev auth, ranks in server/data/ranks.json)
+python -m http.server 8000                   # in the repo root, in another terminal
+```
+Open `http://localhost:8000/?backend=mock` in two different browser profiles (the mock accounts live in each profile's localStorage and are accepted by the dev-auth server), register a user in each (ACCOUNT), then PLAY -> MULTIPLAYER -> pick a mode in both. Two players open a lobby that starts after 30 s (4 players start at once); set `LOBBY_COUNTDOWN_MS=3000` when starting the server to shorten it.
+
+- Server URL: `CFG.net.url` in `js/config.js` (default `ws://localhost:8787`), or per visit with `?server=wss://your-host` (also combine: `?backend=mock&server=ws://localhost:8790`). For a deployed game set it to your `wss://` URL.
+- Modes: STANDARD, DEATH MATCH and one FEATURED mode (HYPER or 3D) that rotates every hour. Ranks: Helium / Neon / Xenon, divisions III-I, two win pips per division; only a sole 1st place wins a pip, everything else (including leaving) loses one.
+- Known limits: abilities are off online and everyone rides default parts (your own glow colour only); the match never pauses (the pause button opens Leave match, which counts as a loss).
+- Real accounts: with Firebase configured the client sends its ID token; the server needs service-account credentials (see `server/README.md`).
+
 ## Tests
 ```
 for f in tests/*.mjs; do node "$f"; done

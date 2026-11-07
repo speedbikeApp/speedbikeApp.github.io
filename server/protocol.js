@@ -1,0 +1,57 @@
+// Client message validation + rate limiting. Everything from a socket is untrusted: parse defensively, return plain objects only.
+export const MAX_MSG = 1024;        // bytes, every message ...
+export const MAX_HELLO = 4096;      // ... except hello (a Firebase ID token alone is ~1 KB)
+export const MODES_ALL = ['standard', 'hyper', '3d', 'deathmatch'];
+export const INPUT_KINDS = ['turn', 'boost', 'jump', 'ability', 'swap'];
+
+const isStr = (v, max) => typeof v === 'string' && v.length <= max;
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+
+// Returns { ok:true, msg } with a sanitized message, or { ok:false, code, message }.
+export function parseClientMessage(raw) {
+  const len = typeof raw === 'string' ? Buffer.byteLength(raw) : raw && raw.length;
+  if (!len) return bad('bad_message', 'empty message');
+  let o;
+  try { o = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf8')); } catch { return bad('bad_json', 'invalid JSON'); }
+  if (!o || typeof o !== 'object' || Array.isArray(o) || !isStr(o.t, 16)) return bad('bad_message', 'missing type');
+  if (len > (o.t === 'hello' ? MAX_HELLO : MAX_MSG)) return bad('too_large', 'message too large');
+  switch (o.t) {
+    case 'hello':
+      if (o.dev === true) {
+        if (!isStr(o.uid, 40) || !/^[\w-]{1,40}$/.test(o.uid) || !isStr(o.username, 40)) return bad('bad_message', 'bad dev hello');
+        return ok({ t: 'hello', dev: true, uid: o.uid, username: o.username });
+      }
+      if (!isStr(o.token, MAX_HELLO) || !o.token) return bad('bad_message', 'missing token');
+      return ok({ t: 'hello', token: o.token });
+    case 'queue':
+      if (!isStr(o.mode, 16) || !MODES_ALL.includes(o.mode)) return bad('bad_mode', 'unknown mode');
+      return ok({ t: 'queue', mode: o.mode });
+    case 'leaveQueue': case 'leave':
+      return ok({ t: o.t });
+    case 'in': {
+      if (!isStr(o.kind, 8) || !INPUT_KINDS.includes(o.kind)) return bad('bad_message', 'bad input kind');
+      const m = { t: 'in', kind: o.kind };
+      if (o.kind === 'turn') { if (o.side !== -1 && o.side !== 1) return bad('bad_message', 'bad turn side'); m.side = o.side; }
+      if (o.ctick !== undefined && isNum(o.ctick)) m.ctick = o.ctick; // informational only: the server applies inputs at its own tick
+      return ok(m);
+    }
+    case 'ping':
+      if (!(isNum(o.c) || isStr(o.c, 32))) return bad('bad_message', 'bad ping');
+      return ok({ t: 'ping', c: o.c });
+    default:
+      return bad('unknown_type', 'unknown message type');
+  }
+}
+const ok = (msg) => ({ ok: true, msg });
+const bad = (code, message) => ({ ok: false, code, message });
+
+// Token bucket: `rate` tokens/s, up to `burst`. take() -> true when allowed.
+export class RateLimiter {
+  constructor(rate, burst, now = () => Date.now()) { this.rate = rate; this.burst = burst; this.now = now; this.tokens = burst; this.last = now(); }
+  take() {
+    const t = this.now();
+    this.tokens = Math.min(this.burst, this.tokens + (t - this.last) * this.rate / 1000); this.last = t;
+    if (this.tokens < 1) return false;
+    this.tokens -= 1; return true;
+  }
+}

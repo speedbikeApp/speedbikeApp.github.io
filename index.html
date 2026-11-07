@@ -174,6 +174,52 @@
     .gcard { min-height: 40px !important; } #stGrid { grid-template-columns: repeat(5, minmax(0, 1fr)); } .stCell b { font-size: 14px; }
     #gTabs .mbtn { min-height: 30px; } .toast { padding: 4px 12px; font-size: 12px; } #toasts { top: 96px; }
   }
+  /* ---- multiplayer: rank badge, play / multiplayer / queue / lobby screens, online HUD bits, rank results ---- */
+  .rb { display: inline-flex; align-items: center; gap: 3px; color: var(--rc, #fff); vertical-align: middle; white-space: nowrap; font-weight: 800; letter-spacing: 0; }
+  .rb b { font-size: .86em; border: 1px solid var(--rc); border-radius: 3px; padding: 0 3px; line-height: 1.2; text-shadow: 0 0 6px var(--rc); box-shadow: 0 0 5px var(--rc), inset 0 0 4px rgba(255,255,255,.12); }
+  .rb i { font-style: normal; font-size: .86em; text-shadow: 0 0 6px var(--rc); }
+  .rb s { display: inline-flex; gap: 2px; text-decoration: none; }
+  .rb u { display: block; width: .5em; height: .5em; border: 1px solid var(--rc); border-radius: 50%; text-decoration: none; }
+  .rb u.on { background: var(--rc); box-shadow: 0 0 5px var(--rc); }
+  .rb.big { font-size: 26px; gap: 6px; } .rb.big u { width: 12px; height: 12px; border-width: 2px; }
+  .hrow .rb { font-size: 9px; flex: none; } .hrow .hn { width: 64px; }
+  #scrPlay { min-width: min(360px, 90vw); } #scrPlay .mbtn { width: 100%; }
+  #scrMulti { width: min(640px, 94vw); }
+  #mpNeed { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 15px; letter-spacing: 2px; } #mpNeed small { font-size: 11px; opacity: .8; font-family: sans-serif; letter-spacing: 0; }
+  #mpMain { width: 100%; display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+  #mpTop { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  #mpRank { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; font-size: 22px; } #mpRank small { font-size: 10px; letter-spacing: 3px; opacity: .85; font-weight: 500; }
+  #mpInfo { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; letter-spacing: 2px; }
+  #mpStatus.ok { color: #7f7; } #mpStatus.bad { color: #f88; } #mpStatus.wait { color: #fc3; }
+  #mpModes { width: 100%; flex-wrap: nowrap; align-items: stretch; } #mpModes .mbtn { padding: 12px 6px; font-size: 14px; letter-spacing: 2px; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+  #mpModes .mbtn small { font-size: 9px; letter-spacing: 1px; line-height: 1.3; }
+  #mpModes .mbtn.feat { border-color: #fc3; box-shadow: 0 0 10px #fc3, inset 0 0 8px rgba(255,200,0,.2); } #mpModes .mbtn.feat small { color: #fc3; }
+  #mpMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; text-align: center; }
+  #scrQueue, #scrLobby { min-width: min(420px, 92vw); }
+  .bigtxt { font-size: 18px; letter-spacing: 3px; color: #fff; text-shadow: 0 0 10px #0ff; text-align: center; }
+  .bigtxt.pulse { animation: kblink 1.4s infinite; }
+  #qSub, #lCount { font-size: 13px; letter-spacing: 3px; }
+  #lList { width: 100%; display: flex; flex-direction: column; gap: 4px; }
+  .lrow { display: flex; align-items: center; gap: 10px; padding: 4px 10px; font-size: 14px; letter-spacing: 2px; border: 1px solid #357; text-align: left; }
+  .lrow.me { border-color: var(--neon); background: rgba(0,255,255,.1); } .lrow .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); flex: none; }
+  .lrow .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; } .lrow .rb { font-size: 15px; } .lrow.empty { opacity: .35; justify-content: center; }
+  body.online #abWrap, body.online #swapBtn { display: none; }
+  .toast.ann { border-color: #0ff; box-shadow: 0 0 14px #0ff; background: rgba(0,16,24,.85); font-size: 13px; letter-spacing: 2px; } .toast.ann.up { border-color: #ff4d2e; box-shadow: 0 0 16px #ff4d2e; }
+  .panel .orow { font-size: 15px; display: flex; align-items: center; gap: 8px; justify-content: center; } .panel .orow.me { background: rgba(0,255,255,.12); padding: 0 8px; }
+  .panel .warn { font-size: 13px; color: #fc3; letter-spacing: 2px; }
+  .rkbox { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 2px 0; }
+  .rkswap { display: grid; } .rkswap > span { grid-area: 1 / 1; display: flex; justify-content: center; }
+  .rkb { animation: rkOut .35s ease-in 1.0s forwards; } .rka { opacity: 0; animation: rkIn .45s ease-out 1.1s forwards; }
+  @keyframes rkOut { to { opacity: 0; transform: scale(.8); } } @keyframes rkIn { from { opacity: 0; transform: scale(1.5); } to { opacity: 1; transform: scale(1); } }
+  .rkd { font-size: 13px; letter-spacing: 3px; opacity: 0; animation: rkFade .4s ease-out 1.3s forwards; } .rkd.up { color: #7f7; } .rkd.down { color: #f88; }
+  .rkbanner { font-size: 22px; font-weight: 800; letter-spacing: 5px; opacity: 0; animation: rkPop .5s cubic-bezier(.2,1.6,.4,1) 1.4s forwards; } .rkbanner small { display: block; font-size: 12px; letter-spacing: 3px; font-weight: 500; }
+  .rkbanner.up { color: #7f7; text-shadow: 0 0 14px #3f3; } .rkbanner.down { color: #f88; text-shadow: 0 0 14px #f33; }
+  @keyframes rkFade { to { opacity: 1; } } @keyframes rkPop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
+  @media (max-height: 460px) {
+    #scrMulti { gap: 4px; padding: 6px 16px; } #mpMain { gap: 6px; } #mpRank { font-size: 18px; flex-direction: row; align-items: center; gap: 8px; } #mpModes .mbtn { padding: 6px 4px; font-size: 12px; min-height: 52px; }
+    #scrPlay { gap: 6px; } .bigtxt { font-size: 15px; } .lrow { padding: 2px 8px; font-size: 12px; } .lrow .rb { font-size: 13px; } .rb.big { font-size: 20px; }
+    .panel .orow { font-size: 13px; } .panel h2 { font-size: 20px; margin: 0; } .rkbanner { font-size: 17px; }
+  }
   .overlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; font-size: 28px; text-shadow: 0 0 12px currentColor; }
   .overlay.modal { pointer-events: auto; background: rgba(0,0,0,.45); }
   .panel { padding: 18px 32px; min-width: 260px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
@@ -221,6 +267,13 @@
     <button id="pQuit" class="mbtn frame" type="button">QUIT TO MENU</button>
   </div>
 </div>
+<div id="leaveOverlay" class="overlay modal" data-ui>
+  <div class="panel frame"><h2>LEAVE MATCH?</h2>
+    <div class="warn">LEAVING COUNTS AS A LOSS - THE MATCH GOES ON</div>
+    <button id="leaveResume" class="mbtn frame primary" type="button">RESUME</button>
+    <button id="leaveConfirm" class="mbtn frame danger" type="button">LEAVE MATCH</button>
+  </div>
+</div>
 <div id="menu" data-ui>
   <div id="scrMain" class="screen">
     <h1 id="logo">SPEED<span>BIKE</span></h1>
@@ -253,6 +306,42 @@
       <button class="mbtn frame" type="button" data-diff="2">HARD</button>
     </div>
     <button id="modeBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrPlay" class="screen frame">
+    <h2>PLAY</h2>
+    <button id="pSingle" class="mbtn frame primary" type="button">SINGLEPLAYER<small>VS AI BOTS</small></button>
+    <button id="pMulti" class="mbtn frame primary" type="button">MULTIPLAYER<small>RANKED - UP TO 4 PLAYERS ONLINE</small></button>
+    <button id="playBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrMulti" class="screen frame">
+    <h2>MULTIPLAYER</h2>
+    <div id="mpNeed" hidden><b>SIGN IN TO PLAY ONLINE</b><small>Ranked matches need an account.</small><button id="mpAccount" class="mbtn frame primary" type="button">ACCOUNT</button></div>
+    <div id="mpMain" hidden>
+      <div id="mpTop">
+        <div id="mpRank"></div>
+        <div id="mpInfo"><span id="mpOnline">-- ONLINE</span><span id="mpStatus" class="wait">CONNECTING...</span></div>
+      </div>
+      <div id="mpModes" class="mrow">
+        <button class="mbtn frame" type="button" data-mp="standard">STANDARD<small>FIRST TO 5 POINTS</small></button>
+        <button class="mbtn frame" type="button" data-mp="deathmatch">DEATH MATCH<small>3 LIVES - RESPAWN</small></button>
+        <button id="mpFeat" class="mbtn frame feat" type="button" data-mp="featured">HYPER<small>FEATURED - ROTATES IN --:--</small></button>
+      </div>
+    </div>
+    <div id="mpMsg"></div>
+    <button id="mpBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrQueue" class="screen frame">
+    <h2 id="qMode">STANDARD</h2>
+    <div class="bigtxt pulse">SEARCHING...</div>
+    <div id="qSub">-- IN QUEUE</div>
+    <button id="qCancel" class="mbtn frame" type="button">CANCEL</button>
+  </div>
+  <div id="scrLobby" class="screen frame">
+    <h2 id="lMode">STANDARD</h2>
+    <div class="bigtxt pulse">WAITING FOR OTHER PLAYERS</div>
+    <div id="lList"></div>
+    <div id="lCount">STARTS IN 30</div>
+    <button id="lLeave" class="mbtn frame" type="button">LEAVE</button>
   </div>
   <div id="scrAbilities" class="screen frame">
     <h2>ABILITIES</h2>

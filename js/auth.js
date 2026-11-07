@@ -70,6 +70,8 @@ export async function init(opts = {}) {
 /** {mode: 'firebase'|'mock'|'none'|'error', configured, error} */
 export const status = () => ({ mode, configured: mode === 'firebase' || mode === 'mock', error: readyErr });
 export const currentUser = () => (user ? { ...user } : null);
+/** Firebase ID token of the signed-in user for the multiplayer server hello (null for the mock backend / signed out). */
+export async function getIdToken() { try { return (user && backend && backend.idToken) ? await backend.idToken() : null; } catch { return null; } }
 /** cb(user|null) is called now and on every change. Returns an unsubscribe function. */
 export function onAuthChange(cb) { listeners.add(cb); try { cb(currentUser()); } catch { /* ignore */ } return () => listeners.delete(cb); }
 
@@ -244,5 +246,6 @@ async function createFirebase(emitUser, cfg) {
       emitUser(null);
     }),
     resetPassword: (email) => wrap(async () => { await authM.sendPasswordResetEmail(auth, email); }),
+    idToken: () => (auth.currentUser ? auth.currentUser.getIdToken() : Promise.resolve(null)),
   };
 }
