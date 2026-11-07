@@ -57,7 +57,7 @@ export const CFG = {
     bloom: { strength: 1.0, radius: 0.5, threshold: 0.2, msaa: 4 },
   },
   quality: { low: 1, medium: 1.5, high: 2 }, // DPR cap per graphics quality
-  rewards: { coins: [100, 50, 25, 10] }, // SBCoins by match placement (1st..4th)
+  rewards: { coins: [100, 50, 25, 10], onlineMult: 2 }, // SBCoins by match placement (1st..4th)
   audio: { master: 0.8, music: 0.35, sfx: 0.8, bpm: 112 },
   colors: { player: 0xff5a1f, floor: 0x000000, grid: 0xffffff, wall: 0x00ff66 },
   spawnRadius: 0.8,               // fraction of arena half-size

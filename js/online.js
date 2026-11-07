@@ -14,7 +14,7 @@ import { burst, resetCamera, resetEffects, setBikeStyle } from './render.js';
 import * as audio from './audio.js';
 import { setHudPlayers, resetHudPlayers, setOnlineResult, flashTurn, showAnnounce } from './hud.js';
 import { DEFAULT_PARTS, glowHex, colorDist, CLASH_DIST } from './parts.js';
-import { getSave } from './save.js';
+import { getSave, addCoins, coinsForPlacement } from './save.js';
 
 // ---------------------------------------------------------------- presence (menus)
 export const net = createNet({ url: () => serverUrl(globalThis.location ? globalThis.location.search : ''), getHello: () => buildHello(auth) });
@@ -200,7 +200,13 @@ on('end', (m) => {
   match.phase = 'matchEnd'; match.respawnIn = {};
   const me = rows.find((r) => r.id === youId);
   if (me && me.rankAfter) mp.rank = me.rankAfter;
-  setOnlineResult({ meId: youId, rows, mode: m.mode });
+  let reward = null;
+  if (me && !me.left) { // 2x the offline coins: placement + Death Match kill coins
+    const kills = MODES[m.mode]?.kind === 'deathmatch' ? (me.scores || 0) : 0;
+    const earned = CFG.rewards.onlineMult * (coinsForPlacement(me.place) + kills * CFG.deathMatch.coinsPerKill);
+    reward = { earned, total: addCoins(earned) };
+  }
+  setOnlineResult({ meId: youId, rows, mode: m.mode, reward });
   net.lock(false);
 });
 net.on('close', () => { if (active && match.phase !== 'matchEnd') { const cb = onExit; stop(); cb('CONNECTION LOST'); } });

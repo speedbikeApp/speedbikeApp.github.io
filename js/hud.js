@@ -226,7 +226,8 @@ function onlineResultHtml(match) {
     const banner = c.banner ? `<div class="rkbanner ${c.banner === 'PROMOTED' ? 'up' : 'down'}">${c.banner}<small>${esc(badgeLabel(me.rankAfter))}</small></div>` : '';
     rank = `<div class="rkbox"><div class="rkswap"><span class="rkb">${badgeHtml(me.rankBefore, 'big')}</span><span class="rka">${badgeHtml(me.rankAfter, 'big')}</span></div>${delta}${banner}</div>`;
   }
-  return `<div class="panel frame"><h2>${title}</h2>${lines}${rank}<button class="mbtn frame primary" type="button" data-act="again">PLAY AGAIN</button><button class="mbtn frame" type="button" data-act="menu">MAIN MENU</button></div>`;
+  const coins = R.reward ? `<div class="line coins">+${R.reward.earned} SBCOINS <small>(${CFG.rewards.onlineMult}X ONLINE)</small></div><div class="line" style="font-size:14px">TOTAL <span class="coins">${R.reward.total}</span></div>` : '';
+  return `<div class="panel frame"><h2>${title}</h2>${lines}${rank}${coins}<button class="mbtn frame primary" type="button" data-act="again">PLAY AGAIN</button><button class="mbtn frame" type="button" data-act="menu">MAIN MENU</button></div>`;
 }
 const badgeLabel = (r) => badgeInfo(r).label;
 

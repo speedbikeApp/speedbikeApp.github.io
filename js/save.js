@@ -184,6 +184,9 @@ export function recordMatch(placement, bonus = 0, info = {}) {
   return { placement, earned, total: d.coins, won, unlocked };
 }
 
+// Online match coins (placement + kill coins already computed by the caller). Coins only: online matches don't touch offline stats.
+export function addCoins(n) { const d = getSave(); d.coins += Math.max(0, Math.floor(n)); flushSave(); return d.coins; }
+
 // ---- abilities ----
 // Buy with SBCoins. Returns {ok, reason?}.
 export function buyAbility(id) {
