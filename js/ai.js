@@ -1,6 +1,6 @@
 // AI opponents. Pure logic (no three) so it can be tested headless.
 import { CFG } from './config.js';
-import { turnBike, canTurn, segBlocks, startJump, startBoost } from './physics.js';
+import { turnBike, canTurn, segBlocks, startJump, startBoost, jumpY } from './physics.js';
 import { isProtected, useAbilityId, canUse } from './abilities.js';
 import { mapOf, groundAt, terrainProbe } from './maps.js';
 
@@ -15,10 +15,13 @@ const right = (b) => [-b.dz, b.dx];  // matches turnBike(+1)
 // boost and Turbo (ratio >= 1: never shorter than at the standard base speed).
 const ratio = (b) => Math.max(1, (b.speed || 0) / CFG.baseSpeed);
 const grounded = (b) => b.jumpT < 0 && !b.falling;
+const ROOM = 12; // free run a lower platform needs below the landing point before a bot drives off an edge onto it
+const DROP_AREA = 160; // open flood-fill cells the lower level needs (dead-end ledges stay off limits)
 const JUMP_UP = 2.6; // highest step a jump can climb with margin (jump peak is 3.5)
 
 // What is straight ahead of bike b along (dx,dz), up to `max` units: {d, kind}. kind: 'wall' (arena wall), 'trail',
-// 'void' / 'drop' / 'high' (platform edge into nothing / onto a lower platform / side of a higher platform), 'max'.
+// 'void' / 'drop' / 'high' (platform edge into nothing / onto a lower platform / side of a higher platform), 'max'. Ramps are drivable,
+// and a drop with room to carry on below counts as open road (bots use the lower levels).
 // Single-platform walled arenas skip the terrain march (exact analytic wall distance, as in phases 2-6).
 export function probe(state, b, dx, dz, max = CFG.ai.maxLook * ratio(b)) {
   const map = mapOf(state), H = map.half;
@@ -28,7 +31,12 @@ export function probe(state, b, dx, dz, max = CFG.ai.maxLook * ratio(b)) {
     if (w < d) { d = w; kind = 'wall'; }
   }
   if (!(map.walls && map.platforms.length === 1) && grounded(b)) {
-    const t = terrainProbe(map, b.x, b.z, dx, dz, b.y, d);
+    let t = terrainProbe(map, b.x, b.z, dx, dz, b.y, d);
+    if (t.kind === 'drop' || t.kind === 'void') { // driving off: open road if the fall lands on a lower level with room, no trail, a big area
+      const e = t.d + 0.5, L = fallLanding(map, b.x + dx * e, b.z + dz * e, dx, dz, b.y, b.speed), land = L && e + L.u + 1;
+      if (L && land < d && terrainProbe(map, b.x + dx * land, b.z + dz * land, dx, dz, L.g, ROOM).d >= ROOM - 1e-9 && !trailBetween(state, b, t.d, land + ROOM, dx, dz)
+        && floodArea(buildGrid(state, L.g), b.x + dx * land, b.z + dz * land, dx, dz, DROP_AREA) >= DROP_AREA) t = { kind: 'none' }; // not a dead-end ledge
+    }
     if (t.kind !== 'none') { d = t.d; kind = t.kind; }
   }
   if (isProtected(b)) return { d, kind }; // Protector: only walls / edges matter
@@ -56,24 +64,46 @@ export function probe(state, b, dx, dz, max = CFG.ai.maxLook * ratio(b)) {
   }
   return { d, kind };
 }
+// Where a bike driving off an edge at (x,z), height y, comes down: {u (units past the edge), g} or null (void below / hits a platform side).
+// Same fall as physics settle(): constant horizontal speed, gravity from vy = 0.
+function fallLanding(map, x, z, dx, dz, y, speed) {
+  let hPrev = y;
+  for (let u = 0.5; ; u += 0.5) {
+    const h = y - CFG.gravity * (u / speed) ** 2 / 2, g = groundAt(map, x + dx * u, z + dz * u);
+    if (g > hPrev + 0.05) return null; // side of a platform: fatal
+    if (g >= h) return { u, g };
+    if (h < map.killY) return null;
+    hPrev = h;
+  }
+}
 // Free distance from the bike's head along (dx,dz) until a wall, platform hazard or trail (own newest segment ignored).
 export function freeDist(state, b, dx, dz, max) { return probe(state, b, dx, dz, max).d; }
 
-// Is there a safe platform to jump onto beyond the hazard `f` units ahead? -> {w, g} (gap width, landing height) or null.
+// Is there a safe platform to jump onto beyond the hazard `f` units ahead? -> {w, g} (units past the edge, landing height) or null.
+// Simulates the real arc (jumpY, then the post-arc fall) so wide gaps down onto a lower platform count too. aiAbilities fires the jump
+// anywhere from 3 units before the edge to the edge, so both ends of that window must land safely, with room to carry on.
 function findLanding(state, b, dx, dz, f) {
-  const map = mapOf(state), r = ratio(b), maxW = 8 * r;
-  for (let w = 0.5; w <= maxW; w += 0.5) {
-    const lx = b.x + dx * (f + w), lz = b.z + dz * (f + w), g = groundAt(map, lx, lz);
-    if (g === -Infinity) continue;
-    if (g > b.y + JUMP_UP) return null;                    // too high to climb
-    return terrainProbe(map, lx, lz, dx, dz, g, 8 * r).d >= 7 * r - 1e-9 ? { w, g } : null; // needs room to carry on
+  const r = ratio(b), a = arcLanding(state, b, dx, dz, f, Math.max(0, f - 3 * r)), z = a && arcLanding(state, b, dx, dz, f, Math.max(0, f - 0.5));
+  return a && z;
+}
+function arcLanding(state, b, dx, dz, f, t0) {
+  const map = mapOf(state), r = ratio(b), J = CFG.jump, T = J.rise + J.float + J.fall, vy = 2 * J.height / J.fall;
+  let hPrev = b.y;
+  for (let u = 0.5; u < 200; u += 0.5) {
+    const t = u / b.speed, h = t < T ? jumpY(t, J.height, 1, b.y, b.y) : b.y - vy * (t - T) - CFG.gravity * (t - T) ** 2 / 2;
+    const lx = b.x + dx * (t0 + u), lz = b.z + dz * (t0 + u), g = groundAt(map, lx, lz), past = t0 + u > f + 0.5;
+    if (past && g > hPrev + 0.05) return null; // would hit a platform side
+    if (past && g >= h && h < hPrev) // descending onto ground beyond the edge
+      return g <= b.y + JUMP_UP && terrainProbe(map, lx, lz, dx, dz, g, 8 * r).d >= 7 * r - 1e-9 ? { w: t0 + u - f, g } : null;
+    if (h < map.killY) return null;
+    hPrev = h;
   }
   return null;
 }
 
 // Is any trail across the straight line ahead between `from` and `to` units from the head (ignoring heights)? Used to make sure
 // a jump does not come down inside another trail.
-function trailBetween(state, b, from, to) {
+function trailBetween(state, b, from, to, dx = b.dx, dz = b.dz) {
   const m = 0.6;
   for (const o of state.bikes) {
     if (!o.alive) continue;
@@ -82,12 +112,12 @@ function trailBetween(state, b, from, to) {
       if (o === b && s === last) continue;
       const x0 = Math.min(s.x1, s.x2), x1 = Math.max(s.x1, s.x2), z0 = Math.min(s.z1, s.z2), z1 = Math.max(s.z1, s.z2);
       let t0, t1;
-      if (b.dx !== 0) {
+      if (dx !== 0) {
         if (b.z < z0 - m || b.z > z1 + m) continue;
-        t0 = b.dx > 0 ? x0 - b.x : b.x - x1; t1 = b.dx > 0 ? x1 - b.x : b.x - x0;
+        t0 = dx > 0 ? x0 - b.x : b.x - x1; t1 = dx > 0 ? x1 - b.x : b.x - x0;
       } else {
         if (b.x < x0 - m || b.x > x1 + m) continue;
-        t0 = b.dz > 0 ? z0 - b.z : b.z - z1; t1 = b.dz > 0 ? z1 - b.z : b.z - z0;
+        t0 = dz > 0 ? z0 - b.z : b.z - z1; t1 = dz > 0 ? z1 - b.z : b.z - z0;
       }
       if (t1 >= from && t0 <= to) return true;
     }

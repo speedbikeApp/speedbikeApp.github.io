@@ -122,14 +122,16 @@ export function groundAt(map, x, z) {
   return g;
 }
 
-// March from (x,z) along (dx,dz) at standing height y until the surface stops being "flat ground at y"
-// (|ground - y| > tol). Returns {d, kind}: kind 'void' (nothing below), 'drop' (lower platform), 'high' (higher platform
-// side), or 'none' when clear for `max` units. Step 0.5 => gaps/edges are located to within half a unit.
+// March from (x,z) along (dx,dz) at standing height y. Returns {d, kind, g}: kind 'void' (nothing below), 'drop' (lower platform,
+// g = its height), 'high' (side of a higher platform), or 'none' when clear for `max` units. Ramps are followed: the ground may change
+// by one sample of the steepest tilt between samples. Step 0.5 => edges are located to within half a unit.
 export function terrainProbe(map, x, z, dx, dz, y, max, tol = 0.3, step = 0.5) {
+  const ramp = Math.max(tol, step * Math.tan(MAX_TILT) + 0.05);
   for (let d = step; d <= max + 1e-9; d += step) {
     const g = groundAt(map, x + dx * d, z + dz * d);
-    if (g > y + tol) return { d: d - step, kind: 'high', g };
-    if (g < y - tol) return { d: d - step, kind: g === -Infinity ? 'void' : 'drop', g };
+    if (g > y + ramp) return { d: d - step, kind: 'high', g };
+    if (g < y - ramp) return { d: d - step, kind: g === -Infinity ? 'void' : 'drop', g };
+    y = g;
   }
   return { d: max, kind: 'none', g: y };
 }

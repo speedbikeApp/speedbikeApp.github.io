@@ -375,11 +375,15 @@ function syncTrail(b, v, ex, dt) {
   for (let i = v.fin; i < n; i++) {
     const s = b.trail[i], last = i === n - 1;
     const x2 = last ? s.x2 + b.dx * ex : s.x2, z2 = last ? s.z2 + b.dz * ex : s.z2;
-    const sy = s.h, o = i * 16;
-    arr[o] = Math.abs(x2 - s.x1) + t; arr[o + 1] = 0; arr[o + 2] = 0; arr[o + 3] = 0;
+    // Slanted from its start height to where the next segment starts (or the bike, for the newest): ramps / jump arcs split the trail
+    // into short height steps, and drawing each as a flat box looked like stairs. Shear only; collision still uses the steps.
+    const sy = s.h, o = i * 16, ya = s.y0 || 0, yb = last ? b.y : (b.trail[i + 1].y0 || 0), dy = yb - ya;
+    const L = Math.abs(x2 - s.x1) + Math.abs(z2 - s.z1), k = L > t ? (L + t) / L : 1; // box is t longer than the segment: keep the slope
+    const shx = x2 !== s.x1 ? k * dy * Math.sign(x2 - s.x1) : 0, shz = x2 === s.x1 && z2 !== s.z1 ? k * dy * Math.sign(z2 - s.z1) : 0;
+    arr[o] = Math.abs(x2 - s.x1) + t; arr[o + 1] = shx; arr[o + 2] = 0; arr[o + 3] = 0;
     arr[o + 4] = 0; arr[o + 5] = sy; arr[o + 6] = 0; arr[o + 7] = 0;
-    arr[o + 8] = 0; arr[o + 9] = 0; arr[o + 10] = Math.abs(z2 - s.z1) + t; arr[o + 11] = 0;
-    arr[o + 12] = (s.x1 + x2) / 2; arr[o + 13] = (s.y0 || 0) + sy / 2; arr[o + 14] = (s.z1 + z2) / 2; arr[o + 15] = 1;
+    arr[o + 8] = 0; arr[o + 9] = shz; arr[o + 10] = Math.abs(z2 - s.z1) + t; arr[o + 11] = 0;
+    arr[o + 12] = (s.x1 + x2) / 2; arr[o + 13] = (ya + yb) / 2 + sy / 2; arr[o + 14] = (s.z1 + z2) / 2; arr[o + 15] = 1;
   }
   setRange(M.instanceMatrix, v.fin, n - v.fin);
   M.count = n; v.fin = n - 1;
