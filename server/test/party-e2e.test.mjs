@@ -1,5 +1,5 @@
 // End-to-end parties over real WebSockets (dev-auth server, random port): friends -> invite / accept, leader changes, kick, transfer, size cap,
-// the leader's queue pulls the whole party into ONE room, party members stay UNRANKED while a solo in the same match ranks normally.
+// the leader's queue pulls the whole party into ONE room of its own (parties never share a lobby with ranked solos), party members stay UNRANKED.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -103,18 +103,20 @@ assert.equal((await B.do({ t: 'pkick', uid: 'uidE' })).ok, true);
 assert.equal((await B.do({ t: 'pkick', uid: 'uidA' })).ok, true); await settle();
 assert.deepEqual(members(B), ['uidB', 'uidC']);
 
-// ---- party game: B (leader) + C in a party, D solo. Queue: the whole party goes into one room with the solo ----
+// ---- party game: B (leader) + C in a party, D solo. The party gets its own room (never mixed with ranked solos): D keeps waiting ----
 D.send({ t: 'queue', mode: 'standard' });
 await D.next('queued');
 B.send({ t: 'queue', mode: 'standard' });
-const [sb, sc, sd] = await Promise.all([B.next('start'), C.next('start'), D.next('start')]);
+const [sb, sc] = await Promise.all([B.next('start'), C.next('start')]);
+assert.ok(!D.msgs.some((m) => m.t === 'start' || m.t === 'lobby'), 'the solo is not pulled into the party lobby'); assert.equal(D.last('queued').inQueue, 1);
 assert.ok(C.msgs.some((m) => m.t === 'queued' || m.t === 'lobby'), 'the member was pulled into the queue without asking');
-assert.deepEqual(sb.players.filter((p) => !p.bot).map((p) => p.uid).sort(), ['uidB', 'uidC', 'uidD']); assert.equal(sb.players.filter((p) => p.bot).length, 1, 'one bot fills the 4th slot'); assert.equal(sb.seed, sc.seed); assert.equal(sc.seed, sd.seed);
+assert.deepEqual(sb.players.filter((p) => !p.bot).map((p) => p.uid).sort(), ['uidB', 'uidC']); assert.equal(sb.players.filter((p) => p.bot).length, 2, 'two bots fill the empty slots'); assert.equal(sb.seed, sc.seed);
 // leader cannot queue again while in the match; the party survives the game
 B.send({ t: 'queue', mode: 'deathmatch' }); assert.equal((await B.next('error')).code, 'busy');
-for (const c of [B, C, D]) c.play();
-const [eb, ec, ed] = await Promise.all([B, C, D].map((c) => c.next('end', 60000)));
-for (const c of [B, C, D]) clearInterval(c.timer);
+for (const c of [B, C]) c.play();
+const [eb, ec] = await Promise.all([B, C].map((c) => c.next('end', 60000)));
+for (const c of [B, C]) clearInterval(c.timer);
+D.send({ t: 'leaveQueue' }); await settle();
 const row = (e, uid) => e.ranks.find((r) => r.uid === uid);
 for (const uid of ['uidB', 'uidC']) {
   const r = row(eb, uid);
@@ -122,9 +124,7 @@ for (const uid of ['uidB', 'uidC']) {
   assert.deepEqual(r.rankAfter, r.rankBefore, 'no rank change for party members'); assert.deepEqual(r.rankBefore, mid);
   assert.deepEqual(await store.getRank(uid), mid, 'nothing was persisted');
 }
-const rd = row(ed, 'uidD');
-assert.ok(!rd.party); assert.notDeepEqual(rd.rankAfter, rd.rankBefore, 'the solo player is ranked as usual');
-assert.deepEqual(await store.getRank('uidD'), rd.rankAfter);
+assert.deepEqual(await store.getRank('uidD'), mid, 'the waiting solo was not touched');
 assert.deepEqual(ec.ranks.map((r) => r.party), eb.ranks.map((r) => r.party));
 assert.equal(B.party().leader, 'uidB', 'the party outlives the match'); assert.deepEqual(members(C), ['uidB', 'uidC']);
 assert.equal(app.rooms.size, 0);

@@ -21,7 +21,7 @@ const tierPoint = { ...defaultRank(), tier: 'He', div: 3, wins: 1 };
 for (const u of ['a', 'b', 'c', 'd']) await store.setRank(u, tierPoint, u);   // whoever wins reaches NEON
 await store.setRank('x', { ...defaultRank(), tier: 'Ne', div: 1, wins: 0 }, 'x'); // leaver-to-be: loses -> demoted to He 3 (1 win)
 
-const app = createGameServer({ auth: createDevAuth(), store, timeScale: SCALE, countdownMs: 400, log: () => {} });
+const app = createGameServer({ auth: createDevAuth(), store, timeScale: SCALE, countdownMs: 400, healthToken: 'tok', log: () => {} });
 const port = await app.listen(0);
 
 const lat = () => Math.max(0, RTT / 2 + (Math.random() * 2 - 1) * JITTER);
@@ -53,8 +53,10 @@ function client(uid, username = uid.toUpperCase()) {
 }
 
 // ---- health + auth gate ----
-const health = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
+const health = await (await fetch(`http://127.0.0.1:${port}/health?detail=tok`)).json();
 assert.equal(health.ok, true); assert.equal(health.auth, 'dev');
+const pub = await (await fetch(`http://127.0.0.1:${port}/health`)).json(), bad = await (await fetch(`http://127.0.0.1:${port}/health?detail=nope`)).json();
+assert.deepEqual(Object.keys(pub).sort(), ['featured', 'ok', 'online'], 'public health leaks nothing else'); assert.deepEqual(Object.keys(bad).sort(), ['featured', 'ok', 'online']);
 assert.equal(health.loop.intervalMs, 16, 'coarse scheduler'); assert.ok(Array.isArray(health.roomStats));
 {
   const raw = client('nobody'); await raw.open; raw.send({ t: 'queue', mode: 'standard' });
@@ -76,7 +78,7 @@ assert.deepEqual(cs.map((c) => c.you).sort(), [0, 1, 2, 3]);
 assert.ok(cs[0].msgs.some((m) => m.t === 'lobby'), 'lobby message before start');
 cs.forEach((c) => c.play());
 let lastRoom = null;   // last /health room stats seen during the match (the room is gone after the end)
-const poll = setInterval(async () => { try { const h = await (await fetch(`http://127.0.0.1:${port}/health`)).json(); if (h.roomStats[0]) lastRoom = { ...h.roomStats[0], loop: h.loop }; } catch { /* closing */ } }, 250);
+const poll = setInterval(async () => { try { const h = await (await fetch(`http://127.0.0.1:${port}/health?detail=tok`)).json(); if (h.roomStats[0]) lastRoom = { ...h.roomStats[0], loop: h.loop }; } catch { /* closing */ } }, 250);
 const ends = await Promise.all(cs.map((c) => c.wait('end')));
 cs.forEach((c) => clearInterval(c.timer)); clearInterval(poll);
 assert.ok(lastRoom && lastRoom.updates > 0 && lastRoom.lagComp.inputs > 0, 'health reports room timing + lag compensation stats');

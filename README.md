@@ -41,7 +41,7 @@ PLAY -> **MULTIPLAYER** needs a signed-in account (ACCOUNT screen) and a running
 
 Run it locally (two or more browsers / profiles, each with its own account):
 ```
-cd server && npm install && npm start        # game server on ws://localhost:8787 (dev auth, ranks in server/data/ranks.json)
+cd server && npm install && DEV_AUTH=1 npm start        # game server on ws://localhost:8787 (dev auth, ranks in server/data/ranks.json)
 python -m http.server 8000                   # in the repo root, in another terminal
 ```
 Open `http://localhost:8000/?backend=mock` in two different browser profiles (the mock accounts live in each profile's localStorage and are accepted by the dev-auth server), register a user in each (ACCOUNT), then PLAY -> MULTIPLAYER -> pick a mode in both. Two players open a lobby that starts after 30 s (4 players start at once); set `LOBBY_COUNTDOWN_MS=3000` when starting the server to shorten it.

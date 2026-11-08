@@ -99,25 +99,26 @@ const last = (p, t) => [...p.msgs].reverse().find((m) => m.t === t);
   assert.equal(mm.queueGroup([x, y], 'standard', 8).code, undefined);
   assert.equal(mm.queueGroup([x], 'standard', 9).code, 'bad_party'); assert.equal(mm.queueGroup([a, b], 'standard', 9).code, 'busy');
 }
-{ // a party of 2 alone: lobby with the 30 s countdown (counts as 2 players); solos fill the remaining slots and reset it
+{ // a party of 2 alone: own lobby with the 30 s countdown; solos never join it (they form their own, ranked, lobby)
   started.length = 0; clock = 0;
   const mm = mk(), [a, b, s1, s2, s3] = ['a', 'b', 's1', 's2', 's3'].map(player);
   mm.queueGroup([a, b], 'standard', 1);
   assert.equal(last(a, 'lobby').players.length, 2); assert.equal(last(a, 'lobby').countdownEndsAt, 30000);
   clock = 10000; mm.queue(s1, 'standard');
-  assert.equal(last(a, 'lobby').countdownEndsAt, 40000, 'solo join resets the countdown'); assert.equal(started.length, 0);
-  mm.queue(s2, 'standard'); assert.equal(started.length, 1); assert.deepEqual(started[0].players.map((p) => p.uid), ['a', 'b', 's1', 's2']);
-  mm.queue(s3, 'standard'); assert.equal(s3.where.type, 'queue');
+  assert.equal(last(a, 'lobby').countdownEndsAt, 30000, 'a solo does not reset the party lobby'); assert.equal(s1.where.type, 'queue', 'one solo waits for another solo');
+  mm.queue(s2, 'standard'); assert.equal(s1.where.type, 'lobby'); assert.deepEqual(last(s1, 'lobby').players.map((p) => p.uid), ['s1', 's2']); assert.equal(started.length, 0);
+  mm.queue(s3, 'standard'); assert.equal(last(s1, 'lobby').players.length, 3);
+  clock = 40000; mm.tick(clock); assert.equal(started.length, 2);
+  assert.deepEqual(started.map((l) => l.players.map((p) => p.uid).join()).sort(), ['a,b', 's1,s2,s3'], 'party and solos start separate matches');
 }
-{ // a party that does not fit the open lobby waits (never split); later solos still fill the lobby; it then forms the next lobby
+{ // a party that does not fit its open lobby waits (never split); solos are unaffected
   started.length = 0; clock = 0;
-  const mm = mk(), [s1, s2, a, b, c, s3] = ['s1', 's2', 'a', 'b', 'c', 's3'].map(player);
-  mm.queue(s1, 'standard'); mm.queue(s2, 'standard');
-  mm.queueGroup([a, b, c], 'standard', 1);
-  assert.equal(a.where.type, 'queue', 'party of 3 does not fit next to 2 solos'); assert.equal(last(a, 'queued').inQueue, 3);
-  mm.queue(s3, 'standard'); assert.equal(s3.where.type, 'lobby', 'a solo behind the party still fills the open lobby');
-  clock = 30000; mm.tick(clock); assert.equal(started.length, 1); assert.deepEqual(started[0].players.map((p) => p.uid), ['s1', 's2', 's3']);
-  assert.equal(a.where.type, 'lobby', 'the party opens the next lobby'); assert.equal(last(a, 'lobby').players.length, 3);
+  const mm = mk(), [a, b, c, d, e, s1, s2] = ['a', 'b', 'c', 'd', 'e', 's1', 's2'].map(player);
+  mm.queueGroup([a, b, c], 'standard', 1); mm.queueGroup([d, e], 'standard', 2);
+  assert.equal(a.where.type, 'lobby'); assert.equal(d.where.type, 'queue', 'party of 2 does not fit next to a party of 3');
+  mm.queue(s1, 'standard'); mm.queue(s2, 'standard'); assert.equal(s1.where.type, 'lobby');
+  clock = 30000; mm.tick(clock); assert.equal(started.length, 2);
+  assert.equal(d.where.type, 'lobby', 'the waiting party opens the next lobby'); assert.equal(last(d, 'lobby').players.length, 2);
 }
 { // a member leaving a party lobby; the lobby dissolving keeps remaining party members together at the front
   started.length = 0; clock = 0;

@@ -79,6 +79,9 @@ export function parseClientMessage(raw) {
       if (o.id !== undefined && !(isNum(o.id) || isStr(o.id, 16))) return bad('bad_message', 'bad admin id');
       return ok({ t: 'admin', op: o.op, ...(o.id !== undefined ? { id: o.id } : {}), a: o.a || {} });
     }
+    case 'spong': // answer to the server's `sping` {n}
+      if (!isNum(o.n)) return bad('bad_message', 'bad spong');
+      return ok({ t: 'spong', n: o.n });
     case 'ping':
       if (!(isNum(o.c) || isStr(o.c, 32))) return bad('bad_message', 'bad ping');
       return ok({ t: 'ping', c: o.c });

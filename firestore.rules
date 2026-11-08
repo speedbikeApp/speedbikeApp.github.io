@@ -3,21 +3,39 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // users/{uid}: {username, createdAt}. Only the signed-in owner may read / write their own document.
+    // Username squatting / impersonation guard. users/{uid}.username is only a label the owner may write, but the game server trusts a name only
+    // if usernames/{lowercase name} is reserved for that uid, so both documents must always change together (client: js/auth.js
+    // chooseUsername / changeUsername / deleteAccount use one transaction or batch, which is what getAfter / existsAfter evaluate).
+    // Names are single-spaced and charset-checked client-side (js/auth.js validateUsername), so lower() equals the client's nameKey.
+
+    // users/{uid}: {username, createdAt, progress}. Owner only. A new / changed username needs the reservation for the caller in the same write,
+    // and the previous reservation must be gone (one name per player: no hoarding), unless only the letter case changes.
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      function mine() { return request.auth != null && request.auth.uid == uid; }
+      function shape() { return request.resource.data.keys().hasOnly(['username', 'createdAt', 'progress']); }
+      function reserved(n) { return n is string && getAfter(/databases/$(database)/documents/usernames/$(n.lower())).data.uid == request.auth.uid; }
+      allow read, delete: if mine();
+      allow create: if mine() && shape() && (!('username' in request.resource.data) || reserved(request.resource.data.username));
+      allow update: if mine() && shape() && (
+        request.resource.data.get('username', null) == resource.data.get('username', null)
+        || (reserved(request.resource.data.username)
+            && (!('username' in resource.data) || resource.data.username.lower() == request.resource.data.username.lower()
+                || !existsAfter(/databases/$(database)/documents/usernames/$(resource.data.username.lower())))));
     }
 
-    // usernames/{lowercaseName}: {uid}. Reservation that keeps usernames unique (case-insensitive).
+    // usernames/{lowercaseName}: {uid, createdAt}. Reservation that keeps usernames unique (case-insensitive).
     //  - get: any signed-in user (needed to see if a name is free; list is NOT allowed, so names cannot be enumerated)
-    //  - create: only if it does not exist yet, the id is lowercase and the stored uid is the caller's
+    //  - create: only if it does not exist yet, the id is lowercase, the stored uid is the caller's AND the caller's users doc has this name
+    //    after the same write (so a reservation can only ever be made for your own current username)
     //  - delete: only the owner; no updates
     match /usernames/{name} {
       allow get: if request.auth != null;
       allow create: if request.auth != null
                     && name == name.lower()
+                    && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
                     && request.resource.data.uid == request.auth.uid
-                    && !exists(/databases/$(database)/documents/usernames/$(name));
+                    && !exists(/databases/$(database)/documents/usernames/$(name))
+                    && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('username', '').lower() == name;
       allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
     }
 

@@ -120,4 +120,20 @@ function harness(mode = 'standard', opts = {}) {
   const hy = harness('hyper'); assert.equal(hy.bike(0).baseSpeed, 25);
   const t3 = harness('3d'); assert.equal(t3.msgs[0][0].mapId, 'tiers');
 }
+{ // rewind cap follows the server-measured rtt: a claimed 150 ms old input from a 0-ping player is cut to ~rtt/2 + 30 ms; unknown rtt keeps the full cap
+  const rew = (rtt) => {
+    const h = harness(); h.room.players[0].session = { rtt }; h.run(); h.advance(0.5);
+    h.room.input(0, { kind: 'turn', side: 1, ctick: h.room.tick - 18 }); h.advance(0.05);
+    return h.room.stats.rewindTicks / Math.max(1, h.room.stats.rewound);
+  };
+  const lo = rew(0), hi = rew(300), unk = rew(null);
+  assert.ok(lo > 0 && lo <= 6, `rtt 0 -> rewind <= ~30 ms (got ${lo} ticks)`);
+  assert.ok(hi >= 17 && unk >= 17, `${hi} ${unk}: ` + 'high ping / unknown rtt keep the full 150 ms cap');
+}
+{ // rank-farming guard: a win only ranks when >= 2 humans were still in at the end of round 1
+  const early = harness(); early.run(); early.room.leave(0); early.room.leave(1); early.room.leave(2); // bots-less room: last human wins by forfeit before round 1 ended
+  assert.equal(early.ended.reason, 'forfeit'); const w = early.ended.results[3]; assert.ok(w.won && w.unranked, 'lone survivor of early leavers: win but unranked');
+  const full = harness(); full.run(); full.advance(60);
+  if (full.ended) { const winner = full.ended.results.find((r) => r.won); assert.ok(!winner || !winner.unranked, '4 humans stayed through round 1: the win ranks'); }
+}
 console.log('room tests ok');

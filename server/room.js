@@ -3,7 +3,7 @@
 // runs the shared js/abilities.js on the bike (lag-compensated like turns) and is broadcast as an `ev` {kind:'ability', ability:id}.
 // Lag compensation (docs/MULTIPLAYER.md "Lag compensation"): an input carrying a client tick `ctick` in the recent past is applied
 // at THAT tick: the bike is rewound to its recorded state, the input applied, and the bike re-simulated alone up to the current tick
-// (other bikes' trails are looked up as they were at each replayed tick). Capped by CFG.net.maxRewindMs.
+// (other bikes' trails are looked up as they were at each replayed tick). Capped by CFG.net.maxRewindMs and, per player, by the server-measured rtt/2 + 30 ms.
 // Tick numbering: `tick` = iterations completed so far. Every message carries the tick counter at the moment it is produced:
 //   ev    -> state right BEFORE iteration `tick` runs (client applies it when its own sim reaches that tick)
 //   crash -> produced by the iteration that just finished (tick = counter after it)
@@ -24,6 +24,7 @@ const SNAP_HZ = 10;
 const TURN_BUFFER_MS = CFG.inputBufferMs;   // a turn blocked by minTurnGap is retried for this long (same as the offline input buffer)
 const r3 = (v) => Math.round(v * 1000) / 1000;
 const RING = 48;            // per-bike state history (ticks); must exceed the rewind cap in ticks (150 ms = 18 ticks at 120 Hz)
+const REWIND_SLACK_MS = 30;  // jitter / frame margin on top of rtt/2 when clamping a player's rewind
 const STAT_WIN = 10000;     // ms: window of the "max" timing stats
 
 export class Room {
@@ -37,6 +38,7 @@ export class Room {
     this.inbox = []; this.pend = this.players.map(() => []);
     this.t0 = null; this.done = 0; this.snapEvery = Math.round(this.hz / SNAP_HZ);
     this.sent = { phase: null, round: -1 };
+    this.r1Humans = null;  // humans still in when round 1 ended (null = it never did): a win is ranked only if >= 2, see #results
     this.maxRewind = Math.min(RING - 4, Math.max(0, Math.ceil((maxRewindMs ?? CFG.net.maxRewindMs) * this.hz / 1000)));
     this.hist = this.players.map(() => new Array(RING).fill(null)); // per bike: ring of {tick, epoch, n (trail length), s (scalars)} at the START of that tick
     this.epoch = this.players.map(() => 0);       // bumped on crash / respawn / round start: older history entries are void
@@ -95,9 +97,11 @@ export class Room {
     if (!p || p.left || this.over) return;
     p.left = true; p.send = () => {};
     this.onLeave(p, this);
-    const humans = this.players.filter((q) => !q.left && !q.bot).length;
+    const humans = this.#humansIn();
     if (humans === 0 || (humans < 2 && !this.hasBots)) this.#finish('forfeit'); // with bots the last human plays on against them
   }
+
+  #humansIn() { return this.players.filter((q) => !q.left && !q.bot).length; }
 
   // Catch up to wall-clock time. `now` = monotonic ms. Drift-free: the target tick count comes from the absolute start time,
   // so a late timer just runs a few ticks in one go. A stall longer than ~2 s of sim time is skipped instead of replayed.
@@ -140,6 +144,7 @@ export class Room {
       m.onTick(events, dt);
     } else { m.advance(dt); this.tick++; }
     this.#syncPhase();
+    if (this.r1Humans === null && (m.round > 1 || m.phase === 'roundEnd' || m.phase === 'matchEnd')) this.r1Humans = this.#humansIn();
     if (this.over) return;
     if (m.phase === 'matchEnd') return this.#finish('normal');
     if (this.tick % this.snapEvery === 0 && m.phase !== 'countdown') this.broadcast({ t: 'snap', tick: this.tick, phase: m.phase, roundTime: r3(m.clock()), bikes: this.state.bikes.map((b) => this.#snapBike(b)) });
@@ -237,8 +242,9 @@ export class Room {
       else if (i.kind !== 'turn' && i.kind !== 'boost' && i.kind !== 'jump') continue; // 'swap' only switches the client's selected slot
       st.inputs++;
       let T = i.ctick === null || (i.kind === 'ability' && ABILITIES[i.ability].once) ? this.tick : i.ctick; // allBoost / allJump hit the others NOW: never rewound
+      const rtt = this.players[i.id].session?.rtt, cap = rtt == null ? this.maxRewind : Math.min(this.maxRewind, Math.ceil((rtt / 2 + REWIND_SLACK_MS) * this.hz / 1000)); // an honest input is at most ~one-way delay old
       if (T > this.tick) { T = this.tick; st.future++; }
-      else if (T < this.tick - this.maxRewind) { T = this.tick - this.maxRewind; st.clamped++; }
+      else if (T < this.tick - cap) { T = this.tick - cap; st.clamped++; }
       if (T < this.lastIn[i.id]) T = this.lastIn[i.id];              // never before an input already applied (events are already broadcast)
       if (T < this.deathTick[i.id]) { st.ignored++; continue; }      // the bike crashed after the claimed tick: a crash is final
       if (T < this.tick) {
@@ -346,7 +352,8 @@ export class Room {
     return ids.map((id) => {
       const p = this.players[id];
       const won = !p.left && place[id] === 1 && ids.filter((q) => place[q] === 1).length === 1;
-      return { id, uid: p.uid, username: p.username, place: place[id], won, left: p.left, scores: m.scores[id] || 0, ...(p.bot ? { bot: true } : {}) };
+      // Rank farming guard: a win only ranks if another human was still playing when round 1 ended (a lone survivor of early leavers / a bots-only win gives no rank).
+      return { id, uid: p.uid, username: p.username, place: place[id], won, left: p.left, scores: m.scores[id] || 0, ...(p.bot ? { bot: true } : {}), ...(won && !p.bot && !((this.r1Humans ?? 0) >= 2) ? { unranked: true } : {}) };
     });
   }
 

@@ -8,11 +8,11 @@ physics, rules, modes, maps, abilities, ai, ranks, rotation) and runs matches of
 ```
 cd server
 npm install
-npm start            # ws://localhost:8787, health: http://localhost:8787/health
+DEV_AUTH=1 npm start # ws://localhost:8787, health: http://localhost:8787/health
 npm test             # unit + end-to-end tests (no Firebase needed)
 ```
 
-Without Firebase credentials the server starts in **DEV AUTH** mode (loud warning in the log): clients send
+With `DEV_AUTH=1` (required: without Firebase credentials the server refuses to start otherwise) it runs in **DEV AUTH** mode (loud warning in the log): clients send
 `{t:'hello', dev:true, uid, username}` (the web client does this with `?backend=mock`) and ranks are stored in `server/data/ranks.json`.
 Dev auth lets anyone claim any uid: never expose it to the internet. Open the game with `?backend=mock&server=ws://localhost:8787`.
 
@@ -51,7 +51,7 @@ The Firebase service account must be allowed to sign custom tokens (a normal ser
 |---|---|---|
 | `PORT` | 8787 | listen port (hosts like Render/Fly set it) |
 | `GOOGLE_APPLICATION_CREDENTIALS` / `FIREBASE_SERVICE_ACCOUNT` | - | service-account file path / JSON string; presence selects Firebase mode |
-| `DEV_AUTH` | auto | `1` force dev auth, `0` forbid it (fail without credentials); unset = dev only when no credentials |
+| `DEV_AUTH` | unset | `1` = dev auth (local only, explicit); anything else without Firebase credentials = the server refuses to start |
 | `FIREBASE_PROJECT_ID` | speedbike-9a552 | project for token verification |
 | `RANKS_FILE` | server/data/ranks.json | JSON rank file (dev mode) |
 | `SOCIAL_FILE` | server/data/social.json | JSON friends file + dev user directory (dev mode) |
@@ -61,7 +61,8 @@ The Firebase service account must be allowed to sign custom tokens (a normal ser
 | `FIREBASE_WEB_API_KEY` | public key from `js/firebase-config.js` | web API key for the Auth REST password check (public by design) |
 | `LOBBY_COUNTDOWN_MS` | 30000 | lobby countdown (tests) |
 | `TIME_SCALE` | 1 | TEST ONLY: runs the sim N times faster than real time |
-| `NODE_ENV=production` | | refuses dev auth unless `DEV_AUTH=1` is explicit |
+| `HEALTH_TOKEN` | unset | when set, `/health?detail=<token>` also returns auth mode, store, loop timing and per-room stats |
+| `NODE_ENV=production` | | login CORS allow-list only; dev auth needs `DEV_AUTH=1` anyway |
 
 ## Files
 

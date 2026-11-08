@@ -16,7 +16,7 @@ const file = path.join(dir, 'ranks.json');
 const store = createJsonStore(file);
 const start1 = { ...defaultRank(), tier: 'He', div: 3, wins: 1 };    // a win = NEON 1
 for (const u of ['h1', 'h2', 'h3']) await store.setRank(u, start1, u);
-const app = createGameServer({ auth: createDevAuth(), store, timeScale: 40, countdownMs: 500, log: () => {} });
+const app = createGameServer({ auth: createDevAuth(), store, timeScale: 40, countdownMs: 500, healthToken: 'tok', log: () => {} });
 const port = await app.listen(0);
 
 function client(uid) {
@@ -30,7 +30,7 @@ function client(uid) {
   return c;
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const health = async () => (await fetch(`http://127.0.0.1:${port}/health`)).json();
+const health = async () => (await fetch(`http://127.0.0.1:${port}/health?detail=tok`)).json();
 
 // ---- two humans queue: after the (short) countdown the lobby is filled with two bots; loadouts travel with the queue ----
 const [a, b] = [client('h1'), client('h2')];

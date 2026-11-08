@@ -30,7 +30,8 @@ export class Admin {
     try { reply({ ok: true, ...(await h(msg.a || {}, { uid: s.uid, username: s.username, session: s, admin: this })) }); }
     catch (e) {
       if (e && e.adminCode) return reply({ ok: false, code: e.adminCode, ...(e.extra || {}) });
-      this.log(`[admin] ${msg.op} failed:`, e && e.message); reply({ ok: false, code: 'unavailable' });
+      this.log(`[admin] ${msg.op} failed:`, e && e.message);
+      try { reply({ ok: false, code: 'unavailable' }); } catch { /* socket gone */ }
     }
   }
 }

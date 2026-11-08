@@ -10,9 +10,9 @@ export function sanitizeName(v) {
 
 export function resolveAuthMode(env = process.env) {
   const creds = !!(env.GOOGLE_APPLICATION_CREDENTIALS || env.FIREBASE_SERVICE_ACCOUNT);
-  if (env.DEV_AUTH === '1') return 'dev';
-  if (env.DEV_AUTH === '0' && !creds) throw new Error('DEV_AUTH=0 but no Firebase credentials (set GOOGLE_APPLICATION_CREDENTIALS)');
-  return creds ? 'firebase' : 'dev';
+  if (env.DEV_AUTH === '1') return 'dev'; // explicit only: a missing credential must never silently open the server to any uid
+  if (!creds) throw new Error('no Firebase credentials (set GOOGLE_APPLICATION_CREDENTIALS or FIREBASE_SERVICE_ACCOUNT); for local dev set DEV_AUTH=1');
+  return 'firebase';
 }
 
 export function createDevAuth() {

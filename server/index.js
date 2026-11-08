@@ -1,5 +1,6 @@
 // SpeedBike game server: HTTP (/health) + WebSocket. Protocol: docs/MULTIPLAYER.md.
 import http from 'node:http';
+import { timingSafeEqual, createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
@@ -21,13 +22,13 @@ import { Matchmaker, LOBBY_MAX } from './matchmaker.js';
 import { Room } from './room.js';
 import { makeBots } from './bots.js';
 import { settleMatch } from './ranking.js';
-import { createLoginHandler, createFirebaseLoginDeps } from './login.js';
+import { createLoginHandler, createFirebaseLoginDeps, clientIp, WindowLimiter } from './login.js';
 import { createAccountsHandler, createFirebaseAccountDeps } from './accounts.js';
 import { createMailer } from './email.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// opts: { maps (custom map store, default: in memory), auth, store, social (social store, default: in memory), admin (admin store, default: in memory), adminUsernames (ADMIN_USERNAMES: comma string or array), port, timeScale (TEST ONLY: speeds the sim up), countdownMs, allowedOrigins:[...] , log, loopMs (scheduler interval, default 16) }
+// opts: { maps (custom map store, default: in memory), auth, store, social (social store, default: in memory), admin (admin store, default: in memory), adminUsernames (ADMIN_USERNAMES: comma string or array), port, timeScale (TEST ONLY: speeds the sim up), countdownMs, allowedOrigins:[...] , log, loopMs (scheduler interval, default 16), healthToken (HEALTH_TOKEN: unlocks /health?detail=), maxConnsPerIp (default 20), connRatePerMin (new sockets per IP per minute, default 30) }
 export function createGameServer(opts) {
   const { auth, store, timeScale = 1, allowedOrigins = [], log = console.log } = opts;
   // POST /auth/login (server/login.js). Without opts.login (dev auth / tests) the endpoint answers 503 {code:'unavailable'}.
@@ -107,7 +108,7 @@ export function createGameServer(opts) {
 
   async function handleEnd(room, { reason, results }) {
     try {
-      const stay = results.filter((r) => !r.left && !r.bot && !room.players[r.id].party); // party members are unranked
+      const stay = results.filter((r) => !r.left && !r.bot && !r.unranked && !room.players[r.id].party); // party members and unranked wins (Room #results) are not settled
       const { ranks, announcements } = await settleMatch(store, stay);
       const byId = new Map(ranks.map((r) => [r.id, r]));
       const out = [];
@@ -116,7 +117,7 @@ export function createGameServer(opts) {
         if (r.bot) { out.push({ id: r.id, uid: null, username: r.username, place: r.place, won: r.won, left: false, scores: r.scores, rankBefore: null, rankAfter: null, change: 'none', bot: true }); continue; }
         let entry = byId.get(r.id);
         if (!entry) { const l = p.leavePromise && await p.leavePromise; entry = { id: r.id, uid: r.uid, rankBefore: l?.rankBefore || p.rank, rankAfter: l?.rankAfter || p.rank, change: l?.change || 'none' }; }
-        out.push({ id: r.id, uid: r.uid, username: r.username, place: r.place, won: r.won, left: r.left, scores: r.scores, rankBefore: entry.rankBefore, rankAfter: entry.rankAfter, change: entry.change, ...(p.party ? { party: true } : {}), ...(p.admin ? { admin: true } : {}) });
+        out.push({ id: r.id, uid: r.uid, username: r.username, place: r.place, won: r.won, left: r.left, scores: r.scores, rankBefore: entry.rankBefore, rankAfter: entry.rankAfter, change: entry.change, ...(p.party ? { party: true } : {}), ...(r.unranked ? { unranked: true } : {}), ...(p.admin ? { admin: true } : {}) });
       }
       for (const p of room.players) {
         const s = p.session;
@@ -159,7 +160,7 @@ export function createGameServer(opts) {
       if (s.dead) return;
       s.authed = true; byUid.set(s.uid, s);
       s.send({ t: 'welcome', uid: s.uid, username: s.username, rank: s.rank, serverNow: Date.now(), featured: featuredMode(Date.now()), nextRotation: nextRotation(Date.now()), online: online(), admin: s.admin });
-      announceOnline();
+      announceOnline(); sendSping(s);
       parties.onConnect(s.uid);
       social.onConnect(s.uid, s.username).catch((e) => log('[social] connect failed:', e.message));
     } catch (e) {
@@ -168,6 +169,10 @@ export function createGameServer(opts) {
       s.ws.close(4001, 'auth failed');
     } finally { s.helloPending = false; }
   }
+
+  let spingN = 0;
+  const sendSping = (s) => { s.sping = { n: ++spingN, at: performance.now() }; s.send({ t: 'sping', n: s.sping.n }); }; // RTT per session (Room clamps lag-comp rewinds to it)
+  const spingTimer = setInterval(() => { for (const s of sessions) if (s.authed) sendSping(s); }, 4000);
 
   function onMessage(s, data) {
     const r = parseClientMessage(data);
@@ -180,6 +185,7 @@ export function createGameServer(opts) {
     if (msg.t === 'hello') { if (!s.authed && !s.helloPending) onHello(s, msg); return; }
     if (!s.authed) return s.send({ t: 'error', code: 'not_authed', message: 'send hello first' });
     switch (msg.t) {
+      case 'spong': if (s.sping && s.sping.n === msg.n) { const rtt = performance.now() - s.sping.at; s.rtt = s.rtt == null ? rtt : s.rtt * 0.7 + rtt * 0.3; s.sping = null; } return;
       case 'ping': return s.send({ t: 'pong', c: msg.c, serverNow: Date.now() });
       case 'queue': if (banActive(s.ban)) { s.send({ t: 'banned', ...banView(s.ban) }); return void s.ws.close(4003, 'banned'); }
         if (msg.loadout) s.loadout = msg.loadout; return void onQueue(s, msg.mode);
@@ -263,10 +269,13 @@ export function createGameServer(opts) {
     if (req.url.startsWith('/auth/') && req.url.split('?')[0] !== '/auth/login') return void accountsHandler(req, res).catch((e) => { log('[accounts] crashed:', e.message); if (!res.headersSent) res.writeHead(500); res.end(); });
     if (req.url.split('?')[0] === '/catalog') return void catalogHandler(req, res);
     res.setHeader('Access-Control-Allow-Origin', '*');
-    if (req.url === '/health') {
+    if (req.url.split('?')[0] === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: true, auth: auth.mode, store: store.kind, online: online(), rooms: rooms.size, ...mm.stats(), featured, uptime: Math.round(process.uptime()),
-        loop: loopView(), roomStats: [...rooms.values()].map((r) => r.statsView()) }));
+      const o = { ok: true, online: online(), featured }, tok = new URL(req.url, 'http://x').searchParams.get('detail');
+      const h = (v) => createHash('sha256').update(String(v)).digest(); // equal-length digests for the constant-time compare
+      if (opts.healthToken && tok && timingSafeEqual(h(tok), h(opts.healthToken)))
+        Object.assign(o, { auth: auth.mode, store: store.kind, rooms: rooms.size, ...mm.stats(), uptime: Math.round(process.uptime()), loop: loopView(), roomStats: [...rooms.values()].map((r) => r.statsView()) });
+      return res.end(JSON.stringify(o));
     }
     res.writeHead(req.url === '/' ? 200 : 404, { 'Content-Type': 'text/plain' });
     res.end(req.url === '/' ? 'SpeedBike game server\n' : 'not found\n');
@@ -275,10 +284,14 @@ export function createGameServer(opts) {
     server, maxPayload: MAX_ADMIN,
     verifyClient: ({ origin }) => !allowedOrigins.length || allowedOrigins.includes(origin),
   });
-  wss.on('connection', (ws) => {
+  const ipConns = new Map(), connRate = new WindowLimiter(opts.connRatePerMin ?? 30, 60000), maxConns = opts.maxConnsPerIp ?? 20; // per client IP: open sockets + new sockets per minute
+  wss.on('connection', (ws, req) => {
+    const ip = clientIp(req);
+    if ((ipConns.get(ip) || 0) >= maxConns || !connRate.hit(ip).ok) return ws.close(1013, 'too many connections');
+    ipConns.set(ip, (ipConns.get(ip) || 0) + 1);
     const s = {
       ws, uid: null, username: '', rank: null, where: null, authed: false, helloPending: false, dead: false, alive: true, violations: 0,
-      room: null, bikeId: -1, colorIdx: 0, group: null, loadout: [], admin: false, ban: null,
+      room: null, bikeId: -1, colorIdx: 0, group: null, rtt: null, sping: null, loadout: [], admin: false, ban: null,
       limiter: new RateLimiter(20, 30), searchLimiter: new RateLimiter(0.7, 5), socialLimiter: new RateLimiter(1, 10), partyLimiter: new RateLimiter(2, 12), inLimiter: new RateLimiter(30, 30),
       send: (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); },
     };
@@ -286,7 +299,7 @@ export function createGameServer(opts) {
     const authTimer = setTimeout(() => { if (!s.authed) ws.close(4001, 'hello timeout'); }, 10000);
     ws.on('pong', () => { s.alive = true; });
     ws.on('message', (data, isBinary) => { if (!isBinary) onMessage(s, data); });
-    ws.on('close', () => { clearTimeout(authTimer); cleanup(s); });
+    ws.on('close', () => { clearTimeout(authTimer); cleanup(s); const n = ipConns.get(ip) - 1; if (n > 0) ipConns.set(ip, n); else ipConns.delete(ip); });
     ws.on('error', () => {});
   });
 
@@ -322,7 +335,7 @@ export function createGameServer(opts) {
     server, wss, mm, rooms, sessions, parties, admin, adminStore, mapStore, mapPool,
     listen: (port = opts.port ?? 8787) => new Promise((resolve) => server.listen(port, () => resolve(server.address().port))),
     async close() {
-      clearInterval(loop); clearInterval(beat); clearTimeout(onlineTimer);
+      clearInterval(loop); clearInterval(beat); clearInterval(spingTimer); clearTimeout(onlineTimer);
       for (const s of sessions) s.ws.terminate();
       await new Promise((r) => wss.close(r));
       await new Promise((r) => server.close(r));
@@ -335,7 +348,6 @@ export function createGameServer(opts) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const env = process.env;
   const mode = resolveAuthMode(env);
-  if (mode === 'dev' && env.NODE_ENV === 'production' && env.DEV_AUTH !== '1') throw new Error('refusing dev auth in production; set Firebase credentials (or DEV_AUTH=1 to force)');
   const allowedOrigins = (env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean), production = env.NODE_ENV === 'production';
   let auth, store, login, accounts, social, adminStore, catalogStore, mapStore;
   if (mode === 'firebase') {
@@ -351,10 +363,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const app = createGameServer({
     auth, store, social, admin: adminStore, catalog: catalogStore, maps: mapStore, adminUsernames: env.ADMIN_USERNAMES, timeScale: Number(env.TIME_SCALE) || 1, // TIME_SCALE is for tests only
     countdownMs: Number(env.LOBBY_COUNTDOWN_MS) || undefined,
-    allowedOrigins, login, accounts, production,
+    allowedOrigins, login, accounts, production, healthToken: env.HEALTH_TOKEN,
   });
   const port = await app.listen(Number(env.PORT) || 8787);
   console.log(`[server] listening on :${port}  (health: http://localhost:${port}/health)`);
   const stop = async () => { await app.close(); process.exit(0); };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
+  // Safety net: one bad handler must not drop every match. Log the error only, never message payloads.
+  process.on('unhandledRejection', (e) => console.error('[fatal] unhandledRejection:', e && e.message, e && e.stack));
+  process.on('uncaughtException', (e) => console.error('[fatal] uncaughtException:', e && e.message, e && e.stack));
 }

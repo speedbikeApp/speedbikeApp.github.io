@@ -21,7 +21,7 @@ bad({ t: 'nope' }, 'unknown_type');
 bad({ t: 'queue', mode: 'bogus' }, 'bad_mode'); bad({ t: 'queue' }); bad({ t: 'queue', mode: ['standard'] });
 bad({ t: 'in', kind: 'turn' }); bad({ t: 'in', kind: 'turn', side: 2 }); bad({ t: 'in', kind: 'turn', side: '1' }); bad({ t: 'in', kind: 'fly' }); bad({ t: 'in' });
 bad({ t: 'hello' }); bad({ t: 'hello', dev: true, uid: 'bad uid!', username: 'x' }); bad({ t: 'hello', dev: true, uid: '../x', username: 'x' });
-bad({ t: 'ping', c: {} });
+bad({ t: 'ping', c: {} }); assert.deepEqual(okMsg({ t: 'spong', n: 3 }), { t: 'spong', n: 3 }); bad({ t: 'spong', n: 'x' });
 bad({ t: 'ping', c: 'x'.repeat(2000) }, 'too_large');
 bad(J({ t: 'in', kind: 'jump', pad: 'x'.repeat(1100) }), 'too_large');
 assert.ok(parse(J({ t: 'hello', token: 't'.repeat(3000) })).ok, 'a long ID token is fine in hello');
@@ -46,7 +46,7 @@ assert.deepEqual(parse('{"t":"pleave","x":1}').msg, { t: 'pleave' }); assert.dee
 
 // auth helpers
 assert.equal(sanitizeName('  Bob<script>  '), 'Bobscript'); assert.equal(sanitizeName(''), 'PLAYER'); assert.equal(sanitizeName('x'.repeat(40)).length, 12);
-assert.equal(resolveAuthMode({}), 'dev'); assert.equal(resolveAuthMode({ GOOGLE_APPLICATION_CREDENTIALS: 'k.json' }), 'firebase');
+assert.throws(() => resolveAuthMode({}), /DEV_AUTH=1/); assert.throws(() => resolveAuthMode({ NODE_ENV: 'production' })); assert.equal(resolveAuthMode({ DEV_AUTH: '1' }), 'dev'); assert.equal(resolveAuthMode({ GOOGLE_APPLICATION_CREDENTIALS: 'k.json' }), 'firebase');
 assert.equal(resolveAuthMode({ GOOGLE_APPLICATION_CREDENTIALS: 'k.json', DEV_AUTH: '1' }), 'dev');
 assert.throws(() => resolveAuthMode({ DEV_AUTH: '0' }));
 console.log('protocol tests ok');

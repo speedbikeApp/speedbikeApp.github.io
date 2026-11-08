@@ -98,6 +98,7 @@ export function createNet(opts = {}) {
       } else if (m.t === 'pong') {
         const sent = pings.get(m.c); pings.delete(m.c);
         if (sent !== undefined && typeof m.serverNow === 'number') clock.addPong(sent, now(), m.serverNow);
+      } else if (m.t === 'sping') { raw({ t: 'spong', n: m.n }); // server-measured RTT: bounds how far back our inputs may be lag-compensated
       } else if (m.t === 'error' && (m.code === 'auth_failed' || m.code === 'not_authed') && state !== 'online') {
         wanted = false; setState('denied', 'Sign-in rejected by the server');
       } else if (m.t === 'banned') {

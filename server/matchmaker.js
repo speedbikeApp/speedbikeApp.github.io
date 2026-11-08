@@ -3,6 +3,8 @@
 //   p.where = null | {type:'queue', mode} | {type:'lobby', lobby} | {type:'match', ...}   (match is set by the host)
 // Queue entries are { players:[p...], group } : a solo player is an entry of one; a PARTY is queued with queueGroup() and is placed into one
 // lobby atomically (never split). Grouped players carry p.group (the party id) until the host clears it; the host reads it at onStart.
+// Parties (unranked) and solo players (ranked) never share a lobby: otherwise a party could be used to farm rank wins from solos. So the open lobbies
+// are at most one per (mode, party-or-solo); two parties may share a party lobby.
 export const LOBBY_MAX = 4, LOBBY_MIN = 2, LOBBY_COUNTDOWN_MS = 30000;
 
 export class Matchmaker {
@@ -10,7 +12,7 @@ export class Matchmaker {
   constructor({ now = Date.now, countdownMs = LOBBY_COUNTDOWN_MS, allowed = () => true, onStart }) {
     this.now = now; this.countdownMs = countdownMs; this.allowed = allowed; this.onStart = onStart;
     this.queues = new Map();   // mode -> [entry]  entry = { players:[player], group:id|null }
-    this.lobbies = [];         // open lobbies (at most one per mode)
+    this.lobbies = [];         // open lobbies (at most one per mode and kind), l.party = party lobby
     this.seq = 0;
   }
 
@@ -81,19 +83,22 @@ export class Matchmaker {
 
   #pump(mode) {
     const q = this.queues.get(mode);
-    let l = this.lobbies.find((x) => x.mode === mode);
-    if (!l && q.reduce((n, e) => n + e.players.length, 0) >= LOBBY_MIN) { l = { id: ++this.seq, mode, players: [], endsAt: 0 }; this.lobbies.push(l); }
-    if (!l) return this.#notifyQueue(mode);
-    let joined = false;
-    for (let i = 0; i < q.length && l.players.length < LOBBY_MAX;) { // first entries that fit (a party that does not fit waits for the next lobby)
-      if (q[i].players.length > LOBBY_MAX - l.players.length) { i++; continue; }
-      for (const p of q.splice(i, 1)[0].players) {
-        p.colorIdx = [0, 1, 2, 3].find((c) => !l.players.some((x) => x.colorIdx === c)); // distinct colour per lobby
-        p.where = { type: 'lobby', lobby: l }; l.players.push(p); joined = true;
+    for (const party of [false, true]) {
+      const mine = (e) => e.players.some((p) => p.group != null) === party; // a lone leftover of a dissolved party (group cleared) is a solo again
+      let l = this.lobbies.find((x) => x.mode === mode && x.party === party);
+      if (!l && q.filter(mine).reduce((n, e) => n + e.players.length, 0) >= LOBBY_MIN) { l = { id: ++this.seq, mode, party, players: [], endsAt: 0 }; this.lobbies.push(l); }
+      if (!l) continue;
+      let joined = false;
+      for (let i = 0; i < q.length && l.players.length < LOBBY_MAX;) { // first entries that fit (a party that does not fit waits for the next lobby)
+        if (!mine(q[i]) || q[i].players.length > LOBBY_MAX - l.players.length) { i++; continue; }
+        for (const p of q.splice(i, 1)[0].players) {
+          p.colorIdx = [0, 1, 2, 3].find((c) => !l.players.some((x) => x.colorIdx === c)); // distinct colour per lobby
+          p.where = { type: 'lobby', lobby: l }; l.players.push(p); joined = true;
+        }
       }
+      if (joined) l.endsAt = this.now() + this.countdownMs; // every join resets the countdown
+      if (l.players.length >= LOBBY_MAX) this.#start(l); else this.#sendLobby(l);
     }
-    if (joined) l.endsAt = this.now() + this.countdownMs; // every join resets the countdown
-    if (l.players.length >= LOBBY_MAX) this.#start(l); else this.#sendLobby(l);
     this.#notifyQueue(mode);
   }
 
