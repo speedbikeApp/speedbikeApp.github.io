@@ -41,5 +41,5 @@ export function banMessage(m) {
 export const ADMIN_ERR = {
   forbidden: 'NOT AN ADMIN', unknown_op: 'UNKNOWN ACTION', unavailable: 'SERVER ERROR - TRY AGAIN', offline: 'NOT CONNECTED', timeout: 'NO ANSWER FROM SERVER', not_found: 'PLAYER NOT FOUND',
   bad_query: 'USE 2-12 LETTERS OR NUMBERS', bad_uid: 'BAD PLAYER', protected: 'NOT ALLOWED FOR THIS ACCOUNT', bad_minutes: 'ENTER MINUTES (1 OR MORE)', bad_name: 'NAME: 3-12 LETTERS, NUMBERS, SPACE _ -',
-  taken: 'NAME ALREADY TAKEN', bad_password: 'PASSWORD: 8 OR MORE CHARACTERS', bad_value: 'INVALID NUMBER', confirm_mismatch: 'TYPED NAME DOES NOT MATCH',
+  taken: 'NAME ALREADY TAKEN', bad_password: 'PASSWORD: 8 OR MORE CHARACTERS', bad_value: 'INVALID NUMBER', confirm_mismatch: 'TYPED NAME DOES NOT MATCH', bad_drops: 'INVALID DROP TABLE - CHECK THE RANGES',
 };

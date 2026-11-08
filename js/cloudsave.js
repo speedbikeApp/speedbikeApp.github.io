@@ -14,6 +14,7 @@ export function mergeProgress(local, cloud) {
   const stats = {};
   for (const k of Object.keys(local.stats)) stats[k] = Math.max(local.stats[k], cloud.stats[k] ?? 0);
   stats.winStreak = newer.stats.winStreak; // a streak is not monotonic: it follows the newer save
+  stats.dropLose = newer.stats.dropLose ?? 0; // same for the drop loss streak (js/drops.js)
   const parts = {};
   for (const c of CATS) parts[c] = union(local.unlocks.parts[c], cloud.unlocks.parts[c]);
   return {

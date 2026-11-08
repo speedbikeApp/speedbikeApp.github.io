@@ -52,6 +52,7 @@ service cloud.firestore {
     // admins/{uid} (admin flag) and bans/{uid} ({until, by, reason}) are written and read ONLY by the game server (Admin SDK); no client rule, so they are denied by default.
 
     // items/{id} (custom garage items + overrides of built-in parts) is written and read ONLY by the game server (Admin SDK); clients get it from GET /catalog. No client rule, denied by default.
+    // config/drops (the loot-box drop table) is likewise server-only (Admin SDK); clients get it as `drops` in GET /catalog.
 
     // Reserved for later (leaderboards etc.): add new collections here. Everything else is denied by default.
   }

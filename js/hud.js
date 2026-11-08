@@ -93,7 +93,9 @@ export function initHud(info, handlers) {
     $(id).addEventListener('pointerdown', (e) => { e.preventDefault(); fn(); });
   }
   $('matchResult').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
+    const c = e.target.closest('.dcard'), b = e.target.closest('button:not(.dcard)');
+    const drop = c && ((onlineResult ? onlineResult.reward : reward)?.drops || [])[+c.dataset.i];
+    if (drop && !drop.open) drop.open = drop.pop = true; // syncOverlays re-renders next frame; html is stable after, so the flip plays once
     if (b) (b.dataset.act === 'menu' ? handlers.onMenu : handlers.onPlayAgain)();
   });
 }
@@ -222,6 +224,17 @@ function roundResultHtml(match) {
   return `<div class="panel frame"><h2>${title}</h2>${lines}<div class="line" style="font-size:14px">${board}</div></div>`;
 }
 
+// Drop cards: closed until tapped (drop.open), then tier colour + reward. Names are escaped (admin-editable catalog).
+function dropBack(x) {
+  const name = x.id ? esc(ABILITIES[x.id].name.toUpperCase()) : '';
+  const main = x.inf ? `<span class="star">✪</span> ${name}<br>UNLIMITED` : x.n ? `${name}<br>x${x.n}` : x.id ? name : '';
+  const coins = x.coins ? `<span class="coins">+${x.coins}</span>${x.id || x.tier === 'unlimited' ? ' <small>(VALUE)</small>' : ''}` : '';
+  return `<small>${x.tier === 'unlimited' ? '<span class="star">✪</span>' : x.tier.toUpperCase()}</small>${main}${main && coins ? '<br>' : ''}${coins}`;
+}
+const dropsHtml = (r) => r && r.drops && r.drops.length
+  ? `<div class="line">YOU GOT ${r.drops.length > 1 ? r.drops.length + ' DROPS' : 'A DROP'} - TAP TO OPEN</div><div class="drops">${r.drops.map((x, i) =>
+    `<button type="button" class="dcard t-${x.tier}${x.open ? ' open' : ''}${x.pop ? ' pop' : ''}" data-i="${i}">${x.open ? dropBack(x) : '?'}</button>`).join('')}</div>` : '';
+
 // Online results: placements with rank badges, then our rank change (badge before -> after, win pip +/-, PROMOTED / DEMOTED banner).
 function onlineResultHtml(match) {
   const R = onlineResult, dm = match.mode.kind === 'deathmatch';
@@ -239,7 +252,7 @@ function onlineResultHtml(match) {
     rank = `<div class="rkbox"><div class="rkswap"><span class="rkb">${badgeHtml(me.rankBefore, 'big')}</span><span class="rka">${badgeHtml(me.rankAfter, 'big')}</span></div>${delta}${banner}</div>`;
   }
   const coins = R.reward ? `<div class="line coins">+${R.reward.earned} SBCOINS <small>(${CFG.rewards.onlineMult}X ONLINE)</small></div><div class="line" style="font-size:14px">TOTAL <span class="coins">${R.reward.total}</span></div>` : '';
-  return `<div class="panel frame"><h2>${title}</h2>${lines}${rank}${coins}<button class="mbtn frame primary" type="button" data-act="again">PLAY AGAIN</button><button class="mbtn frame" type="button" data-act="menu">MAIN MENU</button></div>`;
+  return `<div class="panel frame"><h2>${title}</h2>${lines}${rank}${coins}${dropsHtml(R.reward)}<button class="mbtn frame primary" type="button" data-act="again">PLAY AGAIN</button><button class="mbtn frame" type="button" data-act="menu">MAIN MENU</button></div>`;
 }
 const badgeLabel = (r) => badgeInfo(r).label;
 
@@ -252,7 +265,7 @@ function matchResultHtml(match) {
   const rw = reward
     ? `<div class="line coins">+${reward.earned} SBCOINS</div><div class="line" style="font-size:14px">TOTAL <span class="coins">${reward.total}</span> &nbsp; PLACE ${reward.placement}</div>`
     + (reward.unlocked || []).map((id) => `<div class="line" style="font-size:14px;color:#fff">UNLOCKED: ${esc(getAchievement(id).name.toUpperCase())}</div>`).join('') : '';
-  return `<div class="panel frame"><h2>${title}</h2>${rows}${rw}<button class="mbtn frame primary" type="button" data-act="again">PLAY AGAIN</button><button class="mbtn frame" type="button" data-act="menu">MAIN MENU</button></div>`;
+  return `<div class="panel frame"><h2>${title}</h2>${rows}${rw}${dropsHtml(reward)}<button class="mbtn frame primary" type="button" data-act="again">PLAY AGAIN</button><button class="mbtn frame" type="button" data-act="menu">MAIN MENU</button></div>`;
 }
 
 // Show overlays for the current match phase.

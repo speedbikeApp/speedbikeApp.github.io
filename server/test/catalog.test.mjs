@@ -70,5 +70,19 @@ assert.equal((await get({}, 'POST')).status, 405);
 // stored survives a fresh server read
 assert.equal((await catStore.all()).items[0].hidden, true);
 
+// DROPS ops: admin only, validated, served in GET /catalog, reset restores defaults
+import { DEFAULT_DROPS } from '../../js/dropdef.js';
+for (const op of ['dget', 'dset', 'dreset']) { const r = await alice.op(op, { drops: DEFAULT_DROPS }); assert.deepEqual([r.ok, r.code], [false, 'forbidden'], op); }
+assert.deepEqual((await boss.op('dget')).drops, DEFAULT_DROPS);
+const D = () => structuredClone(DEFAULT_DROPS), badD = async (f) => { const d = D(); f(d); assert.equal((await boss.op('dset', { drops: d })).code, 'bad_drops'); };
+await badD((d) => { d.tiers.common.weight = 59; }); await badD((d) => { d.tiers.epic.weight = 13; }); await badD((d) => { d.tiers.rare.rewards[0] = { kind: 'coins', amount: 0 }; });
+await badD((d) => { d.tiers.rare.rewards[0] = { kind: 'ability', pool: 'bogus', count: 1 }; }); await badD((d) => { d.tiers.rare.rewards = Array(13).fill({ kind: 'coins', amount: 5 }); });
+await badD((d) => { d.tiers.rare.rewards = []; }); await badD((d) => { d.unlimitedOdds = 1; });
+assert.equal((await boss.op('dset', {})).code, 'bad_drops');
+const nd = D(); nd.tiers.common.weight = 65; nd.tiers.common.rewards.push({ kind: 'coins', amount: 7, junk: 1 }); nd.extraChance = 0.25;
+const sd = await boss.op('dset', { drops: nd }); assert.equal(sd.ok, true); assert.equal(sd.drops.tiers.common.rewards[4].junk, undefined, 'clean copy');
+assert.deepEqual(JSON.parse((await get()).body).drops, sd.drops); assert.deepEqual((await catStore.getDrops()), sd.drops);
+assert.deepEqual((await boss.op('dreset')).drops, DEFAULT_DROPS); assert.deepEqual(JSON.parse((await get()).body).drops, DEFAULT_DROPS);
+
 boss.close(); alice.close(); await app.close(); clearTimeout(guard);
 console.log('catalog server tests passed');

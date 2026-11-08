@@ -3,10 +3,12 @@
 //   itemList {} -> {items:[custom], overrides:{id:{name?,price?,ach?}}}
 //   itemSave {id?, item}  no id: create custom {cat, name, price, ach?, base, color?} -> {item}; id 'c_..': update (cat fixed; hidden:bool allowed); built-in id: override {name?, price?, ach?:id|null}
 //   itemDelete {id}       custom: hide it (owners keep it; never really deleted); built-in: remove its override
-// GET /catalog -> {ok, items:[custom], overrides} for everybody (js/catalog.js). The catalog is cached in memory (this process is the only writer).
+// DROPS: dget / dset / dreset (see below).
+// GET /catalog -> {ok, items:[custom], overrides, drops} for everybody (js/catalog.js). The catalog is cached in memory (this process is the only writer).
 import crypto from 'node:crypto';
 import { BUILTIN_PARTS, CATS, isCustomId } from '../js/parts.js';
 import { isAchievementId } from '../js/achievements.js';
+import { DEFAULT_DROPS, validateDrops } from '../js/dropdef.js';
 import { adminError as E } from './admin.js';
 import { originAllowed } from './login.js';
 
@@ -41,16 +43,26 @@ export function cleanOverride(it) {
 }
 
 export function createCatalog(store) {
-  let cache = null;
+  let cache = null, drops;
   const get = async () => cache || (cache = await store.all());
   return {
     get,
+    // drop table: only validated tables are served; missing / invalid stored doc = defaults
+    async getDrops() { if (!drops) drops = validateDrops(await store.getDrops()) || structuredClone(DEFAULT_DROPS); return drops; },
+    async putDrops(t) { await store.putDrops(t); drops = t; },
     async putItem(it) { const c = await get(); await store.put(it.id, it); const i = c.items.findIndex((x) => x.id === it.id); if (i >= 0) c.items[i] = it; else c.items.push(it); },
     async putOverride(id, o) { const c = await get(); if (o) { await store.put(id, o); c.overrides[id] = o; } else { await store.del(id); delete c.overrides[id]; } },
   };
 }
 
 export function registerItemOps({ admin, catalog, log = () => {} }) {
+  // DROPS tab: dget {} -> {drops}; dset {drops} -> {drops} (clean copy); dreset {} -> {drops} (defaults)
+  admin.register('dget', async () => ({ drops: await catalog.getDrops() }));
+  admin.register('dset', async (a, ctx) => {
+    const t = validateDrops(a.drops); if (!t) throw E('bad_drops');
+    await catalog.putDrops(t); log(`[admin] ${ctx.uid} drops set`); return { drops: t };
+  });
+  admin.register('dreset', async (a, ctx) => { const t = structuredClone(DEFAULT_DROPS); await catalog.putDrops(t); log(`[admin] ${ctx.uid} drops reset`); return { drops: t }; });
   admin.register('itemList', async () => catalog.get());
   admin.register('itemSave', async (a, ctx) => {
     const c = await catalog.get(), id = a.id, raw = a.item;
@@ -90,7 +102,7 @@ export function createCatalogHandler({ catalog, allowedOrigins = [], production 
     const origin = req.headers.origin, h = { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', Vary: 'Origin' };
     if (origin && originAllowed(origin, allowedOrigins, production)) h['Access-Control-Allow-Origin'] = origin;
     if (req.method !== 'GET') { res.writeHead(405, h); return res.end('{"ok":false}'); }
-    try { const c = await catalog.get(); res.writeHead(200, h); res.end(JSON.stringify({ ok: true, items: c.items, overrides: c.overrides })); }
+    try { const c = await catalog.get(), drops = await catalog.getDrops(); res.writeHead(200, h); res.end(JSON.stringify({ ok: true, items: c.items, overrides: c.overrides, drops })); }
     catch (e) { log('[catalog] failed:', e.message); res.writeHead(503, { ...h, 'Cache-Control': 'no-store' }); res.end('{"ok":false,"code":"unavailable"}'); }
   };
 }

@@ -25,7 +25,7 @@ export const defaults = () => ({
   updatedAt: 0, // ms of the last progress change (cloud merge: newer save wins coins)
   cloudUid: '', // account uid this save's progress belongs to ('' = guest / never synced)
   stats: { matches: 0, wins: 0, winStreak: 0, bestStreak: 0, kills: 0, distance: 0, boosts: 0, jumps: 0,
-    bestRoundBoosts: 0, bestRoundJumps: 0, dmFlawless: 0, wins3d: 0, winsHyper: 0 },
+    bestRoundBoosts: 0, bestRoundJumps: 0, dmFlawless: 0, wins3d: 0, winsHyper: 0, dropLose: 0 }, // dropLose: matches lost in a row toward the next drop
   // parts: owned part ids per category (free ones are always present); achievements: earned ids
   unlocks: { abilities: FREE_ABILITIES(), abilityCount: {}, abilityInf: [], parts: Object.fromEntries(CATS.map((c) => [c, freeParts(c)])), achievements: [] },
   equipped: { abilities: FREE_ABILITIES(), parts: { ...DEFAULT_PARTS } },

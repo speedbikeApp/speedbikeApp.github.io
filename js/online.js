@@ -16,6 +16,7 @@ import * as audio from './audio.js';
 import { setHudPlayers, resetHudPlayers, setOnlineResult, flashTurn, showAnnounce, setAbilityHud } from './hud.js';
 import { ABILITIES, setLoadout, cycleAbility, activeDef } from './abilities.js';
 import { DEFAULT_PARTS, glowHex, colorDist, CLASH_DIST } from './parts.js';
+import { awardDrops } from './drops.js';
 import { getSave, addCoins, coinsForPlacement, abilityCharges, spendAbility, spendPassives, usableAbilities } from './save.js';
 import { social } from './social.js';
 import { party } from './party.js';
@@ -241,6 +242,7 @@ on('end', (m) => {
     const kills = MODES[m.mode]?.kind === 'deathmatch' ? (me.scores || 0) : 0;
     const earned = CFG.rewards.onlineMult * (coinsForPlacement(me.place) + kills * CFG.deathMatch.coinsPerKill);
     reward = { earned, total: addCoins(earned) };
+    reward.drops = awardDrops({ won: me.place === 1, bonus: true }); reward.total = getSave().coins;
   }
   setOnlineResult({ meId: youId, rows, mode: m.mode, reward });
   net.lock(false);

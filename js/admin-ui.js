@@ -7,6 +7,7 @@ import { rankLabel, defaultRank } from './ranks.js';
 // ---- tab modules plug in here (each registers itself on import) ----
 import './admin-garage.js';
 import './admin-maps.js';
+import './admin-drops.js';
 
 const $ = (id) => document.getElementById(id);
 let show = () => {}, active = 'players', cleanup = null;
