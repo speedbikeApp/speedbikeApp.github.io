@@ -1,11 +1,13 @@
 // Menu screens (main / mode select / settings) + pause-panel buttons. DOM only; game flow is injected by main.js.
 // Settings are applied live (render + audio) and persisted through save.js.
 import { CFG } from './config.js';
+import { abilityIcon } from './icons.js';
 import { getSave, setSetting, setUsername, saveSoon, buyAbility, buyInfinite, abilityCharges, infinitePrice, STACK_MAX, toggleEquip, buyPart, equipPart, partOwned } from './save.js';
 import { CATS, CAT_LABEL, partList, getPart, glowHex, isShown, DEFAULT_PARTS } from './parts.js';
 import { ACHIEVEMENTS, getAchievement, achValue, achProgress } from './achievements.js';
 import { ABILITIES, ABILITY_IDS } from './abilities.js';
 import { setBloom, setMaxDpr, initPreview, setPreviewParts, drawPreview } from './render.js';
+import { MAPS } from './maps.js';
 import * as audio from './audio.js';
 import { setPlayerName } from './hud.js';
 import { initAccountUi, openAccount, accountEsc, isSignedIn } from './account-ui.js';
@@ -19,8 +21,8 @@ const $ = (id) => document.getElementById(id);
 let current = null;      // visible screen id or null
 let settingsFrom = null; // 'main' | 'pause'
 
-const SCREENS = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrAdmin', 'scrSettings', 'scrControls'];
-const FULL_MENU = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrAdmin']; // screens shown over the empty arena (HUD hidden)
+const SCREENS = ['scrMain', 'scrPlay', 'scrMode', 'scrMapSel', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrAdmin', 'scrSettings', 'scrControls'];
+const FULL_MENU = ['scrMain', 'scrPlay', 'scrMode', 'scrMapSel', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrAdmin']; // screens shown over the empty arena (HUD hidden)
 export function showScreen(name, backdrop = 'home') {
   current = name;
   $('menu').style.display = name ? 'flex' : 'none';
@@ -28,7 +30,9 @@ export function showScreen(name, backdrop = 'home') {
   for (const id of SCREENS) $(id).classList.toggle('on', id === name);
   document.body.classList.toggle('menu', FULL_MENU.includes(name) || ((name === 'scrSettings' || name === 'scrControls') && settingsFrom === 'main'));
   if (name === 'scrMain') { $('mCoins').textContent = getSave().coins; $('mName').textContent = getSave().profile.username; }
-  if (name === 'scrMode') syncDiff();
+  if (name === 'scrMode') { syncDiff(); $('mSelMapName').textContent = mapLabel(getSave().settings.spMap); }
+  if (name === 'scrMapSel') { msIdx = Math.max(0, MS_IDS.indexOf(getSave().settings.spMap)); syncMapSel(); }
+  if (onMapPreview) onMapPreview(name === 'scrMapSel' ? MS_IDS[msIdx] : null);
   if (name === 'scrAbilities') renderAbilities('');
   if (name === 'scrGarage') openGarage();
   else stopPreview();
@@ -60,7 +64,7 @@ function renderAbilities(msg) {
   $('abMsg').textContent = msg;
   $('abList').innerHTML = ABILITY_IDS.map((id) => {
     const a = ABILITIES[id], owned = own.includes(id), on = eq.includes(id), n = abilityCharges(id), free = a.price === 0;
-    const cnt = n === Infinity ? '✪' : 'x' + n;
+    const cnt = n === Infinity ? '<span class="star">✪</span>' : 'x' + n;
     const dim = (p) => (d.coins < p ? ' style="opacity:.55"' : '');
     let buy = '';
     if (!free && n === Infinity) buy = '';
@@ -69,7 +73,7 @@ function renderAbilities(msg) {
     const hint = !free && n !== Infinity ? `<small class="infHint">Reach ${STACK_MAX} to unlock ∞ UNLIMITED for ${infinitePrice(id)} SBCOINS</small>` : '';
     const eqBtn = owned ? `<button class="mbtn frame${on ? ' sel' : ''}" type="button" data-id="${id}" data-act="eq">${on ? 'EQUIPPED' : 'EQUIP'}</button>` : '';
     const kind = a.type === 'passive' ? 'PASSIVE - 1 PER MATCH' : a.once ? 'ACTIVE - 1 PER USE' : 'ACTIVE';
-    return `<div class="abItem frame${on ? ' eq' : ''}"${on && n < 1 ? ' style="opacity:.6"' : ''}><b>${a.name.toUpperCase()}</b><span class="tag">${kind}${free ? ' - FREE' : ' - ' + cnt}</span><p>${a.desc}</p>${hint}${buy}${eqBtn}</div>`;
+    return `<div class="abItem frame${on ? ' eq' : ''}"${on && n < 1 ? ' style="opacity:.6"' : ''}>${abilityIcon(id)}<p>${a.desc}</p>${hint}${buy}${eqBtn}<b>${a.name.toUpperCase()}</b><span class="tag">${kind}${free ? ' - FREE' : ' - ' + cnt}</span></div>`;
   }).join('');
 }
 // ---- GARAGE: category tabs, part cards (preview on select), buy / equip. 3D preview = separate small renderer. ----
@@ -125,6 +129,18 @@ function renderStats() {
 }
 const AB_MSG = { max: 'AT 99 - BUY INFINITE', need99: 'NEED 99 CHARGES FIRST', owned: 'ALREADY UNLIMITED', coins: 'NOT ENOUGH SBCOINS', full: 'ALL SLOTS FULL - UNEQUIP ONE FIRST' };
 
+// ---- single-player MAP SELECT: RANDOM + built-in maps; main.js shows the preview (onMapPreview(id|'random'|null)) ----
+const MS_IDS = ['random', ...Object.keys(MAPS)];
+const mapLabel = (id) => (id === 'random' ? 'RANDOM' : MAPS[id].name);
+let msIdx = 0, onMapPreview = null;
+function syncMapSel() {
+  $('msName').textContent = mapLabel(MS_IDS[msIdx]);
+  $('msHint').textContent = MS_IDS[msIdx] === 'random' ? 'A RANDOM MAP EACH MATCH' : '3D / HYPER USE ONLY THEIR OWN MAPS';
+}
+function stepMap(d) {
+  msIdx = (msIdx + d + MS_IDS.length) % MS_IDS.length; syncMapSel();
+  if (onMapPreview) onMapPreview(MS_IDS[msIdx]);
+}
 function syncDiff() {
   const d = getSave().settings.aiDifficulty;
   for (const b of $('diffRow').children) b.classList.toggle('sel', +b.dataset.diff === d);
@@ -151,6 +167,15 @@ export function initMenu(h) {
   on('pMulti', () => showScreen('scrMulti'));
   on('playBack', () => showScreen('scrMain'));
   on('modeBack', () => showScreen('scrPlay'));
+  onMapPreview = h.onMapPreview;
+  on('mSelMap', () => showScreen('scrMapSel'));
+  on('msPrev', () => stepMap(-1)); on('msNext', () => stepMap(1));
+  on('msBack', () => showScreen('scrMode'));
+  on('msOk', () => { setSetting('spMap', MS_IDS[msIdx]); showScreen('scrMode'); });
+  addEventListener('keydown', (e) => { if (current === 'scrMapSel' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { e.preventDefault(); stepMap(e.code === 'ArrowLeft' ? -1 : 1); } });
+  let sx = null; // swipe
+  addEventListener('touchstart', (e) => { sx = current === 'scrMapSel' ? e.touches[0].clientX : null; }, { passive: true });
+  addEventListener('touchend', (e) => { if (sx !== null && Math.abs(e.changedTouches[0].clientX - sx) > 50) stepMap(e.changedTouches[0].clientX < sx ? 1 : -1); sx = null; }, { passive: true });
   initMultiUi({ show: showScreen, openAccount: () => showScreen('scrAccount') });
   initFriendsUi({ show: showScreen, openAccount: () => showScreen('scrAccount') });
   initAdminUi({ show: showScreen });
@@ -219,6 +244,7 @@ export function closeSettings() {
 }
 // Esc inside a menu screen: step back one level. Returns true if the screen was handled.
 export function menuBack() {
+  if (current === 'scrMapSel') { showScreen('scrMode'); return true; }
   if (current === 'scrMode' || current === 'scrMulti') { showScreen('scrPlay'); return true; }
   if (current === 'scrQueue' || current === 'scrLobby') return multiBack(current);
   if (current === 'scrPlay' || current === 'scrFriends' || current === 'scrAdmin' || current === 'scrAbilities' || current === 'scrGarage' || current === 'scrStats') { showScreen('scrMain'); return true; }

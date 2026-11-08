@@ -5,6 +5,7 @@ import { ABILITIES, ABILITY_IDS, isAbilityId, FREE_ABILITIES } from './abilities
 import { CATS, DEFAULT_PARTS, PARTS, getPart, isPartId, freeParts, isCustomId } from './parts.js';
 import { getAchievement, newlyEarned } from './achievements.js';
 import { defaultKeys, validateKeys } from './input.js';
+import { MAPS } from './maps.js';
 
 export const KEY = 'speedbike.save.v1';
 export const VERSION = 2; // 2: consumable abilities (unlocks.abilityCount / abilityInf)
@@ -17,7 +18,7 @@ export const DEFAULT_NAME = 'PLAYER';
 export const defaults = () => ({
   version: VERSION,
   settings: { bloom: CFG.render.bloom.strength, masterVol: CFG.audio.master, musicVol: CFG.audio.music, sfxVol: CFG.audio.sfx, engineVol: 0.3,
-    muted: false, aiDifficulty: CFG.ai.difficulty, quality: 'high', keys: defaultKeys() },
+    muted: false, aiDifficulty: CFG.ai.difficulty, quality: 'high', keys: defaultKeys(), spMap: 'random' },
   profile: { username: DEFAULT_NAME },
   coins: 0,
   updatedAt: 0, // ms of the last progress change (cloud merge: newer save wins coins)
@@ -61,6 +62,7 @@ function clamp(d) {
   s.bloom = Math.min(3, Math.max(0, s.bloom));
   s.aiDifficulty = Math.min(2, Math.max(0, Math.round(s.aiDifficulty)));
   if (!(s.quality in CFG.quality)) s.quality = 'high';
+  if (s.spMap !== 'random' && !Object.hasOwn(MAPS, s.spMap)) s.spMap = 'random'; // single-player map choice
   d.profile.username = sanitizeName(d.profile.username);
   d.coins = Math.max(0, Math.floor(d.coins)); d.updatedAt = Math.max(0, Math.floor(d.updatedAt));
   // abilities: only known ids; free ones are always unlocked; equipped must be unlocked, unique, <= maxSlots

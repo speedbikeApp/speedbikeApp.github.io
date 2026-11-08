@@ -33,6 +33,16 @@ const { CFG } = await import('../js/config.js');
   assert.equal(d.coins, 150); assert.equal(d.stats.wins, 3); assert.equal(d.stats.kills, 0); assert.equal(d.stats.matches, 0);
   assert.deepEqual(d.unlocks.abilities, ['turbo']); assert.deepEqual(d.unlocks.parts.body, ['sleek', 'apex']); assert.ok(!('wheel1' in d.unlocks.parts));
 }
+{ // single-player map choice: default random, valid id kept, junk -> random; mode validity + fallback
+  const { modeWithMap, MODES } = await import('../js/modes.js');
+  assert.equal(S.defaults().settings.spMap, 'random');
+  for (const [v, want] of [['crater', 'crater'], ['nope', 'random'], ['constructor', 'random'], [5, 'random']]) {
+    store.set(S.KEY, JSON.stringify({ settings: { spMap: v } })); assert.equal(S.loadSave().settings.spMap, want, String(v));
+  }
+  assert.deepEqual([].concat(modeWithMap('standard', 'tiers').map), ['tiers']);
+  assert.equal(modeWithMap('3d', 'arena'), MODES['3d']); assert.equal(modeWithMap('hyper', 'random'), MODES.hyper);
+  assert.deepEqual([].concat(modeWithMap('3d', 'stairs').map), ['stairs']); assert.equal(modeWithMap('3d', 'stairs').speed, MODES['3d'].speed);
+}
 { // storage that throws never breaks anything
   throwing = true;
   const d = S.loadSave(); assert.deepEqual(d, S.defaults());

@@ -32,6 +32,11 @@ export const MODES = {
   },
 };
 
+// Single-player map choice: Standard / Death Match accept any built-in map, 3D / Hyper only their own pool.
+export const modeMaps = (id) => (id === 'standard' || id === 'deathmatch' ? Object.keys(MAPS) : [].concat(MODES[id].map));
+// The mode to play for a saved choice ('random' or invalid for this mode -> the mode's own random pool). Prototype keeps the live `speed` getter.
+export const modeWithMap = (id, sel) => (modeMaps(id).includes(sel) ? Object.create(MODES[id], { map: { value: [sel] } }) : MODES[id]);
+
 // Distance from a point to an axis-aligned trail segment.
 function segDist(px, pz, s) {
   const x0 = Math.min(s.x1, s.x2), x1 = Math.max(s.x1, s.x2), z0 = Math.min(s.z1, s.z2), z1 = Math.max(s.z1, s.z2);

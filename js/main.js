@@ -2,12 +2,12 @@ import { CFG } from './config.js';
 import { createState, createBike } from './state.js';
 import { step, turnBike, canTurn, isAirborne, startBoost, startJump } from './physics.js';
 import { initInput, popTurn, popAction, pushAction, clearQueue, setOnPause } from './input.js';
-import { render, burst, resetCamera, resetEffects, setBikeStyle } from './render.js';
+import { render, renderMapPreview, burst, resetCamera, resetEffects, setBikeStyle } from './render.js';
 import * as audio from './audio.js';
 import { initHud, setTimer, setPing, setScoreboard, setStatus, showPause, showLeave, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks, showAnnounce } from './hud.js';
 import { createAI, updateAIs } from './ai.js';
 import { useAbility, cycleAbility, setLoadout, activeDef, ABILITIES } from './abilities.js';
-import { createMatch, MODES } from './modes.js';
+import { createMatch, MODES, modeWithMap } from './modes.js';
 import { MAPS } from './maps.js';
 import { getSave, addSessionStats, recordMatch, recordRound, flushSave, abilityCharges, spendAbility, spendPassives } from './save.js';
 import { glowHex, DEFAULT_PARTS, resolveAiColors } from './parts.js';
@@ -57,7 +57,7 @@ function clearPause() { paused = false; showPause(false); audio.setPaused(false)
 function startGame(id) {
   if (typeof id === 'string' && MODES[id]) modeId = id; // play again / restart keep the current mode
   demoMap = null; state.playerId = 0; // must come first: the menu mock match left playerId = -1; next menu gets a new random map
-  match.setMode(MODES[modeId]);
+  match.setMode(modeWithMap(modeId, getSave().settings.spMap));
   commitSession();
   const diff = getSave().settings.aiDifficulty;
   ais.clear();
@@ -136,7 +136,8 @@ initHud(CFG.players.map((p, i) => ({ id: i, name: p.name, color: p.color })), {
   onMenu: () => (screen === 'online' ? leaveOnline() : quitToMenu()),
 });
 initUpdate();
-initMenu({ onPlay: (id) => startGame(id), onResume: () => setPaused(false), onRestart: () => startGame(), onQuit: quitToMenu });
+let previewMap = null; // map-select screen open: 'random' (cycles through the maps) | map id | null
+initMenu({ onMapPreview: (id) => { previewMap = id; }, onPlay: (id) => startGame(id), onResume: () => setPaused(false), onRestart: () => startGame(), onQuit: quitToMenu });
 initInput();
 audio.initAudio();
 // Phones: first tap (a user gesture) goes fullscreen and tries to lock landscape; failures are ignored.
@@ -253,6 +254,11 @@ function frameOnline(now, dt) {
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1); last = now;
   if (screen === 'online' && online.isActive()) { frameOnline(now, dt); requestAnimationFrame(frame); return; }
+  if (screen === 'menu' && previewMap) { // map-select: demo match frozen (not ticked), only the map is drawn
+    const ids = Object.keys(MAPS);
+    renderMapPreview(MAPS[previewMap === 'random' ? ids[Math.floor(now / 2500) % ids.length] : previewMap], dt);
+    requestAnimationFrame(frame); return;
+  }
   if (screen === 'menu') { // background mock match: sim + render only, 30 Hz-safe cap on catch-up
     acc += dt;
     for (let n = 0; acc >= DT && n < 4; n++) { demoTick(); acc -= DT; }

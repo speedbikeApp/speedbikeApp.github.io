@@ -1,6 +1,7 @@
 // DOM HUD: score bar, timer, pause, minimap, countdown / result overlays, ability hexagon.
 import { CFG } from './config.js';
 import { abilityCharges } from './save.js';
+import { abilityIcon } from './icons.js';
 import { activeDef, ABILITIES, isActive, canUse, protectLeft } from './abilities.js';
 import { MAPS } from './maps.js';
 import { platformCorners } from './mapdef.js';
@@ -82,6 +83,7 @@ export function initHud(info, handlers) {
   bikes = info;
   buildScoreboard();
   mapCtx = $('minimap').getContext('2d');
+  for (const id of ['boost', 'jump']) $(id + 'Btn').insertAdjacentHTML('afterbegin', abilityIcon(id));
   $('pause').addEventListener('click', handlers.onPause);
   $('resume').addEventListener('click', handlers.onResume);
   $('leaveResume').addEventListener('click', handlers.onLeaveResume);
@@ -129,8 +131,8 @@ export function setAbilityHud(b) {
   const el = $('abilityBtn');
   el.classList.toggle('none', !def); el.classList.toggle('ready', ready); el.classList.toggle('active', active);
   el.style.setProperty('--f', Math.floor(frac * 100));
-  $('abIcon').textContent = def ? def.icon : '--';
-  $('abName').textContent = def ? def.short + ' ' + (charges === Infinity ? '✪' : 'x' + charges) : 'NONE';
+  $('abIcon').innerHTML = def ? abilityIcon(def.id) : '--';
+  $('abName').innerHTML = def ? def.short + ' ' + (charges === Infinity ? '<span class="star">✪</span>' : 'x' + charges) : 'NONE'; // def.short is a built-in constant
   el.classList.toggle('empty', !!def && charges < 1);
   $('abState').textContent = !def ? '' : charges < 1 ? 'EMPTY' : ready ? 'OK!!' : usedUp ? 'USED' : active && cdLeft <= 0 ? 'ON' : Math.ceil(cdLeft) + 's';
   const sw = $('swapBtn');

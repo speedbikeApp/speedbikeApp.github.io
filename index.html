@@ -41,7 +41,9 @@
   .abtn { position: fixed; bottom: calc(16px * var(--hud)); transform: scale(var(--hudb)); width: 92px; height: 92px; padding: 0; font: inherit; color: var(--neon); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; touch-action: none; -webkit-tap-highlight-color: transparent; z-index: 2;
     background: linear-gradient(to top, rgba(0,255,255,.5) calc(var(--f, 100) * 1%), rgba(0,20,30,.55) 0); }
   #boostBtn { left: calc(16px * var(--hud)); transform-origin: bottom left; } #jumpBtn { right: calc(16px * var(--hud)); transform-origin: bottom right; }
-  .abtn b { font-size: 20px; font-weight: 800; letter-spacing: 1px; } .abtn small { font-size: 11px; letter-spacing: 2px; }
+  .abtn b { font-size: 16px; font-weight: 800; letter-spacing: 1px; } .abtn small { font-size: 11px; letter-spacing: 2px; margin-bottom: 4px; }
+  .ic { width: 32px; height: 32px; flex: none; filter: drop-shadow(0 0 4px currentColor); }
+  .abtn .ic { width: 38px; height: 38px; }
   .abtn.ready { background: rgba(0,255,255,.3); } .abtn.ready b { color: #fff; text-shadow: 0 0 10px #0ff; }
   .abtn.active { border-color: #fff; box-shadow: 0 0 18px #fff, inset 0 0 10px rgba(255,255,255,.5); }
   /* ---- ability hexagon (bottom centre) + turn chevrons ---- */
@@ -52,9 +54,10 @@
   #abilityBtn::before { content: ''; position: absolute; inset: 3px; clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
     background: linear-gradient(to top, rgba(0,255,255,.45) calc(var(--f, 100) * 1%), rgba(0,20,30,.88) 0); }
   #abilityBtn > * { position: relative; }
-  #abIcon { font-size: 16px; font-weight: 800; letter-spacing: 1px; line-height: 1; }
-  #abName { font-size: 9px; letter-spacing: 1px; margin-top: 2px; }
-  #abState { font-size: 17px; font-weight: 800; letter-spacing: 1px; line-height: 1.1; }
+  #abIcon { font-size: 16px; font-weight: 800; letter-spacing: 1px; line-height: 0; display: flex; }
+  #abIcon .ic { width: 28px; height: 28px; }
+  #abName { font-size: 8px; letter-spacing: 1px; order: 3; white-space: nowrap; }
+  #abState { font-size: 13px; font-weight: 800; letter-spacing: 1px; line-height: 1.1; }
   #abilityBtn.ready::before { background: rgba(0,90,100,.92); } #abilityBtn.ready #abState { color: #fff; text-shadow: 0 0 10px #0ff; }
   #abilityBtn.active { background: #fff; } #abilityBtn.active #abState { color: #fff; }
   #abilityBtn.empty { filter: grayscale(1) brightness(.6); }
@@ -67,13 +70,18 @@
   /* ---- abilities screen ---- */
   #abList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
   .abItem { padding: 6px 10px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; letter-spacing: 1px; text-align: left; }
+  .abItem .ic { align-self: center; width: 44px; height: 44px; color: var(--neon); } .abItem.eq .ic { color: #fff; }
+  .abItem b, .abItem .tag { text-align: center; }
   .abItem b { font-size: 14px; letter-spacing: 2px; } .abItem .tag { font-size: 9px; opacity: .7; letter-spacing: 2px; } .abItem p { margin: 0; font-size: 10px; opacity: .85; letter-spacing: .5px; font-family: sans-serif; }
   .abItem.eq { border-color: #fff; } .abItem .mbtn { min-height: 32px; padding: 3px 10px; font-size: 12px; min-width: 0; }
+  .star { font-family: 'Segoe UI Symbol', 'Noto Sans Symbols 2', 'Apple Symbols', sans-serif; font-size: 1.25em; color: #fc3; line-height: 1; } /* Orbitron has no ✪ glyph */
   .abItem .infHint { font-size: 9px; color: #fc3; letter-spacing: 1px; font-family: sans-serif; }
   #abMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; }
   /* ---- menus ---- */
   body.menu #hudTL, body.menu #top, body.menu #status, body.menu #boostBtn, body.menu #jumpBtn, body.menu #abBar, body.menu #minimap { display: none; }
   #menu { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; touch-action: pan-y; }
+  #menu:has(#scrMapSel.on) { align-items: flex-end; padding-bottom: 3vh; box-sizing: border-box; } /* map preview stays visible above the panel */
+  #scrMapSel { width: min(460px, 94vw); }
   #menu.dim { background: rgba(0,0,0,.6); }
   #menu.home { background: radial-gradient(ellipse at center, rgba(0,0,0,0) 30%, rgba(0,0,0,.65) 100%); }
   .screen { display: none; flex-direction: column; align-items: center; gap: 10px; padding: 16px 28px; box-sizing: border-box; max-height: 94vh; max-height: 94dvh; max-width: 96vw; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin; }
@@ -399,6 +407,7 @@
       <button class="mbtn frame" type="button" data-mode="deathmatch">DEATH MATCH<small>3 LIVES - RESPAWN</small></button>
       <button class="mbtn frame" type="button" data-mode="3d">3D<small>MULTI-LEVEL MAP</small></button>
     </div>
+    <button id="mSelMap" class="mbtn frame" type="button">SELECT MAP<small id="mSelMapName">RANDOM</small></button>
     <div class="lbl">AI DIFFICULTY</div>
     <div id="diffRow" class="mrow" style="width:100%">
       <button class="mbtn frame" type="button" data-diff="0">EASY</button>
@@ -406,6 +415,19 @@
       <button class="mbtn frame" type="button" data-diff="2">HARD</button>
     </div>
     <button id="modeBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrMapSel" class="screen frame">
+    <h2>SELECT MAP</h2>
+    <div class="mrow" style="width:100%">
+      <button id="msPrev" class="mbtn frame" type="button" aria-label="Previous map">&#9664;</button>
+      <b id="msName" style="flex:3;align-self:center;text-align:center;letter-spacing:3px;font-size:20px">RANDOM</b>
+      <button id="msNext" class="mbtn frame" type="button" aria-label="Next map">&#9654;</button>
+    </div>
+    <div id="msHint" class="lbl"></div>
+    <div class="mrow" style="width:100%">
+      <button id="msOk" class="mbtn frame primary" type="button">SELECT</button>
+      <button id="msBack" class="mbtn frame" type="button">BACK</button>
+    </div>
   </div>
   <div id="scrPlay" class="screen frame">
     <h2>PLAY</h2>
