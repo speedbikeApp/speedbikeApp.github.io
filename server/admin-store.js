@@ -3,6 +3,7 @@
 //   getBan(uid) -> {until:ms|null, by, reason, at} | null    setBan(uid, ban | null)
 //   getProgress(uid) -> object | null (users/{uid}.progress)  setProgress(uid, progress)
 //   rename(uid, name) -> {ok:true} | {ok:false, code:'taken'|'not_found'}   keeps the usernames/{lower} reservation consistent
+//   setPassword(uid, pw)  sets the sign-in password and signs the player out everywhere (JSON store: no passwords, no-op)
 //   remove(uid) -> deletes the auth user, users/{uid}, its usernames reservation, bans/{uid}, admins/{uid} (friends + ranks are removed by the caller)
 //   flush()
 // Firestore model: `admins/{uid}` = {at, by} and `bans/{uid}` = {until, by, reason, at}. Admin SDK only: firestore.rules has no rule for them, so clients are denied.
@@ -35,6 +36,7 @@ export function createJsonAdminStore(file, social) {
       if (hit && hit.uid !== uid) return { ok: false, code: 'taken' };
       await social.noteUser(uid, name); return { ok: true };
     },
+    async setPassword() {},
     async remove(uid) { delete d.admins[uid]; delete d.bans[uid]; delete d.progress[uid]; await social.deleteUser?.(uid); save(); },
     flush: () => chain,
   };
@@ -65,6 +67,7 @@ export function createFirestoreAdminStore(db, fbAuth) {
         return { ok: true };
       });
     },
+    async setPassword(uid, password) { await fbAuth.updateUser(uid, { password }); await fbAuth.revokeRefreshTokens(uid); },
     async remove(uid) {
       const u = await users.doc(uid).get(), old = u.exists ? u.data().username : null;
       try { await fbAuth.deleteUser(uid); } catch (e) { if (!e || e.code !== 'auth/user-not-found') throw e; }

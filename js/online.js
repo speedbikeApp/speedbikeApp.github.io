@@ -253,7 +253,7 @@ function localInputs(me, nowMs) {
   if ((act === 'boost' || act === 'jump') && predictInput(sim, me.id, { kind: act })) {
     net.send({ t: 'in', kind: act, ctick: sim.tick });
     if (act === 'boost') audio.boost(); else audio.jump();
-  } else if (act === 'swap') cycleAbility(me); // which ability the hexagon fires is local; the activation names the ability
+  } else if (act === 'swap' || act === 'swapBack') cycleAbility(me, act === 'swap' ? 1 : -1); // which ability the hexagon fires is local; the activation names the ability
   else if (act === 'ability') {
     const def = activeDef(me);
     if (def && abilityCharges(def.id) >= 1 && predictInput(sim, me.id, { kind: 'ability', ability: def.id })) {

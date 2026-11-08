@@ -41,7 +41,7 @@ assert.deepEqual([...parseAdminNames('A, b ,,')], ['a', 'b']);
 
 // ---- non-admin is refused every admin action (and nothing changes)
 for (const [op, a] of [['psearch', { q: 'bo' }], ['plist', {}], ['pget', { uid: 'uBob' }], ['pban', { uid: 'uBob', permanent: true }], ['punban', { uid: 'uBob' }], ['padmin', { uid: 'uAlice', on: true }],
-  ['prename', { uid: 'uBob', username: 'Hacked' }], ['pedit', { uid: 'uAlice', coins: 99999 }], ['pdelete', { uid: 'uBob', confirm: 'Bobby' }], ['echo', { x: 1 }], ['nonexistent', {}]]) {
+  ['prename', { uid: 'uBob', username: 'Hacked' }], ['ppassword', { uid: 'uBoss', password: 'takeover123' }], ['pedit', { uid: 'uAlice', coins: 99999 }], ['pdelete', { uid: 'uBob', confirm: 'Bobby' }], ['echo', { x: 1 }], ['nonexistent', {}]]) {
   const r = await alice.op(op, a);
   assert.deepEqual([r.ok, r.code], [false, 'forbidden'], op);
 }
@@ -131,6 +131,17 @@ assert.equal(await hasName('Alicia B'), true); assert.equal(await hasName('Alice
 assert.equal((await boss.op('prename', { uid: 'uBob', username: 'alicia b' })).code, 'taken');
 assert.equal((await boss.op('prename', { uid: 'uAlice', username: 'ALICIA B' })).ok, true, 'case-only change of own name is fine');
 assert.equal([...app.sessions].find((s) => s.uid === 'uAlice').username, 'ALICIA B');
+
+// ---- change password: length-checked, never another admin's, the store gets the new password
+const pwSet = []; adminStore.setPassword = async (uid, pw) => { pwSet.push([uid, pw]); };
+assert.equal((await boss.op('ppassword', { uid: 'uMod', password: 'short' })).code, 'bad_password');
+assert.equal((await boss.op('ppassword', { uid: 'uMod', password: 'x'.repeat(129) })).code, 'bad_password');
+await adminStore.setAdmin('uMod', true, 'uBoss');
+assert.equal((await boss.op('ppassword', { uid: 'uMod', password: 'longenough1' })).code, 'protected', 'other admins are off limits');
+await adminStore.setAdmin('uMod', false);
+assert.equal((await boss.op('ppassword', { uid: 'uMod', password: 'longenough1' })).ok, true);
+assert.equal((await boss.op('ppassword', { uid: 'uBoss', password: 'myownpass1' })).ok, true, 'own password is fine');
+assert.deepEqual(pwSet, [['uMod', 'longenough1'], ['uBoss', 'myownpass1']]);
 
 // ---- edit coins / stats bumps updatedAt
 await adminStore.setProgress('uAlice', { coins: 5, updatedAt: Date.now() + 5000, stats: { wins: 3 } });

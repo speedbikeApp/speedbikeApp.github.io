@@ -64,11 +64,13 @@
   #abilityBtn.active { background: #fff; } #abilityBtn.active #abState { color: #fff; }
   #abilityBtn.empty { filter: grayscale(1) brightness(.6); }
   #abilityBtn.none { background: #357; cursor: default; } #abilityBtn.none::before { background: rgba(0,20,30,.88); }
-  .chev { width: 24px; height: 38px; background: rgba(0,255,255,.2); transition: background .25s, filter .25s; }
+  .chev { position: fixed; top: 50%; width: calc(44px * var(--hud)); height: calc(110px * var(--hud)); margin-top: calc(-55px * var(--hud)); background: rgba(0,255,255,.2); transition: background .25s, filter .25s; pointer-events: none; z-index: 1; }
+  #chevL { left: calc(10px * var(--hud)); } #chevR { right: calc(10px * var(--hud)); }
   #chevL { clip-path: polygon(100% 0, 0 50%, 100% 100%, 70% 50%); } #chevR { clip-path: polygon(0 0, 100% 50%, 0 100%, 30% 50%); }
   .chev.lit { background: #0ff; filter: drop-shadow(0 0 6px #0ff); transition: none; }
-  #swapBtn { pointer-events: auto; position: absolute; top: 50%; left: calc(100% + 6px); transform: translateY(-50%); font: inherit; font-size: 12px; letter-spacing: 1px; color: var(--neon); padding: 4px 10px; cursor: pointer; white-space: nowrap; touch-action: none; visibility: hidden; -webkit-tap-highlight-color: transparent; }
-  #swapBtn:active { background: rgba(0,255,255,.25); }
+  .abArrow { pointer-events: auto; width: 30px; height: 48px; padding: 0; border: 0; cursor: pointer; background: rgba(0,255,255,.55); touch-action: none; visibility: hidden; -webkit-tap-highlight-color: transparent; }
+  .abArrow:active { background: #0ff; filter: drop-shadow(0 0 6px #0ff); }
+  #abPrev { clip-path: polygon(100% 0, 0 50%, 100% 100%, 70% 50%); } #abNext { clip-path: polygon(0 0, 100% 50%, 0 100%, 30% 50%); }
   /* ---- abilities screen ---- */
   #abList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
   .abItem { padding: 6px 10px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; letter-spacing: 1px; text-align: left; }
@@ -79,7 +81,7 @@
   .star { font-family: 'Segoe UI Symbol', 'Noto Sans Symbols 2', 'Apple Symbols', sans-serif; font-size: 1.25em; color: #fc3; line-height: 1; } /* Orbitron has no ✪ glyph */
   #abMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; }
   /* ---- menus ---- */
-  body.menu #hudTL, body.menu #top, body.menu #status, body.menu #boostBtn, body.menu #jumpBtn, body.menu #abBar, body.menu #minimap { display: none; }
+  body.menu #hudTL, body.menu #top, body.menu #status, body.menu #boostBtn, body.menu #jumpBtn, body.menu #abBar, body.menu .chev, body.menu #minimap { display: none; }
   #menu { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; touch-action: pan-y; }
   #menu:has(#scrMapSel.on) { align-items: flex-end; padding-bottom: 3vh; box-sizing: border-box; } /* map preview stays visible above the panel */
   #scrMapSel { width: min(460px, 94vw); }
@@ -348,11 +350,11 @@
 <button id="boostBtn" class="abtn frame" type="button" tabindex="-1"><b></b><small>BOOST</small></button>
 <button id="jumpBtn" class="abtn frame" type="button" tabindex="-1"><b></b><small>JUMP</small></button>
 <div id="abBar">
-  <button id="swapBtn" class="frame" type="button" tabindex="-1"></button>
-  <div id="chevL" class="chev"></div>
+  <button id="abPrev" class="abArrow" type="button" tabindex="-1" aria-label="Previous power-up"></button>
   <div id="abWrap"><button id="abilityBtn" class="none" type="button" tabindex="-1"><span id="abIcon">--</span><span id="abName">NONE</span><b id="abState"></b></button></div>
-  <div id="chevR" class="chev"></div>
+  <button id="abNext" class="abArrow" type="button" tabindex="-1" aria-label="Next power-up"></button>
 </div>
+<div id="chevL" class="chev"></div><div id="chevR" class="chev"></div>
 <canvas id="minimap" class="frame" width="280" height="280"></canvas>
 <div id="status" class="overlay"></div>
 <div id="countdown" class="overlay"></div>

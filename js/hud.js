@@ -78,7 +78,7 @@ export function showLeave(on) { show($('leaveOverlay'), on); }
 // {placement, earned, total, won} for the results screen (null = not rewarded yet).
 export function setMatchReward(r) { reward = r; }
 
-// info: [{id,name,color}]; handlers: {onPause,onResume,onBoost,onJump,onAbility,onSwap,onPlayAgain,onMenu}
+// info: [{id,name,color}]; handlers: {onPause,onResume,onBoost,onJump,onAbility,onSwap,onSwapBack,onPlayAgain,onMenu}
 export function initHud(info, handlers) {
   bikes = info;
   buildScoreboard();
@@ -89,7 +89,7 @@ export function initHud(info, handlers) {
   $('leaveResume').addEventListener('click', handlers.onLeaveResume);
   $('leaveConfirm').addEventListener('click', handlers.onLeaveConfirm);
   // pointerdown (not click) for instant response; preventDefault keeps focus off the button so Space never re-triggers it
-  for (const [id, fn] of [['boostBtn', handlers.onBoost], ['jumpBtn', handlers.onJump], ['abilityBtn', handlers.onAbility], ['swapBtn', handlers.onSwap]]) {
+  for (const [id, fn] of [['boostBtn', handlers.onBoost], ['jumpBtn', handlers.onJump], ['abilityBtn', handlers.onAbility], ['abNext', handlers.onSwap], ['abPrev', handlers.onSwapBack]]) {
     $(id).addEventListener('pointerdown', (e) => { e.preventDefault(); fn(); });
   }
   $('matchResult').addEventListener('click', (e) => {
@@ -114,7 +114,7 @@ export function setAbilityButtons(b) {
 }
 
 // Hexagon ability button: icon + short name, cooldown fill / seconds, brighter when ready, glow while the effect runs.
-// Swap button shows "slot/actives" and is hidden with fewer than two active abilities. DOM touched only on change.
+// Prev / next arrows are hidden with fewer than two active abilities. DOM touched only on change.
 export function setAbilityHud(b) {
   const def = activeDef(b), actives = (b.abilities || []).filter((id) => ABILITIES[id].type === 'active');
   let key, cdLeft = 0, frac = 1, ready = false, active = false, usedUp = false, charges = 0;
@@ -135,9 +135,7 @@ export function setAbilityHud(b) {
   $('abName').innerHTML = def ? def.short + ' ' + (charges === Infinity ? '<span class="star">✪</span>' : 'x' + charges) : 'NONE'; // def.short is a built-in constant
   el.classList.toggle('empty', !!def && charges < 1);
   $('abState').textContent = !def ? '' : charges < 1 ? 'EMPTY' : ready ? '' : usedUp ? 'USED' : active && cdLeft <= 0 ? 'ON' : Math.ceil(cdLeft) + 's';
-  const sw = $('swapBtn');
-  sw.style.visibility = actives.length > 1 ? 'visible' : 'hidden';
-  sw.textContent = def ? `${actives.indexOf(def.id) + 1}/${actives.length} ⇄` : '';
+  for (const id of ['abPrev', 'abNext']) $(id).style.visibility = actives.length > 1 ? 'visible' : 'hidden'; // arrows switch the power-up
 }
 
 // Small "SHIELD 2.4" tag under the player's name while trails can't hurt (Protector / spawn protection). DOM only on change.

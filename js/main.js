@@ -135,6 +135,7 @@ initHud(CFG.players.map((p, i) => ({ id: i, name: p.name, color: p.color })), {
   onJump: () => pushAction('jump'),
   onAbility: () => pushAction('ability'),
   onSwap: () => pushAction('swap'),
+  onSwapBack: () => pushAction('swapBack'),
   onPlayAgain: () => (screen === 'online' ? playAgainOnline() : startGame()),
   onMenu: () => (screen === 'online' ? leaveOnline() : quitToMenu()),
 });
@@ -181,7 +182,7 @@ function tick() {
     const now = performance.now();
     const act = popAction(now);
     if (act === 'boost') { if (startBoost(me)) { audio.boost(); session.boosts++; roundCnt.boosts++; } } else if (act === 'jump') { if (startJump(me)) { audio.jump(); session.jumps++; roundCnt.jumps++; } }
-    else if (act === 'ability') { { const def = activeDef(me); if (def && abilityCharges(def.id) >= 1 && useAbility(me, state)) { spendAbility(def.id); audio.boost(); } } } else if (act === 'swap') cycleAbility(me);
+    else if (act === 'ability') { { const def = activeDef(me); if (def && abilityCharges(def.id) >= 1 && useAbility(me, state)) { spendAbility(def.id); audio.boost(); } } } else if (act === 'swap' || act === 'swapBack') cycleAbility(me, act === 'swap' ? 1 : -1);
     if (isAirborne(me) && !me.airTurn) popTurn(now, true); // mid-air: buffered turns are dropped
     else { const t = popTurn(now, canTurn(me)); if (t) { turnBike(me, t); audio.turn(); flashTurn(t); } }
   }

@@ -84,8 +84,11 @@ function mountPlayers(root) {
     ab.disabled = p.admin && (self || p.adminLocked);
     ad.append(ab); if (p.adminLocked) ad.append(el('div', '', 'SET BY THE SERVER CONFIG - CANNOT BE REMOVED HERE'));
 
-    const rn = sec('CHANGE USERNAME'), rl = line(rn), nn = input('wide', { type: 'text', maxLength: 12, placeholder: 'NEW USERNAME (3-12)' });
+    const rn = sec('CHANGE USERNAME / PASSWORD'), rl = line(rn), nn = input('wide', { type: 'text', maxLength: 12, placeholder: 'NEW USERNAME (3-12)' });
     rl.append(nn, btn('RENAME', 'primary', async () => { if ((await run('prename', { uid, username: nn.value }, 'RENAMED')).ok) reload(); }));
+    const pl = line(rn), pw = input('wide', { type: 'password', maxLength: 128, placeholder: 'NEW PASSWORD (8+)', autocomplete: 'new-password' });
+    const pb = btn('CHANGE PASSWORD', 'primary', async () => { if ((await run('ppassword', { uid, password: pw.value }, 'PASSWORD CHANGED - THE PLAYER MUST SIGN IN AGAIN')).ok) pw.value = ''; });
+    pb.disabled = !self && p.admin; pl.append(pw, pb); // other admins' passwords are off limits (server checks too)
 
     const del = sec('DELETE ACCOUNT (CANNOT BE UNDONE)'), dl = line(del), cf = input('wide', { type: 'text', maxLength: 12, placeholder: `TYPE "${p.username}" TO CONFIRM` });
     const db = btn('DELETE ACCOUNT', 'danger', async () => { if ((await run('pdelete', { uid, confirm: cf.value }, 'ACCOUNT DELETED')).ok) { detail.textContent = ''; list.textContent = ''; } });

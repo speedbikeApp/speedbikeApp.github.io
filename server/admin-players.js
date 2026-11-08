@@ -2,9 +2,10 @@
 //   psearch {q} -> {results:[{uid,username,online,admin}]}   plist {after?, limit<=50} -> {players:[{uid,username,online,admin}], next?} (by username)
 //       pget {uid} -> {player}
 //   pban {uid, minutes | permanent:true, reason?}   punban {uid}   padmin {uid, on}
-//   prename {uid, username}   pedit {uid, coins?, stats?:{key:number}}   pdelete {uid, confirm:<their username>}
+//   prename {uid, username}   ppassword {uid, password}   pedit {uid, coins?, stats?:{key:number}}   pdelete {uid, confirm:<their username>}
 import { normalizeQuery, isUid } from './protocol.js';
-import { NAME_RE, normalizeLoginName } from './login.js';
+import { NAME_RE, normalizeLoginName, MAX_PASSWORD } from './login.js';
+import { PASSWORD_MIN } from './accounts.js';
 import { adminError as E, banActive, banView } from './admin.js';
 
 export const STAT_KEYS = ['matches', 'wins', 'winStreak', 'bestStreak', 'kills', 'distance', 'boosts', 'jumps', 'bestRoundBoosts', 'bestRoundJumps', 'dmFlawless', 'wins3d', 'winsHyper']; // js/save.js stats
@@ -89,6 +90,16 @@ export function registerPlayerOps(deps) {
     act(ctx, 'rename', t, `-> ${name}`);
     send(t.uid, { t: 'resync', username: name });
     return { username: name };
+  });
+
+  admin.register('ppassword', async (a, ctx) => {
+    const t = await target(a);
+    if (t.uid !== ctx.uid && (admin.isBootstrap(t.username) || await adminStore.isAdmin(t.uid))) throw E('protected'); // no taking over other admins
+    if (typeof a.password !== 'string' || a.password.length < PASSWORD_MIN || a.password.length > MAX_PASSWORD) throw E('bad_password');
+    await adminStore.setPassword(t.uid, a.password);
+    act(ctx, 'set-password', t); // never log the password
+    if (t.uid !== ctx.uid) kick(t.uid, { t: 'error', code: 'signed_out', message: 'password changed - sign in again' });
+    return {};
   });
 
   admin.register('pedit', async (a, ctx) => {
