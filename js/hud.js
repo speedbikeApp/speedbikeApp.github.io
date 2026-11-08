@@ -129,7 +129,7 @@ export function setAbilityHud(b) {
   el.classList.toggle('none', !def); el.classList.toggle('ready', ready); el.classList.toggle('active', active);
   el.style.setProperty('--f', Math.floor(frac * 100));
   $('abIcon').textContent = def ? def.icon : '--';
-  $('abName').textContent = def ? def.short + ' ' + (charges === Infinity ? '∞' : 'x' + charges) : 'NONE';
+  $('abName').textContent = def ? def.short + ' ' + (charges === Infinity ? '✪' : 'x' + charges) : 'NONE';
   el.classList.toggle('empty', !!def && charges < 1);
   $('abState').textContent = !def ? '' : charges < 1 ? 'EMPTY' : ready ? 'OK!!' : usedUp ? 'USED' : active && cdLeft <= 0 ? 'ON' : Math.ceil(cdLeft) + 's';
   const sw = $('swapBtn');

@@ -14,6 +14,7 @@ import { initMenu, showScreen, applySettings, closeSettings, inSettings, current
 import * as online from './online.js';
 import { queueMode } from './multi-ui.js';
 import { initCatalog } from './catalog.js';
+import { initUpdate } from './update.js';
 
 const DT = 1 / CFG.tickHz;
 const state = createState();
@@ -111,6 +112,7 @@ initHud(CFG.players.map((p, i) => ({ id: i, name: p.name, color: p.color })), {
   onPlayAgain: () => (screen === 'online' ? playAgainOnline() : startGame()),
   onMenu: () => (screen === 'online' ? leaveOnline() : quitToMenu()),
 });
+initUpdate();
 initMenu({ onPlay: (id) => startGame(id), onResume: () => setPaused(false), onRestart: () => startGame(), onQuit: quitToMenu });
 initInput();
 audio.initAudio();

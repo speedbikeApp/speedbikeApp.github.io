@@ -10,6 +10,7 @@ const val = (id) => $(id).value;
 let user = null, tab = 'login';
 let onBack = () => {}, openScreen = () => {};
 let signup = null, resendAt = 0, resendTimer = 0; // sign-up in progress: {email, password} live in memory only; resend cooldown
+let toMain = false; // login / sign-up in progress: go to the main menu once a NAMED user arrives
 let resetToken = ''; // one-time token from ?reset=... of the mailed link
 const VIEW = { login: 'acLogin', register: 'acReg', code: 'acCode', forgotpw: 'acFgPw', forgotuser: 'acFgUser', reset: 'acReset' };
 const waking = (id) => ({ onStatus: (st) => { if (st === 'waking') setMsg($(id), 'Waking up the server... (can take up to a minute)', 'wait'); } });
@@ -116,7 +117,8 @@ async function submit(id, e) {
   const ctl = [...form.querySelectorAll('input, button')], was = ctl.map((c) => c.disabled), btn = form.querySelector('button[type=submit]'), label = btn.textContent;
   ctl.forEach((c) => { c.disabled = true; }); btn.textContent = 'PLEASE WAIT...'; setMsg(form, '');
   let text = null;
-  try { text = await f.run(); } catch (err) { setMsg(form, err && err.message ? err.message : 'Something went wrong', 'err'); text = false; }
+  if (id === 'acLogin' || id === 'acCode' || id === 'acPick') toMain = true;
+  try { text = await f.run(); } catch (err) { setMsg(form, err && err.message ? err.message : 'Something went wrong', 'err'); text = false; toMain = false; }
   form.dataset.busy = '0'; btn.textContent = label;
   ctl.forEach((c, i) => { c.disabled = was[i]; });
   if (text) setMsg(form, text, 'ok');
@@ -181,6 +183,8 @@ function onUser(u) {
   cloudUserChanged(named); // load + merge account progress (silent on failure)
   if (changed) { resetForms(); if (!u) tab = 'login'; }
   renderAccount();
+  if (!u) toMain = false;
+  else if (named && toMain) { toMain = false; onBack(); return; }
   if (u && !u.username && tab !== 'reset') { try { openScreen(); } catch { /* menu not ready */ } }
 }
 

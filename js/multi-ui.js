@@ -8,6 +8,7 @@ import { defaultRank } from './ranks.js';
 import { badgeHtml, badgeInfo, fmtCountdown } from './rankview.js';
 import { party, PARTY_ERR } from './party.js';
 import { usableAbilities } from './save.js';
+import { isStale, checkVersion } from './update.js';
 
 const $ = (id) => document.getElementById(id);
 let show = () => {}, openAccountScreen = () => {};
@@ -44,11 +45,12 @@ export function renderMulti() {
   const [txt, cls] = statusInfo();
   $('mpStatus').textContent = txt; $('mpStatus').className = cls;
   const ready = net.state === 'online', lead = party.canStartGame();
-  for (const btn of $('mpModes').children) btn.disabled = !ready || !lead;
+  for (const btn of $('mpModes').children) btn.disabled = !ready || !lead || isStale();
   const f = featuredId();
   $('mpFeat').firstChild.nodeValue = MODE_LABEL[f] || f.toUpperCase();
   $('mpFeat').querySelector('small').textContent = `FEATURED - ROTATES IN ${fmtCountdown(rotationMs())}`;
-  if (net.state === 'offline') $('mpMsg').textContent = 'SERVER OFFLINE - RETRYING. SINGLEPLAYER STILL WORKS.';
+  if (isStale()) $('mpMsg').textContent = 'A NEW UPDATE IS AVAILABLE - RELOAD TO PLAY ONLINE';
+  else if (net.state === 'offline') $('mpMsg').textContent = 'SERVER OFFLINE - RETRYING. SINGLEPLAYER STILL WORKS.';
   else if (net.state === 'denied') $('mpMsg').textContent = '';
   else if (!lead) $('mpMsg').textContent = LEADER_ONLY;
   else if ($('mpMsg').dataset.keep !== '1') $('mpMsg').textContent = '';
@@ -76,6 +78,7 @@ export function onScreen(name) {
 
 /** Queue for a mode id ('standard' | 'deathmatch' | 'hyper' | '3d'). Returns false if not connected. */
 export function queueMode(modeId) {
+  if (isStale()) { show('scrMulti'); msg('A NEW UPDATE IS AVAILABLE - RELOAD TO PLAY ONLINE'); return false; }
   if (net.state !== 'online') { show('scrMulti'); msg('NOT CONNECTED TO THE SERVER'); return false; }
   if (!party.canStartGame()) { show('scrMulti'); msg(LEADER_ONLY); return false; }
   net.send({ t: 'queue', mode: modeId, loadout: usableAbilities() }); // provisional loadout (charges are only spent when the match starts)
@@ -128,7 +131,7 @@ export function initMultiUi(h) {
   click('lLeave', cancelFlow);
   $('mpModes').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-mp]'); if (!b || b.disabled) return;
-    queueMode(b.dataset.mp === 'featured' ? featuredId() : b.dataset.mp);
+    checkVersion().then(() => { if (!isStale()) queueMode(b.dataset.mp === 'featured' ? featuredId() : b.dataset.mp); else renderMulti(); });
   });
   // The party leader queued: members are put into the same queue / lobby by the server and follow it on their own screens.
   const follow = () => { if (flow) return true; if (!party.inParty() || !menuShown()) return false; flow = 'queue'; return true; };

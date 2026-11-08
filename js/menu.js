@@ -60,15 +60,16 @@ function renderAbilities(msg) {
   $('abMsg').textContent = msg;
   $('abList').innerHTML = ABILITY_IDS.map((id) => {
     const a = ABILITIES[id], owned = own.includes(id), on = eq.includes(id), n = abilityCharges(id), free = a.price === 0;
-    const cnt = n === Infinity ? '∞' : 'x' + n;
+    const cnt = n === Infinity ? '✪' : 'x' + n;
     const dim = (p) => (d.coins < p ? ' style="opacity:.55"' : '');
     let buy = '';
     if (!free && n === Infinity) buy = '';
     else if (!free && n >= STACK_MAX) { const p = infinitePrice(id); buy = `<button class="mbtn frame" type="button" data-id="${id}" data-act="inf"${dim(p)}>INFINITE <span class="coins">${p}</span></button>`; }
     else if (!free) buy = `<button class="mbtn frame" type="button" data-id="${id}" data-act="buy"${dim(a.price)}>BUY +1 <span class="coins">${a.price}</span></button>`;
+    const hint = !free && n !== Infinity ? `<small class="infHint">Reach ${STACK_MAX} to unlock ∞ UNLIMITED for ${infinitePrice(id)} SBCOINS</small>` : '';
     const eqBtn = owned ? `<button class="mbtn frame${on ? ' sel' : ''}" type="button" data-id="${id}" data-act="eq">${on ? 'EQUIPPED' : 'EQUIP'}</button>` : '';
     const kind = a.type === 'passive' ? 'PASSIVE - 1 PER MATCH' : a.once ? 'ACTIVE - 1 PER USE' : 'ACTIVE';
-    return `<div class="abItem frame${on ? ' eq' : ''}"${on && n < 1 ? ' style="opacity:.6"' : ''}><b>${a.name.toUpperCase()}</b><span class="tag">${kind}${free ? ' - FREE' : ' - ' + cnt}</span><p>${a.desc}</p>${buy}${eqBtn}</div>`;
+    return `<div class="abItem frame${on ? ' eq' : ''}"${on && n < 1 ? ' style="opacity:.6"' : ''}><b>${a.name.toUpperCase()}</b><span class="tag">${kind}${free ? ' - FREE' : ' - ' + cnt}</span><p>${a.desc}</p>${hint}${buy}${eqBtn}</div>`;
   }).join('');
 }
 // ---- GARAGE: category tabs, part cards (preview on select), buy / equip. 3D preview = separate small renderer. ----
