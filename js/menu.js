@@ -70,8 +70,11 @@ function renderAbilities(msg) {
     const dim = (p) => (d.coins < p ? ' style="opacity:.55"' : '');
     let buy = '';
     if (!free && n === Infinity) buy = '';
-    else if (!free && n >= STACK_MAX) { const p = infinitePrice(id); buy = `<button class="mbtn frame" type="button" data-id="${id}" data-act="inf"${dim(p)}>BUY <span class="star">✪</span> <span class="coins">${p}</span></button>`; }
-    else if (!free) buy = `<button class="mbtn frame" type="button" data-id="${id}" data-act="buy"${dim(a.price)}>BUY +1 <span class="coins">${a.price}</span></button>`;
+    else if (!free) { // BUY ✪ always shown, dimmed until 99 charges (click below 99 says NEED 99 CHARGES FIRST)
+      const p = infinitePrice(id);
+      buy = (n < STACK_MAX ? `<button class="mbtn frame" type="button" data-id="${id}" data-act="buy"${dim(a.price)}>BUY +1 <span class="coins">${a.price}</span></button>` : '')
+        + `<button class="mbtn frame" type="button" data-id="${id}" data-act="inf"${n < STACK_MAX ? ' style="opacity:.55"' : dim(p)}>BUY <span class="star">✪</span> <span class="coins">${p}</span></button>`;
+    }
     const eqBtn = owned ? `<button class="mbtn frame${on ? ' sel' : ''}" type="button" data-id="${id}" data-act="eq">${on ? 'EQUIPPED' : 'EQUIP'}</button>` : '';
     const kind = a.type === 'passive' ? 'PASSIVE - 1 PER MATCH' : a.once ? 'ACTIVE - 1 PER USE' : 'ACTIVE';
     return `<div class="abItem frame${on ? ' eq' : ''}"${on && n < 1 ? ' style="opacity:.6"' : ''}>${abilityIcon(id)}<p>${a.desc}</p>${buy}${eqBtn}<b>${a.name.toUpperCase()}</b><span class="tag">${kind}${free ? ' - FREE' : ' - ' + cnt}</span></div>`;
