@@ -26,3 +26,11 @@ services:
         sync: false
       - key: FIREBASE_SERVICE_ACCOUNT
         sync: false # secret: paste the service-account JSON in the dashboard
+      - key: PUBLIC_URL # non-secret: base URL of the website used in e-mailed links (default https://speedbikeapp.github.io)
+        value: https://speedbikeapp.github.io
+      - key: GMAIL_CLIENT_ID # secrets for sending mail from noreply.speedbike@gmail.com via the Gmail API (see NOTES.md "E-mail")
+        sync: false
+      - key: GMAIL_CLIENT_SECRET
+        sync: false
+      - key: GMAIL_REFRESH_TOKEN
+        sync: false

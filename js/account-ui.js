@@ -8,14 +8,18 @@ import { cloudUserChanged, flushCloud, initCloudSave, setOnApplied } from './clo
 const $ = (id) => document.getElementById(id);
 const val = (id) => $(id).value;
 let user = null, tab = 'login';
-let onBack = () => {};
+let onBack = () => {}, openScreen = () => {};
+let signup = null, resendAt = 0, resendTimer = 0; // sign-up in progress: {email, password} live in memory only; resend cooldown
+let resetToken = ''; // one-time token from ?reset=... of the mailed link
+const VIEW = { login: 'acLogin', register: 'acReg', code: 'acCode', forgotpw: 'acFgPw', forgotuser: 'acFgUser', reset: 'acReset' };
+const waking = (id) => ({ onStatus: (st) => { if (st === 'waking') setMsg($(id), 'Waking up the server... (can take up to a minute)', 'wait'); } });
 
-export const isSignedIn = () => !!user;
+export const isSignedIn = () => !!user && !!user.username;
 export const accountName = () => (user ? user.username : '');
 
 function statusLine() {
   const s = auth.status(), mock = s.mode === 'mock' ? ' (DEV MOCK)' : '';
-  $('mAcct').textContent = user ? `SIGNED IN AS ${user.username}${mock}` : s.configured ? `GUEST${mock}` : 'GUEST - OFFLINE';
+  $('mAcct').textContent = user ? (user.username ? `SIGNED IN AS ${user.username}${mock}` : 'FINISH SIGN-UP: CHOOSE A USERNAME') : s.configured ? `GUEST${mock}` : 'GUEST - OFFLINE';
 }
 
 // ---- form plumbing ----
@@ -33,12 +37,40 @@ const FORMS = {
   },
   acReg: {
     fields: {
-      acRegUser: () => auth.validateUsername(val('acRegUser')),
       acRegEmail: () => auth.validateEmail(val('acRegEmail')),
       acRegPw: () => auth.validatePassword(val('acRegPw')),
       acRegPw2: () => (val('acRegPw2') === val('acRegPw') ? '' : 'Passwords do not match'),
     },
-    run: async () => { await auth.register(val('acRegEmail'), val('acRegPw'), val('acRegUser')); },
+    run: async () => {
+      const email = val('acRegEmail').trim(), password = val('acRegPw');
+      const r = await auth.signupStart(email, password, waking('acReg'));
+      signup = { email, password }; resendAt = Date.now() + r.resendIn * 1000;
+      $('acCodeInfo').textContent = `We sent a 6-digit code to ${email}. It expires in 10 minutes.`;
+      setTab('code'); $('acCodeIn').focus();
+    },
+  },
+  acCode: {
+    fields: { acCodeIn: () => (/^\d{6}$/.test(val('acCodeIn').trim()) ? '' : 'Enter the 6 digits from the email') },
+    run: async () => { if (!signup) { setTab('register'); return; } await auth.signupVerify(signup.email, signup.password, val('acCodeIn'), waking('acCode')); signup = null; }, // then onUser shows the username picker
+  },
+  acFgPw: {
+    fields: { acFgPwId: () => { const v = val('acFgPwId').trim(); return !v ? 'Enter your email or username' : v.includes('@') ? auth.validateEmail(v) : auth.validateUsername(v); } },
+    run: async () => { await auth.forgotPassword(val('acFgPwId'), waking('acFgPw')); return 'If an account exists, we emailed a link. It works for 3 minutes, on this network only.'; },
+  },
+  acFgUser: {
+    fields: { acFgUserEmail: () => auth.validateEmail(val('acFgUserEmail')) },
+    run: async () => { await auth.forgotUsername(val('acFgUserEmail'), waking('acFgUser')); return 'If an account exists, we emailed the username.'; },
+  },
+  acReset: {
+    fields: { acResetPw: () => auth.validatePassword(val('acResetPw')), acResetPw2: () => (val('acResetPw2') === val('acResetPw') ? '' : 'Passwords do not match') },
+    run: async () => {
+      try { await auth.resetPassword(resetToken, val('acResetPw'), waking('acReset')); } catch (e) { if (e.code === 'invalid-token') stripReset(); throw e; }
+      stripReset(); setTab('login'); setMsg($('acLogin'), 'Password changed. Log in with your new password.', 'ok');
+    },
+  },
+  acPick: {
+    fields: { acPickName: () => auth.validateUsername(val('acPickName')) },
+    run: async () => { await auth.chooseUsername(val('acPickName')); }, // onUser then shows the signed-in panel
   },
   acNameForm: {
     fields: { acNewName: () => auth.validateUsername(val('acNewName')) },
@@ -92,10 +124,10 @@ async function submit(id, e) {
   if (id === 'acDelForm') validateForm(id, false);
 }
 
-function clearPw() { for (const id of ['acLoginPw', 'acRegPw', 'acRegPw2', 'acCurPw', 'acNewPw', 'acNewPw2', 'acDelPw']) $(id).value = ''; }
+function clearPw() { for (const id of ['acLoginPw', 'acRegPw', 'acRegPw2', 'acCurPw', 'acNewPw', 'acNewPw2', 'acDelPw', 'acResetPw', 'acResetPw2']) $(id).value = ''; }
 function resetForms() {
   clearPw(); touched.clear();
-  for (const id of ['acLoginEmail', 'acRegUser', 'acRegEmail', 'acNewName', 'acDelName']) if (!(id === 'acLoginEmail' && $(id).value)) $(id).value = '';
+  for (const id of ['acLoginEmail', 'acRegEmail', 'acNewName', 'acDelName', 'acCodeIn', 'acFgPwId', 'acFgUserEmail', 'acPickName']) if (!(id === 'acLoginEmail' && $(id).value)) $(id).value = '';
   for (const id of Object.keys(FORMS)) { for (const fid of Object.keys(FORMS[id].fields)) showHint($(fid), ''); setMsg($(id), ''); }
   $('acDelForm').hidden = true; $('acDelShow').hidden = false;
   $('acDelForm').querySelector('button[type=submit]').disabled = true;
@@ -104,8 +136,18 @@ function resetForms() {
 function setTab(t) {
   tab = t;
   for (const b of $('acTabs').children) b.classList.toggle('sel', b.dataset.tab === t);
-  $('acLogin').hidden = t !== 'login'; $('acReg').hidden = t !== 'register';
+  for (const [k, id] of Object.entries(VIEW)) $(id).hidden = k !== t;
+  $('acTabs').hidden = t !== 'login' && t !== 'register';
+  if (t === 'forgotpw' && !val('acFgPwId')) $('acFgPwId').value = val('acLoginEmail');
+  clearInterval(resendTimer); resendTimer = 0;
+  if (t === 'code') { resendTimer = setInterval(tickResend, 500); tickResend(); }
 }
+function tickResend() {
+  const left = Math.max(0, Math.ceil((resendAt - Date.now()) / 1000)), b = $('acResend');
+  if ($('acCode').dataset.busy !== '1') b.disabled = left > 0 || b.dataset.busy === '1';
+  b.textContent = left > 0 ? `RESEND (${left})` : 'RESEND';
+}
+function stripReset() { resetToken = ''; try { const u = new URL(location.href); u.searchParams.delete('reset'); history.replaceState(null, '', u.pathname + u.search + u.hash); } catch { /* ignore */ } }
 
 // Show the right view for the current backend / sign-in state.
 export function renderAccount() {
@@ -113,8 +155,10 @@ export function renderAccount() {
   $('acMock').hidden = s.mode !== 'mock';
   $('acOff').hidden = s.configured;
   $('acOffMsg').textContent = s.mode === 'error' ? 'Online accounts unavailable' : 'Online accounts not configured';
-  $('acOut').hidden = !s.configured || !!user;
-  $('acIn').hidden = !s.configured || !user;
+  const pick = !!user && !user.username;
+  $('acOut').hidden = !s.configured || (!!user && tab !== 'reset');
+  $('acPickBox').hidden = !s.configured || !pick || tab === 'reset';
+  $('acIn').hidden = !s.configured || !user || pick || tab === 'reset';
   if (user) { $('acName').textContent = user.username; $('acMail').textContent = user.email; }
   setTab(tab);
   statusLine();
@@ -132,26 +176,33 @@ export function accountEsc() {
 function onUser(u) {
   const changed = (user && user.uid) !== (u && u.uid);
   user = u;
-  if (u) { const n = setUsername(u.username); setPlayerName(n); saveSoon(); }
-  cloudUserChanged(u); // load + merge account progress (silent on failure)
+  const named = u && u.username ? u : null; // a signed-in account without a username only sees the username picker
+  if (named) { const n = setUsername(named.username); setPlayerName(n); saveSoon(); }
+  cloudUserChanged(named); // load + merge account progress (silent on failure)
   if (changed) { resetForms(); if (!u) tab = 'login'; }
   renderAccount();
+  if (u && !u.username && tab !== 'reset') { try { openScreen(); } catch { /* menu not ready */ } }
 }
 
 export async function initAccountUi(h) {
-  onBack = h.back; setOnApplied(h.refresh || (() => {})); initCloudSave();
+  onBack = h.back; openScreen = h.open || openScreen; setOnApplied(h.refresh || (() => {})); initCloudSave();
   $('acBack').addEventListener('click', () => onBack());
-  for (const b of $('acTabs').children) b.addEventListener('click', () => { setTab(b.dataset.tab); });
+  for (const b of document.querySelectorAll('#acOut [data-tab]')) b.addEventListener('click', () => { setTab(b.dataset.tab); });
   for (const id of Object.keys(FORMS)) {
     const form = $(id);
     form.addEventListener('submit', (e) => submit(id, e));
     form.addEventListener('input', (e) => { if (e.target.id && FORMS[id].fields[e.target.id]) touched.add(e.target.id); if (form.dataset.busy !== '1') { setMsg(form, ''); validateForm(id, false); } });
   }
-  $('acForgot').addEventListener('click', async () => {
-    const form = $('acLogin'), err = auth.validateEmail(val('acLoginEmail'));
-    if (err) { touched.add('acLoginEmail'); showHint($('acLoginEmail'), 'Password reset: enter your account email'); $('acLoginEmail').focus(); return; }
-    setMsg(form, 'Sending...');
-    try { await auth.resetPassword(val('acLoginEmail')); setMsg(form, 'If that email has an account, a reset link was sent', 'ok'); } catch (e) { setMsg(form, e.message, 'err'); }
+  $('acForgot').addEventListener('click', () => setTab('forgotpw'));
+  $('acForgotUser').addEventListener('click', () => setTab('forgotuser'));
+  $('acCodeBack').addEventListener('click', () => setTab('register'));
+  $('acPickOut').addEventListener('click', () => auth.logout());
+  $('acResend').addEventListener('click', async () => {
+    const b = $('acResend'), form = $('acCode'); if (!signup || b.disabled) return;
+    b.dataset.busy = '1'; b.disabled = true; setMsg(form, 'Sending...', 'wait');
+    try { const r = await auth.signupStart(signup.email, signup.password, waking('acCode')); resendAt = Date.now() + r.resendIn * 1000; setMsg(form, 'New code sent', 'ok'); }
+    catch (e) { if (e.retryAfter) resendAt = Date.now() + e.retryAfter * 1000; setMsg(form, e.message, 'err'); }
+    b.dataset.busy = '0'; tickResend();
   });
   $('acLogout').addEventListener('click', async () => { $('acLogout').disabled = true; try { await Promise.race([flushCloud(), new Promise((r) => setTimeout(r, 2000))]); await auth.logout(); } finally { $('acLogout').disabled = false; } });
   $('acDelShow').addEventListener('click', () => { $('acDelShow').hidden = true; $('acDelForm').hidden = false; validateForm('acDelForm', false); $('acDelPw').focus(); });
@@ -159,4 +210,6 @@ export async function initAccountUi(h) {
   statusLine();
   await auth.init();
   auth.onAuthChange(onUser);
+  resetToken = auth.resetTokenOf(globalThis.location?.search || '');
+  if (resetToken) { setTab('reset'); renderAccount(); try { openScreen(); } catch { /* ignore */ } } // opened from the mailed link
 }

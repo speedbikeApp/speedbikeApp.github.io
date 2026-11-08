@@ -128,6 +128,7 @@
   .acWho { display: flex; flex-direction: column; align-items: center; gap: 2px; } .acWho b { font-size: 20px; color: #fff; text-shadow: 0 0 8px #0ff; letter-spacing: 3px; overflow-wrap: anywhere; } .acWho small { font-size: 11px; opacity: .8; font-family: sans-serif; letter-spacing: 1px; overflow-wrap: anywhere; }
   .acMock { font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #fc3; border: 1px dashed #fc3; padding: 3px 10px; }
   .acNote { display: flex; flex-direction: column; gap: 4px; align-items: center; font-size: 15px; letter-spacing: 2px; } .acNote small { font-size: 11px; opacity: .8; font-family: sans-serif; letter-spacing: 0; }
+  .acForm .acNote, #acPickBox .acNote { font-size: 11px; font-family: sans-serif; letter-spacing: 0; text-align: center; opacity: .9; }
   .acDanger { width: 100%; border-top: 1px solid #f55; padding-top: 8px; display: flex; flex-direction: column; gap: 6px; align-items: center; }
   .mbtn.danger { color: #f88; border-color: #f55; box-shadow: 0 0 10px #f55, inset 0 0 8px rgba(255,80,80,.25); }
   .acWarn { font-size: 11px; color: #f88; font-family: sans-serif; text-align: center; }
@@ -503,17 +504,50 @@
       <form id="acLogin" class="acForm" novalidate>
         <label class="fld"><span>EMAIL OR USERNAME</span><input id="acLoginEmail" type="text" autocomplete="username" spellcheck="false" autocapitalize="off" maxlength="254"><small class="hint" aria-live="polite"></small></label>
         <label class="fld"><span>PASSWORD</span><input id="acLoginPw" type="password" autocomplete="current-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label>
-        <div class="acBtns"><button class="mbtn frame primary" type="submit">LOGIN</button><button id="acForgot" class="mbtn frame" type="button" title="Enter your account email, then press this to get a reset link">FORGOT PASSWORD?</button></div>
+        <div class="acBtns"><button class="mbtn frame primary" type="submit">LOGIN</button></div>
+        <div class="acBtns"><button id="acForgot" class="mbtn frame" type="button">FORGOT PASSWORD?</button><button id="acForgotUser" class="mbtn frame" type="button">FORGOT USERNAME?</button></div>
         <div class="acMsg" role="status"></div>
       </form>
       <form id="acReg" class="acForm" novalidate hidden>
         <div class="acGrid">
-        <label class="fld"><span>USERNAME</span><input id="acRegUser" type="text" autocomplete="nickname" spellcheck="false" autocapitalize="off" maxlength="12"><small class="hint" aria-live="polite"></small></label>
         <label class="fld"><span>EMAIL</span><input id="acRegEmail" type="email" autocomplete="email" spellcheck="false" autocapitalize="off" maxlength="254" inputmode="email"><small class="hint" aria-live="polite"></small></label>
         <label class="fld"><span>PASSWORD (8+)</span><input id="acRegPw" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label>
         <label class="fld"><span>CONFIRM PASSWORD</span><input id="acRegPw2" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label>
         </div>
-        <div class="acBtns"><button class="mbtn frame primary" type="submit">REGISTER</button></div>
+        <div class="acBtns"><button class="mbtn frame primary" type="submit">SEND ME A CODE</button></div>
+        <div class="acMsg" role="status"></div>
+      </form>
+
+      <form id="acCode" class="acForm" novalidate hidden>
+        <div class="acNote" id="acCodeInfo"></div>
+        <label class="fld"><span>6-DIGIT CODE</span><input id="acCodeIn" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" spellcheck="false" autocapitalize="off" maxlength="6"><small class="hint" aria-live="polite"></small></label>
+        <div class="acBtns"><button class="mbtn frame primary" type="submit">VERIFY</button><button id="acResend" class="mbtn frame" type="button">RESEND</button><button id="acCodeBack" class="mbtn frame" type="button">BACK</button></div>
+        <div class="acMsg" role="status"></div>
+      </form>
+      <form id="acFgPw" class="acForm" novalidate hidden>
+        <div class="acNote">We will email you a link to choose a new password. It works once, for 3 minutes, on the same network you ask from.</div>
+        <label class="fld"><span>EMAIL OR USERNAME</span><input id="acFgPwId" type="text" autocomplete="username" spellcheck="false" autocapitalize="off" maxlength="254"><small class="hint" aria-live="polite"></small></label>
+        <div class="acBtns"><button class="mbtn frame primary" type="submit">SEND LINK</button><button class="mbtn frame" type="button" data-tab="login">BACK</button></div>
+        <div class="acMsg" role="status"></div>
+      </form>
+      <form id="acFgUser" class="acForm" novalidate hidden>
+        <div class="acNote">We will email your username to the address of your account.</div>
+        <label class="fld"><span>EMAIL</span><input id="acFgUserEmail" type="email" autocomplete="email" spellcheck="false" autocapitalize="off" maxlength="254"><small class="hint" aria-live="polite"></small></label>
+        <div class="acBtns"><button class="mbtn frame primary" type="submit">SEND USERNAME</button><button class="mbtn frame" type="button" data-tab="login">BACK</button></div>
+        <div class="acMsg" role="status"></div>
+      </form>
+      <form id="acReset" class="acForm" novalidate hidden>
+        <div class="acNote">Choose a new password. All other devices will be logged out.</div>
+        <div class="acGrid"><label class="fld"><span>NEW PASSWORD (8+)</span><input id="acResetPw" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label><label class="fld"><span>CONFIRM PASSWORD</span><input id="acResetPw2" type="password" autocomplete="new-password" spellcheck="false" autocapitalize="off" maxlength="128"><small class="hint" aria-live="polite"></small></label></div>
+        <div class="acBtns"><button class="mbtn frame primary" type="submit">SET PASSWORD</button><button class="mbtn frame" type="button" data-tab="login">CANCEL</button></div>
+        <div class="acMsg" role="status"></div>
+      </form>
+    </div>
+    <div id="acPickBox" class="acBox" hidden>
+      <form id="acPick" class="acForm" novalidate>
+        <div class="acNote">Email verified. Choose your username - it is how other players see you.</div>
+        <label class="fld"><span>USERNAME</span><input id="acPickName" type="text" autocomplete="nickname" spellcheck="false" autocapitalize="off" maxlength="12"><small class="hint" aria-live="polite"></small></label>
+        <div class="acBtns"><button class="mbtn frame primary" type="submit">CONTINUE</button><button id="acPickOut" class="mbtn frame" type="button">LOG OUT</button></div>
         <div class="acMsg" role="status"></div>
       </form>
     </div>

@@ -28,6 +28,14 @@ const MESSAGES = {
   'user-disabled': 'This account has been disabled',
   'recent-login': 'Please log out and log in again, then retry',
   denied: 'Not allowed (check the Firestore rules are published)',
+  'code-invalid': 'That code is not right',
+  'code-expired': 'That code expired or was never sent. Request a new one',
+  'code-voided': 'Too many wrong codes. Request a new one',
+  cooldown: 'Please wait a moment before requesting another code',
+  'rate-limited': 'Too many attempts. Try again later',
+  'invalid-token': 'This reset link is invalid, already used or expired. Request a new one',
+  'ip-mismatch': 'Open the link on the same network/device you requested it from',
+  'mail-failed': 'Could not send the email. Try again later',
   unknown: 'Something went wrong. Try again',
 };
 export function fail(code) { const e = new Error(MESSAGES[code] || MESSAGES.unknown); e.code = MESSAGES[code] ? code : 'unknown'; e.ours = true; return e; }
@@ -82,8 +90,8 @@ export function onAuthChange(cb) { listeners.add(cb); try { cb(currentUser()); }
 function need() { if (!backend) throw fail(mode === 'error' ? 'unavailable' : 'unconfigured'); return backend; }
 function needUser() { const b = need(); if (!user) throw fail('not-signed-in'); return b; }
 
-export async function register(email, password, username) {
-  const b = need();
+export async function register(email, password, username) { // mock backend only: the real flow is signupStart -> signupVerify -> chooseUsername
+  const b = need(); if (!b.register) throw fail('unavailable');
   const un = validateUsername(username); if (un) { const e = fail('invalid-username'); e.message = un; throw e; }
   if (validateEmail(email)) throw fail('invalid-email');
   if (validatePassword(password)) throw fail('weak-password');
@@ -106,6 +114,44 @@ export function loginServerUrl(wsUrl = serverWsUrl()) {
 function serverWsUrl() { // same rule as net.js serverUrl: ?server=ws://... wins over CFG.net.url
   try { const q = new URLSearchParams(globalThis.location?.search || '').get('server'); if (q && /^wss?:\/\/[^\s]+$/i.test(q)) return q; } catch { /* ignore */ }
   return CFG.net.url;
+}
+
+/** URL of another /auth/... endpoint of the game server (same host rule as loginServerUrl). */
+export const authServerUrl = (path, wsUrl) => { const u = loginServerUrl(wsUrl); return u ? u.replace('/auth/login', path) : ''; };
+/** The one-time password-reset token in a page query string (?reset=...), '' if absent / malformed. */
+export const resetTokenOf = (search) => { try { const t = new URLSearchParams(search).get('reset') || ''; return /^[\w-]{43}$/.test(t) ? t : ''; } catch { return ''; } };
+
+const SERVER_CODES = { invalid_email: 'invalid-email', weak_password: 'weak-password', email_in_use: 'email-in-use', code_invalid: 'code-invalid', code_expired: 'code-expired', code_voided: 'code-voided', invalid_token: 'invalid-token', ip_mismatch: 'ip-mismatch', mail_failed: 'mail-failed', unavailable: 'login-unavailable', bad_request: 'unknown' };
+/** POST JSON to an account-mail endpoint -> response body ({ok:true,...}). Waits (like fetchLoginToken) while the sleeping server wakes up.
+ *  Throws friendly errors; cooldown / rate limits carry .retryAfter, wrong codes .attemptsLeft. deps: {fetch, sleep, now, onStatus, wakeMs, retryMs, timeoutMs}. */
+export async function callAuth(url, payload, deps = {}) {
+  const doFetch = deps.fetch || globalThis.fetch, now = deps.now || (() => Date.now());
+  const sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const wakeMs = deps.wakeMs ?? LOGIN_WAKE_MS, retryMs = deps.retryMs ?? 2500, timeoutMs = deps.timeoutMs ?? 15000;
+  if (!url || typeof doFetch !== 'function') throw fail('login-unavailable');
+  const deadline = now() + wakeMs;
+  let waking = false;
+  for (;;) {
+    let res = null, body = null;
+    try {
+      res = await doFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), cache: 'no-store', credentials: 'omit', signal: globalThis.AbortSignal?.timeout ? AbortSignal.timeout(timeoutMs) : undefined });
+      try { body = await res.json(); } catch { body = null; }
+    } catch { res = null; }
+    if (res && body && typeof body === 'object') {
+      if (body.ok === true) return body;
+      const secs = Number(body.retryAfter) || Number(res.headers?.get?.('retry-after')) || 60;
+      if (body.code === 'cooldown') { const e = fail('cooldown'); e.retryAfter = secs; e.message = `Please wait ${secs} s before requesting another code`; throw e; }
+      if (body.code === 'rate_limited') { const e = fail('rate-limited'); e.retryAfter = secs; e.message = `Too many attempts, try again in ${Math.max(1, Math.ceil(secs / 60))} min`; throw e; }
+      if (res.status < 500 || body.code === 'unavailable' || body.code === 'mail_failed') {
+        const e = fail(SERVER_CODES[body.code] || 'unknown');
+        if (body.code === 'code_invalid' && body.attemptsLeft >= 0) { e.attemptsLeft = body.attemptsLeft; e.message = `That code is not right (${body.attemptsLeft} ${body.attemptsLeft === 1 ? 'try' : 'tries'} left)`; }
+        throw e;
+      }
+    }
+    if (now() >= deadline) throw fail('login-unavailable');
+    if (!waking) { waking = true; try { deps.onStatus && deps.onStatus('waking'); } catch { /* ignore */ } }
+    await sleep(retryMs);
+  }
 }
 
 export const LOGIN_WAKE_MS = 60000; // how long we keep retrying while the (sleeping) login server wakes up
@@ -175,10 +221,46 @@ export async function loadProgress() { const b = needUser(); return b.loadProgre
 /** Store progress (plain JSON object) in the signed-in user's own doc. */
 export async function saveProgress(p) { const b = needUser(); await b.saveProgress(p); }
 export async function deleteAccount(currentPw) { const b = needUser(); await b.deleteAccount(String(currentPw ?? '')); }
-export async function resetPassword(email) {
+
+// ---- e-mail flows (server/accounts.js). Sign-up: signupStart (mails a code) -> signupVerify (creates the account, signs in) -> chooseUsername. opts.onStatus('waking') as in login. ----
+/** -> {resendIn: seconds}. The password is only kept in memory by the caller and sent again with the code. */
+export async function signupStart(email, password, opts = {}) {
   const b = need();
   if (validateEmail(email)) throw fail('invalid-email');
-  await b.resetPassword(String(email).trim());
+  if (validatePassword(password)) throw fail('weak-password');
+  return b.signupStart(String(email).trim(), password, opts);
+}
+export async function signupVerify(email, password, code, opts = {}) {
+  const b = need();
+  if (!/^\d{6}$/.test(String(code).trim())) throw fail('code-invalid');
+  await b.signupVerify(String(email).trim(), password, String(code).trim(), opts);
+  return currentUser(); // username is '' until chooseUsername
+}
+/** First username of a signed-in account that has none yet (a user whose profile has no username must pick one before anything else). */
+export async function chooseUsername(name) {
+  const b = needUser();
+  const msg = validateUsername(name); if (msg) { const e = fail('invalid-username'); e.message = msg; throw e; }
+  await b.chooseUsername(normalizeUsername(name));
+  return currentUser();
+}
+/** Generic by design: resolves for unknown accounts too. identifier = email or username. */
+export async function forgotPassword(identifier, opts = {}) {
+  const b = need(), id = typeof identifier === 'string' ? identifier.trim() : '';
+  if (!id) throw fail('invalid-email');
+  if (id.includes('@') ? validateEmail(id) : validateUsername(id)) throw fail('invalid-email');
+  await b.forgotPassword(id, opts);
+}
+export async function forgotUsername(email, opts = {}) {
+  const b = need();
+  if (validateEmail(email)) throw fail('invalid-email');
+  await b.forgotUsername(String(email).trim(), opts);
+}
+/** Set a new password with the one-time token from the mailed link. */
+export async function resetPassword(token, newPw, opts = {}) {
+  const b = need();
+  if (validatePassword(newPw)) throw fail('weak-password');
+  if (!resetTokenOf('?reset=' + token)) throw fail('invalid-token');
+  await b.resetPassword(token, newPw, opts);
 }
 
 // ======================= MOCK backend (dev / tests only; passwords stored in plain text on purpose) =======================
@@ -234,7 +316,29 @@ function createMock(emitUser, storage) {
     },
     async loadProgress() { const d = load(), p = d.progress && d.progress[d.session]; return p ? JSON.parse(JSON.stringify(p)) : null; },
     async saveProgress(p) { const d = load(); (d.progress ||= {})[d.session] = JSON.parse(JSON.stringify(p)); save(d); },
-    async resetPassword() { /* pretend an email was sent, same answer for unknown addresses */ },
+    // e-mail flows: the mock "mails" the fixed code 123456; reset tokens are 'mock:<email>'
+    async signupStart(email) { const d = load(); if (byEmail(d, email)) throw fail('email-in-use'); (d.pending ||= {})[email.toLowerCase()] = 1; save(d); return { resendIn: 60 }; },
+    async signupVerify(email, password, code) {
+      const d = load(), k = email.toLowerCase();
+      if (!d.pending || !d.pending[k]) throw fail('code-expired');
+      if (code !== '123456') throw fail('code-invalid');
+      if (byEmail(d, email)) throw fail('email-in-use');
+      const uid = 'mock-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      delete d.pending[k]; d.users[uid] = { email, password, username: '', createdAt: Date.now() }; d.session = uid; save(d); emitUser(pub(d, uid));
+    },
+    async chooseUsername(name) {
+      const d = load(), uid = d.session;
+      if (!uid || !d.users[uid]) throw fail('not-signed-in');
+      if (d.names[nameKey(name)]) throw fail('username-taken');
+      d.names[nameKey(name)] = uid; d.users[uid].username = name; save(d); emitUser(pub(d, uid));
+    },
+    async forgotPassword() { /* pretend an email was sent, same answer for unknown accounts */ },
+    async forgotUsername() { /* same */ },
+    async resetPassword(token, pw) {
+      const d = load(), uid = token.startsWith('mock:') ? byEmail(d, token.slice(5)) : null;
+      if (!uid) throw fail('invalid-token');
+      d.users[uid].password = pw; save(d);
+    },
     _dump: () => load(),
   };
 }
@@ -265,33 +369,35 @@ async function createFirebase(emitUser, cfg) {
   const wrap = async (fn, reauth) => { try { return await fn(); } catch (e) { throw mapFirebaseError(e, reauth); } };
   async function publish(u) {
     if (!u) { emitUser(null); return; }
-    let username = '';
-    try { const s = await fsM.getDoc(uref(u.uid)); username = s.exists() ? s.data().username : ''; } catch { /* offline: fall back below */ }
-    emitUser({ uid: u.uid, email: u.email || '', username: username || sanitizeName((u.email || '').split('@')[0]) });
+    let username = null; // null = could not read the profile
+    try { const s = await fsM.getDoc(uref(u.uid)); username = (s.exists() && s.data().username) || ''; } catch { /* offline: fall back below */ }
+    emitUser({ uid: u.uid, email: u.email || '', username: username ?? sanitizeName((u.email || '').split('@')[0]) }); // '' = no username yet: the UI asks for one
   }
   const reauthenticate = (pw) => authM.reauthenticateWithCredential(auth.currentUser, authM.EmailAuthProvider.credential(auth.currentUser.email, pw));
   return {
     async start() {
       await new Promise((res) => { let first = true; authM.onAuthStateChanged(auth, async (u) => { if (!busy) await publish(u); if (first) { first = false; res(); } }); });
     },
-    register: (email, password, username) => wrap(async () => {
-      busy = true;
-      let cred = null;
-      try {
-        cred = await authM.createUserWithEmailAndPassword(auth, email, password);
-        await fsM.runTransaction(db, async (tx) => {
-          const taken = await tx.get(nref(username));
-          if (taken.exists()) { const e = new Error('taken'); e.code = 'username-taken'; throw e; }
-          tx.set(nref(username), { uid: cred.user.uid, createdAt: fsM.serverTimestamp() });
-          tx.set(uref(cred.user.uid), { username, createdAt: fsM.serverTimestamp() });
-        });
-      } catch (e) {
-        if (cred) { try { await authM.deleteUser(cred.user); } catch { try { await authM.signOut(auth); } catch { /* ignore */ } } } // roll back the half-made account
-        busy = false; throw e;
-      }
-      busy = false;
-      emitUser({ uid: cred.user.uid, email: cred.user.email || email, username });
+    // Sign-up goes through the game server (e-mail code); the client never calls createUserWithEmailAndPassword.
+    signupStart: (email, password, opts) => wrap(async () => { const r = await callAuth(authServerUrl('/auth/signup/start'), { email, password }, { onStatus: opts && opts.onStatus }); return { resendIn: Number(r.resendIn) || 60 }; }),
+    signupVerify: (email, password, code, opts) => wrap(async () => {
+      const r = await callAuth(authServerUrl('/auth/signup/verify'), { email, password, code }, { onStatus: opts && opts.onStatus });
+      if (typeof r.token !== 'string' || !r.token) throw fail('unavailable');
+      await authM.signInWithCustomToken(auth, r.token);
     }),
+    chooseUsername: (name) => wrap(async () => {
+      const uid = auth.currentUser.uid;
+      await fsM.runTransaction(db, async (tx) => {
+        const taken = await tx.get(nref(name));
+        if (taken.exists()) { const e = new Error('taken'); e.code = 'username-taken'; throw e; }
+        tx.set(nref(name), { uid, createdAt: fsM.serverTimestamp() });
+        tx.set(uref(uid), { username: name, createdAt: fsM.serverTimestamp() }, { merge: true });
+      });
+      emitUser({ ...user, username: name });
+    }),
+    forgotPassword: (id, opts) => wrap(async () => { await callAuth(authServerUrl('/auth/forgot/password'), { email: id }, { onStatus: opts && opts.onStatus }); }),
+    forgotUsername: (email, opts) => wrap(async () => { await callAuth(authServerUrl('/auth/forgot/username'), { email }, { onStatus: opts && opts.onStatus }); }),
+    resetPassword: (token, password, opts) => wrap(async () => { await callAuth(authServerUrl('/auth/reset'), { token, password }, { onStatus: opts && opts.onStatus }); }),
     login: (email, password) => wrap(async () => { await authM.signInWithEmailAndPassword(auth, email, password); }),
     // Username login: the game server checks the password and returns a custom token (the email never reaches the browser).
     loginUsername: (username, password, opts) => wrap(async () => {
@@ -327,7 +433,6 @@ async function createFirebase(emitUser, cfg) {
       } finally { busy = false; }
       emitUser(null);
     }),
-    resetPassword: (email) => wrap(async () => { await authM.sendPasswordResetEmail(auth, email); }),
     // users/{uid}.progress (own doc, covered by the existing owner rule); merge keeps username / createdAt
     loadProgress: () => wrap(async () => { const s = await fsM.getDoc(uref(auth.currentUser.uid)); return s.exists() && s.data().progress ? s.data().progress : null; }),
     saveProgress: (p) => wrap(async () => { await fsM.setDoc(uref(auth.currentUser.uid), { progress: p }, { merge: true }); }),

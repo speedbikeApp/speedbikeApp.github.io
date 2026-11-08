@@ -22,6 +22,8 @@ import { Room } from './room.js';
 import { makeBots } from './bots.js';
 import { settleMatch } from './ranking.js';
 import { createLoginHandler, createFirebaseLoginDeps } from './login.js';
+import { createAccountsHandler, createFirebaseAccountDeps } from './accounts.js';
+import { createMailer } from './email.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -30,6 +32,8 @@ export function createGameServer(opts) {
   const { auth, store, timeScale = 1, allowedOrigins = [], log = console.log } = opts;
   // POST /auth/login (server/login.js). Without opts.login (dev auth / tests) the endpoint answers 503 {code:'unavailable'}.
   const loginHandler = opts.login || createLoginHandler({ enabled: false, allowedOrigins, production: !!opts.production });
+  // /auth/signup/*, /auth/forgot/*, /auth/reset (server/accounts.js); disabled (503) without opts.accounts.
+  const accountsHandler = opts.accounts || createAccountsHandler({ enabled: false, allowedOrigins, production: !!opts.production });
   const socialStore = opts.social || createJsonSocialStore(null);
   const adminStore = opts.admin || createJsonAdminStore(null, socialStore);
   const mapStore = opts.maps || createJsonMapStore(null), mapPool = createMapPool(mapStore, log); // custom maps (admin-maps.js): rooms draw from mapPool
@@ -256,6 +260,7 @@ export function createGameServer(opts) {
 
   const server = http.createServer((req, res) => {
     if (req.url.split('?')[0] === '/auth/login') return void loginHandler(req, res).catch((e) => { log('[login] crashed:', e.message); if (!res.headersSent) res.writeHead(500); res.end(); });
+    if (req.url.startsWith('/auth/') && req.url.split('?')[0] !== '/auth/login') return void accountsHandler(req, res).catch((e) => { log('[accounts] crashed:', e.message); if (!res.headersSent) res.writeHead(500); res.end(); });
     if (req.url.split('?')[0] === '/catalog') return void catalogHandler(req, res);
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.url === '/health') {
@@ -332,11 +337,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const mode = resolveAuthMode(env);
   if (mode === 'dev' && env.NODE_ENV === 'production' && env.DEV_AUTH !== '1') throw new Error('refusing dev auth in production; set Firebase credentials (or DEV_AUTH=1 to force)');
   const allowedOrigins = (env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean), production = env.NODE_ENV === 'production';
-  let auth, store, login, social, adminStore, catalogStore, mapStore;
+  let auth, store, login, accounts, social, adminStore, catalogStore, mapStore;
   if (mode === 'firebase') {
     const fb = await createFirebaseAuth(env); auth = fb.auth; store = createFirestoreStore(fb.db); social = createFirestoreSocialStore(fb.db, fb.FieldPath);
     adminStore = createFirestoreAdminStore(fb.db, fb.fbAuth); catalogStore = createFirestoreCatalogStore(fb.db); mapStore = createFirestoreMapStore(fb.db);
     login = createLoginHandler({ enabled: true, allowedOrigins, production, log: console.log, banOf: async (uid) => { const b = await adminStore.getBan(uid); return banActive(b) ? b : null; }, ...createFirebaseLoginDeps({ db: fb.db, auth: fb.fbAuth }, env) });
+    accounts = createAccountsHandler({ enabled: true, allowedOrigins, production, log: console.log, publicUrl: env.PUBLIC_URL || undefined, mailer: createMailer(env, { production }), deps: createFirebaseAccountDeps({ db: fb.db, auth: fb.fbAuth }) });
   }
   else { auth = createDevAuth(); store = createJsonStore(env.RANKS_FILE || path.join(HERE, 'data', 'ranks.json')); social = createJsonSocialStore(env.SOCIAL_FILE || path.join(HERE, 'data', 'social.json')); adminStore = createJsonAdminStore(env.ADMIN_FILE || path.join(HERE, 'data', 'admin.json'), social); }
   mapStore ||= createJsonMapStore(env.MAPS_FILE || path.join(HERE, 'data', 'maps.json'));
@@ -345,7 +351,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const app = createGameServer({
     auth, store, social, admin: adminStore, catalog: catalogStore, maps: mapStore, adminUsernames: env.ADMIN_USERNAMES, timeScale: Number(env.TIME_SCALE) || 1, // TIME_SCALE is for tests only
     countdownMs: Number(env.LOBBY_COUNTDOWN_MS) || undefined,
-    allowedOrigins, login, production,
+    allowedOrigins, login, accounts, production,
   });
   const port = await app.listen(Number(env.PORT) || 8787);
   console.log(`[server] listening on :${port}  (health: http://localhost:${port}/health)`);

@@ -48,6 +48,7 @@ for (const t of ['party', 'pinvites']) net.on(t, (m) => party.apply(m));
 export function watchAuth() {
   let uid = null, name = '';
   auth.onAuthChange((u) => {
+    if (u && !u.username) u = null; // signed in but still choosing a username: not online yet
     const id = u ? u.uid : null;
     if (id === uid) { if (u && u.username !== name) { name = u.username; net.send({ t: 'frefresh', username: name }); } return; } // renamed: friends see the new name live
     uid = id; name = u ? u.username : '';

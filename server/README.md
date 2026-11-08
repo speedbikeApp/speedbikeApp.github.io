@@ -56,6 +56,8 @@ The Firebase service account must be allowed to sign custom tokens (a normal ser
 | `RANKS_FILE` | server/data/ranks.json | JSON rank file (dev mode) |
 | `SOCIAL_FILE` | server/data/social.json | JSON friends file + dev user directory (dev mode) |
 | `ALLOWED_ORIGINS` | any (websocket) / none (login CORS in production) | comma-separated browser origins allowed to connect; also the CORS allow-list of `/auth/login` |
+| `PUBLIC_URL` | `https://speedbikeapp.github.io` | base URL in e-mailed reset links |
+| `GMAIL_CLIENT_ID` / `GMAIL_CLIENT_SECRET` / `GMAIL_REFRESH_TOKEN` | console mailer (logs only) | Gmail API credentials for sign-up codes / password reset mail; see NOTES.md "E-mail" |
 | `FIREBASE_WEB_API_KEY` | public key from `js/firebase-config.js` | web API key for the Auth REST password check (public by design) |
 | `LOBBY_COUNTDOWN_MS` | 30000 | lobby countdown (tests) |
 | `TIME_SCALE` | 1 | TEST ONLY: runs the sim N times faster than real time |

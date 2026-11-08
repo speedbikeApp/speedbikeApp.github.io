@@ -80,8 +80,9 @@ assert.equal(A.status().mode, 'mock');
   await rejects(A.register('v@b.co', 'password123', 'x'.repeat(13)), 'invalid-username');
   await rejects(A.login('bad@', 'x'), 'invalid-email'); // '@' = email path
   await rejects(A.login('bad', 'x'), 'invalid-login');   // no '@' = username path
-  await rejects(A.resetPassword('bad'), 'invalid-email');
-  await A.resetPassword('anyone@example.com');
+  await rejects(A.forgotPassword('bad@'), 'invalid-email');
+  await A.forgotPassword('anyone@example.com'); await A.forgotPassword('some_user');
+  await rejects(A.forgotUsername('bad'), 'invalid-email'); await A.forgotUsername('anyone@example.com');
   assert.equal(A.validateUsername('  Good  Name '), '');
   assert.notEqual(A.validateUsername(''), ''); assert.notEqual(A.validateUsername('a b!'), '');
   assert.equal(A.validatePassword('12345678'), ''); assert.notEqual(A.validatePassword('1234567'), '');
@@ -145,5 +146,42 @@ assert.equal(A.status().mode, 'mock');
     assert.equal(n, 1); assert.equal(clock.t, 0);
   }
   await rejects(A.fetchLoginToken('', 'a', 'b', deps(async () => res(200, { ok: true, token: 'x' }))), 'login-unavailable');
+}
+{ // e-mail sign-up (mock): start -> verify (account without username) -> choose username; reset token helpers
+  await fresh();
+  await rejects(A.signupStart('bad', 'password123'), 'invalid-email'); await rejects(A.signupStart('n@b.co', 'short'), 'weak-password');
+  await A.register('taken@example.com', 'password123', 'Taken'); await A.logout();
+  await rejects(A.signupStart('TAKEN@example.com', 'password123'), 'email-in-use');
+  assert.equal((await A.signupStart('new@example.com', 'password123')).resendIn, 60);
+  await rejects(A.signupVerify('new@example.com', 'password123', '12ab'), 'code-invalid');
+  await rejects(A.signupVerify('new@example.com', 'password123', '000000'), 'code-invalid');
+  await rejects(A.signupVerify('other@example.com', 'password123', '123456'), 'code-expired');
+  assert.equal(A.currentUser(), null);
+  const u = await A.signupVerify('new@example.com', 'password123', '123456');
+  assert.equal(u.username, ''); assert.equal(u.email, 'new@example.com');
+  await rejects(A.chooseUsername('ab'), 'invalid-username'); await rejects(A.chooseUsername('taken'), 'username-taken');
+  assert.equal((await A.chooseUsername(' Fresh  One ')).username, 'Fresh One');
+  await A.logout(); assert.equal((await A.login('fresh one', 'password123')).email, 'new@example.com');
+  await rejects(A.resetPassword('x'.repeat(43), 'newpassword1'), 'invalid-token'); await rejects(A.resetPassword('short', 'newpassword1'), 'invalid-token'); await rejects(A.resetPassword('x'.repeat(43), 'short'), 'weak-password');
+  const tok = 'abcdefghij0123456789ABCDEFGHIJ_-abcdefghijk'; assert.equal(tok.length, 43);
+  assert.equal(A.resetTokenOf('?a=1&reset=' + tok), tok); assert.equal(A.resetTokenOf('?reset=abc'), ''); assert.equal(A.resetTokenOf(''), '');
+  assert.equal(A.authServerUrl('/auth/reset', 'wss://h.example'), 'https://h.example/auth/reset');
+}
+{ // callAuth: success, friendly server errors, cooldown / attempts, waking retry, no wait when unavailable
+  const res = (status, body, headers = {}) => ({ status, json: async () => body, headers: { get: (k) => headers[k.toLowerCase()] ?? null } });
+  const clock = { t: 0 }, deps = (f, extra = {}) => ({ fetch: f, now: () => clock.t, sleep: async (ms) => { clock.t += ms; }, ...extra });
+  let sent; assert.deepEqual(await A.callAuth('http://x/a', { email: 'e' }, deps(async (u, i) => { sent = i; return res(200, { ok: true, resendIn: 60 }); })), { ok: true, resendIn: 60 });
+  assert.deepEqual(JSON.parse(sent.body), { email: 'e' }); assert.equal(sent.credentials, 'omit');
+  const err = async (status, body) => { try { await A.callAuth('u', {}, deps(async () => res(status, body))); } catch (e) { return e; } assert.fail('no error'); };
+  let e = await err(409, { ok: false, code: 'email_in_use' }); assert.equal(e.code, 'email-in-use');
+  e = await err(400, { ok: false, code: 'code_invalid', attemptsLeft: 1 }); assert.equal(e.code, 'code-invalid'); assert.equal(e.message, 'That code is not right (1 try left)');
+  assert.equal((await err(400, { ok: false, code: 'code_voided' })).code, 'code-voided'); assert.equal((await err(403, { ok: false, code: 'ip_mismatch' })).message, 'Open the link on the same network/device you requested it from');
+  e = await err(429, { ok: false, code: 'cooldown', retryAfter: 42 }); assert.equal(e.retryAfter, 42); assert.match(e.message, /42 s/);
+  e = await err(429, { ok: false, code: 'rate_limited', retryAfter: 600 }); assert.equal(e.code, 'rate-limited'); assert.match(e.message, /10 min/);
+  assert.equal((await err(400, { ok: false, code: 'something_new' })).message, 'Something went wrong. Try again'); // never raw
+  assert.equal((await err(503, { ok: false, code: 'unavailable' })).code, 'login-unavailable');
+  let n = 0; clock.t = 0; await A.callAuth('u', {}, deps(async () => { n++; if (n === 1) throw new TypeError('x'); if (n === 2) return res(502, null); return res(200, { ok: true }); }));
+  assert.equal(n, 3);
+  clock.t = 0; await rejects(A.callAuth('u', {}, deps(async () => { throw new TypeError('x'); })), 'login-unavailable'); assert.ok(clock.t >= 60000);
 }
 console.log('auth tests ok');
