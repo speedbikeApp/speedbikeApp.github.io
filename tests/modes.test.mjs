@@ -285,3 +285,30 @@ const SEEDS = 10;
   assert.ok(crossed && b.alive, 'AI with crossing flag jumped the gap onto the pad');
 }
 console.log('modes tests passed');
+
+// ---------------------------------------------------------------- STAIRS + BIG HOLE maps
+{
+  const ST = MAPS.stairs;
+  // N strip (y 2.25) heading +x: driving off its end drops onto E (y 1.5) and survives
+  const b = at(0, 30, -48, 1, 0, 2.25); const ev = run(mk(ST, b), 1.2);
+  assert.equal(ev.length, 0); assert.ok(b.alive); assert.equal(b.y, 1.5);
+  // W strip (y 0) heading -z into N's side: no jump = crash, a timed jump climbs onto N
+  const c = at(0, -48, -20, 0, -1, 0); assert.equal(run(mk(ST, c), 2)[0].cause, 'side');
+  let lo = null, hi = null;
+  for (let d = 0; d <= 16; d += 0.25) {
+    const k = at(0, -48, -36 + d, 0, -1, 0), ks = mk(ST, k); startJump(k);
+    if (run(ks, 1.2).length === 0 && k.alive && k.y === 2.25) { if (lo === null) lo = d; hi = d; }
+  }
+  const win = (hi - lo + 0.25) / CFG.baseSpeed;
+  assert.ok(win >= 0.4 && win <= 0.65, `stairs climb window ${win.toFixed(2)} s`);
+  console.log(`  stairs climb-jump take-off window: ${lo}..${hi} units before the step = ${win.toFixed(2)} s`);
+  // every spawn stands on its own strip; BIG HOLE: centre is void, spawns on the ring, driving inward falls
+  for (const m of [ST, MAPS.crater]) for (const p of m.spawns) assert.equal(groundAt(m, p.x, p.z), p.y);
+  assert.equal(groundAt(MAPS.crater, 0, 0), -Infinity);
+  const h = at(0, 0, 51, 0, -1, 0); assert.equal(run(mk(MAPS.crater, h), 3)[0].cause, 'void');
+  // map pools: one map per match from the mode's list
+  const seen = new Set();
+  for (let i = 0; i < 40; i++) { const s = createState(); s.bikes.push(createBike(0, 0, 0, 0, 0, -1)); const m = createMatch(s, MODES.standard, makeRng(i)); m.startMatch(); seen.add(s.map.id); }
+  assert.deepEqual([...seen].sort(), ['arena', 'crater', 'stairs']);
+}
+console.log('new maps ok');

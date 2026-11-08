@@ -169,7 +169,7 @@ function harness(mode = 'standard', loadouts = [], opts = {}) {
   const msgs = [[], [], [], []];
   const players = [0, 1, 2, 3].map((i) => ({ uid: 'u' + i, username: 'P' + i, rank: defaultRank(), colorIdx: i, loadout: loads[i], send: (m) => msgs[i].push(m) }));
   const room = new Room({ id: 1, mode: 'deathmatch', players, seed: 11 });
-  const st = createState(); st.playerId = 0; st.map = MAPS.arena;
+  const st = createState(); st.playerId = 0; st.map = room.state.map; // the real client takes start.mapId
   for (let i = 0; i < 4; i++) { const b = createBike(i, '#fff', 0, 0, 0, -1); setLoadout(b, loads[i]); st.bikes.push(b); }
   const sim = createSim(st, 0), pts = spawnPoints(4, st.map);
   st.bikes.forEach((b, i) => resetBike(b, pts[i], CFG.baseSpeed));

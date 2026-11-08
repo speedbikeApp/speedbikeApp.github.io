@@ -85,7 +85,7 @@ export function begin(msg, st, bikes0, exitCb) {
   restoreOverrides(); applyOverrides(msg.cfgOverrides);
   mode = MODES[msg.mode] || MODES.standard;
   const players = (msg.players || []).slice().sort((a, b) => a.id - b.id);
-  state.map = MAPS[msg.mapId] || MAPS[mode.map] || MAPS.arena;
+  state.map = MAPS[msg.mapId] || MAPS.arena;
   // colours: everyone gets their lobby colour; we use our own glow colour unless it clashes with another bike
   const mine = glowHex(getSave().equipped.parts.glow);
   const others = players.filter((p) => p.id !== youId).map(colorOf);

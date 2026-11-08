@@ -9,7 +9,7 @@ import { MAPS, mapOf, platformArea } from './maps.js';
 import { probe } from './ai.js';
 
 // A mode is data + crash/timeout policy. kind 'rounds' uses onCrash/onTimeout; kind 'deathmatch' uses CFG.deathMatch.
-// `speed` is a getter so CFG tuning (and tests) are read live. map = key into MAPS.
+// `speed` is a getter so CFG tuning (and tests) are read live. map = key into MAPS, or a list to pick one per match.
 function roundMode(id, label, speed, map = 'arena') {
   return {
     id, label, kind: 'rounds', map,
@@ -22,11 +22,11 @@ function roundMode(id, label, speed, map = 'arena') {
   };
 }
 export const MODES = {
-  standard: roundMode('standard', 'STANDARD', () => CFG.baseSpeed),
+  standard: roundMode('standard', 'STANDARD', () => CFG.baseSpeed, ['arena', 'crater', 'stairs']),
   hyper: roundMode('hyper', 'HYPER', () => CFG.hyper.speed),
-  '3d': roundMode('3d', '3D', () => CFG.baseSpeed, 'tiers'),
+  '3d': roundMode('3d', '3D', () => CFG.baseSpeed, ['tiers', 'stairs']),
   deathmatch: {
-    id: 'deathmatch', label: 'DEATH MATCH', kind: 'deathmatch', map: 'arena', countUp: true,
+    id: 'deathmatch', label: 'DEATH MATCH', kind: 'deathmatch', map: ['arena', 'crater', 'stairs'], countUp: true,
     get speed() { return CFG.baseSpeed; },
     roundTime: 0, winPoints: 0,
   },
@@ -87,7 +87,8 @@ export function createMatch(state, mode = MODES.standard, rng = Math.random, hoo
     bonusCoins(id) { return m.mode.kind === 'deathmatch' ? (m.kills[id] || 0) * CFG.deathMatch.coinsPerKill : 0; },
 
     startMatch() {
-      state.map = MAPS[m.mode.map] || MAPS.arena;
+      const pool = [].concat(m.mode.map); // online clients get the server's pick as start.mapId
+      state.map = MAPS[pool[pool.length > 1 ? Math.floor(m.rng() * pool.length) : 0]] || MAPS.arena;
       m.scores = {}; for (const b of state.bikes) m.scores[b.id] = 0;
       m.round = 0; m.placements = null; m.ranks = null; m.winner = null; m.lastResult = null;
       if (m.mode.kind === 'deathmatch') { // scores = kills

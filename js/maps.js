@@ -41,7 +41,39 @@ const tiers = {
   ],
 };
 
-export const MAPS = { arena, tiers };
+// STAIRS: a square ring of four 24-wide strips around a void, each 0.75 lower than the last (clockwise travel N -> E -> S -> W).
+// Driving off a strip's end drops onto the next strip's corner. The last (W, y=0) ends against the side of the first (N, y=2.25):
+// jump to climb back up (take off 2.6..10 units before the step at base speed, ~0.5 s window, like TIERS). Falling inward/outward = crash.
+const stairs = {
+  id: 'stairs', name: 'STAIRS', walls: false, half: 60, killY: -14,
+  platforms: [
+    { x0: -60, z0: -60, x1: 36, z1: -36, y: 2.25 }, // N, travel +x
+    { x0: 36, z0: -60, x1: 60, z1: 36, y: 1.5 },    // E, travel +z
+    { x0: -36, z0: 36, x1: 60, z1: 60, y: 0.75 },   // S, travel -x
+    { x0: -60, z0: -36, x1: -36, z1: 60, y: 0 },    // W, travel -z (into N's side)
+  ],
+  spawns: [
+    { x: 12, z: 48, dx: -1, dz: 0, y: 0.75 }, { x: -48, z: 12, dx: 0, dz: -1, y: 0 },
+    { x: -12, z: -48, dx: 1, dz: 0, y: 2.25 }, { x: 48, z: -12, dx: 0, dz: 1, y: 1.5 },
+  ],
+};
+
+// BIG HOLE: one flat 126x126 square with a 78x78 hole in the middle (a 24-wide ring). Spawns on the ring, driving along it.
+const crater = {
+  id: 'crater', name: 'BIG HOLE', walls: false, half: 63, killY: -14,
+  platforms: [
+    { x0: -63, z0: -63, x1: 63, z1: -39, y: 0 },
+    { x0: -63, z0: 39, x1: 63, z1: 63, y: 0 },
+    { x0: -63, z0: -39, x1: -39, z1: 39, y: 0 },
+    { x0: 39, z0: -39, x1: 63, z1: 39, y: 0 },
+  ],
+  spawns: [
+    { x: 12, z: 51, dx: -1, dz: 0, y: 0 }, { x: -51, z: 12, dx: 0, dz: -1, y: 0 },
+    { x: -12, z: -51, dx: 1, dz: 0, y: 0 }, { x: 51, z: -12, dx: 0, dz: 1, y: 0 },
+  ],
+};
+
+export const MAPS = { arena, tiers, stairs, crater };
 export const mapOf = (state) => (state && state.map) || arena;
 
 const E = 1e-6;
