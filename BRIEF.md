@@ -29,8 +29,8 @@ Build SpeedBike, a 3D light-cycle arena game that runs in the browser on phone a
 | Top center | Timer seconds.milliseconds | Death Match counts up; other modes count down from 100 s per round |
 | Below timer | Pause button | Pauses vs AI; opens menu |
 | Top right | Minimap | Top-down view of all bikes (dots) and trails in their colors |
-| Bottom left | Boost button | "OK!!" when ready; recharges after use |
-| Bottom right | Jump button | "OK!!" when ready; recharges after use |
+| Bottom left | Boost button | bright when ready; dimmed with % while recharging after use |
+| Bottom right | Jump button | bright when ready; dimmed with % while recharging after use |
 | Bottom center | Ability button (hexagon) | Triggers equipped ability; shows cooldown |
 | Beside ability | Left/right chevrons | Light up briefly when a turn is input |
 

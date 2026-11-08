@@ -98,7 +98,7 @@ export function initHud(info, handlers) {
   });
 }
 
-// Boost / jump buttons: fill = meter, "OK!!" when ready, "active" while boosting / airborne. DOM touched only on change.
+// Boost / jump buttons: fill = meter, brighter when ready, "active" while boosting / airborne. DOM touched only on change.
 export function setAbilityButtons(b) {
   for (const [id, meter, active] of [['boostBtn', b.boostMeter, b.boosting], ['jumpBtn', b.jumpMeter, b.jumpT >= 0]]) {
     const pct = Math.floor(meter * 100), ready = meter >= 1;
@@ -109,11 +109,11 @@ export function setAbilityButtons(b) {
     el.style.setProperty('--f', pct);
     el.classList.toggle('ready', ready);
     el.classList.toggle('active', !!active);
-    el.querySelector('b').textContent = ready ? 'OK!!' : pct + '%';
+    el.querySelector('b').textContent = ready ? '' : pct + '%'; // ready = brighter button (CSS), no text
   }
 }
 
-// Hexagon ability button: icon + short name, cooldown fill / seconds, "OK!!" when ready, glow while the effect runs.
+// Hexagon ability button: icon + short name, cooldown fill / seconds, brighter when ready, glow while the effect runs.
 // Swap button shows "slot/actives" and is hidden with fewer than two active abilities. DOM touched only on change.
 export function setAbilityHud(b) {
   const def = activeDef(b), actives = (b.abilities || []).filter((id) => ABILITIES[id].type === 'active');
@@ -134,7 +134,7 @@ export function setAbilityHud(b) {
   $('abIcon').innerHTML = def ? abilityIcon(def.id) : '--';
   $('abName').innerHTML = def ? def.short + ' ' + (charges === Infinity ? '<span class="star">✪</span>' : 'x' + charges) : 'NONE'; // def.short is a built-in constant
   el.classList.toggle('empty', !!def && charges < 1);
-  $('abState').textContent = !def ? '' : charges < 1 ? 'EMPTY' : ready ? 'OK!!' : usedUp ? 'USED' : active && cdLeft <= 0 ? 'ON' : Math.ceil(cdLeft) + 's';
+  $('abState').textContent = !def ? '' : charges < 1 ? 'EMPTY' : ready ? '' : usedUp ? 'USED' : active && cdLeft <= 0 ? 'ON' : Math.ceil(cdLeft) + 's';
   const sw = $('swapBtn');
   sw.style.visibility = actives.length > 1 ? 'visible' : 'hidden';
   sw.textContent = def ? `${actives.indexOf(def.id) + 1}/${actives.length} ⇄` : '';

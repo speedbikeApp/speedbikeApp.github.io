@@ -44,7 +44,9 @@
   .abtn b { font-size: 16px; font-weight: 800; letter-spacing: 1px; } .abtn small { font-size: 11px; letter-spacing: 2px; margin-bottom: 4px; }
   .ic { width: 32px; height: 32px; flex: none; filter: drop-shadow(0 0 4px currentColor); }
   .abtn .ic { width: 38px; height: 38px; }
+  .abtn:not(.ready):not(.active), #abilityBtn:not(.ready):not(.active) { opacity: .5; } /* cooling down: dimmer; ready: full */
   .abtn.ready { background: rgba(0,255,255,.3); } .abtn.ready b { color: #fff; text-shadow: 0 0 10px #0ff; }
+  #abInf { font-size: 11px; color: #fc3; letter-spacing: 1px; margin-bottom: 4px; }
   .abtn.active { border-color: #fff; box-shadow: 0 0 18px #fff, inset 0 0 10px rgba(255,255,255,.5); }
   /* ---- ability hexagon (bottom centre) + turn chevrons ---- */
   #abBar { position: fixed; bottom: calc(16px * var(--hud)); left: 50%; transform: translateX(-50%) scale(var(--hudb)); transform-origin: bottom center; display: flex; align-items: center; gap: 8px; pointer-events: none; z-index: 2; }
@@ -75,7 +77,6 @@
   .abItem b { font-size: 14px; letter-spacing: 2px; } .abItem .tag { font-size: 9px; opacity: .7; letter-spacing: 2px; } .abItem p { margin: 0; font-size: 10px; opacity: .85; letter-spacing: .5px; font-family: sans-serif; }
   .abItem.eq { border-color: #fff; } .abItem .mbtn { min-height: 32px; padding: 3px 10px; font-size: 12px; min-width: 0; }
   .star { font-family: 'Segoe UI Symbol', 'Noto Sans Symbols 2', 'Apple Symbols', sans-serif; font-size: 1.25em; color: #fc3; line-height: 1; } /* Orbitron has no ✪ glyph */
-  .abItem .infHint { font-size: 9px; color: #fc3; letter-spacing: 1px; font-family: sans-serif; }
   #abMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; }
   /* ---- menus ---- */
   body.menu #hudTL, body.menu #top, body.menu #status, body.menu #boostBtn, body.menu #jumpBtn, body.menu #abBar, body.menu #minimap { display: none; }
@@ -344,8 +345,8 @@
   <div id="ping" aria-hidden="true"></div>
   <button id="pause" class="neon frame" type="button">PAUSE</button>
 </div>
-<button id="boostBtn" class="abtn frame" type="button" tabindex="-1"><b>OK!!</b><small>BOOST</small></button>
-<button id="jumpBtn" class="abtn frame" type="button" tabindex="-1"><b>OK!!</b><small>JUMP</small></button>
+<button id="boostBtn" class="abtn frame" type="button" tabindex="-1"><b></b><small>BOOST</small></button>
+<button id="jumpBtn" class="abtn frame" type="button" tabindex="-1"><b></b><small>JUMP</small></button>
 <div id="abBar">
   <button id="swapBtn" class="frame" type="button" tabindex="-1"></button>
   <div id="chevL" class="chev"></div>
@@ -493,6 +494,7 @@
   </div>
   <div id="scrAbilities" class="screen frame">
     <h2>ABILITIES</h2>
+    <div id="abInf"><span class="star">✪</span> = UNLIMITED = Reach 99 to unlock ∞ UNLIMITED for 100× the charge price in SBCOINS</div>
     <div id="abHead" class="coins"></div>
     <div id="abList"></div>
     <div id="abMsg"></div>
