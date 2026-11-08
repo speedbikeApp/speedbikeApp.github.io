@@ -89,7 +89,12 @@ export function createFirestoreSocialStore(db, FieldPath) {
         const part = uids.slice(i, i + 100);
         if (!part.length) continue;
         const snaps = await db.getAll(...part.map((u) => users.doc(u)));
-        snaps.forEach((s, k) => out.set(part[k], s.exists && typeof s.data().username === 'string' ? { username: s.data().username } : null));
+        const got = snaps.map((s) => (s.exists ? (typeof s.data().username === 'string' ? s.data().username : '') : null));
+        // users/{uid}.username is client-writable: show it only if usernames/{key} is reserved for this uid (else a player could pose as anyone, e.g. the admin)
+        const keyOf = (n) => n.trim().replace(/\s+/g, ' ').toLowerCase(), check = got.map((n, k) => (n && n.length <= 32 ? k : -1)).filter((k) => k >= 0);
+        const res = check.length ? await db.getAll(...check.map((k) => names.doc(keyOf(got[k])))) : [];
+        const ok = new Set(check.filter((k, j) => res[j].exists && res[j].data().uid === part[k]));
+        got.forEach((n, k) => out.set(part[k], n === null ? null : { username: ok.has(k) ? n : 'PLAYER' }));
       }
       return out;
     },

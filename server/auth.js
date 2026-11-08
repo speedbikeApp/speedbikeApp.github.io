@@ -26,6 +26,14 @@ export function createDevAuth() {
   };
 }
 
+/** True when usernames/{lowercase name} is reserved for uid. The reservation can only be created by its owner and never updated (firestore.rules),
+ *  so it is the source of truth: an attacker can write any `username` into their own users/{uid} doc but cannot hold another player's reservation. */
+export async function ownsName(db, uid, name) {
+  if (typeof name !== 'string' || !name || name.length > 32) return false;
+  const key = name.trim().replace(/\s+/g, ' ').toLowerCase(); // = js/auth.js nameKey
+  try { const r = await db.collection('usernames').doc(key).get(); return r.exists && r.data().uid === uid; } catch { return false; }
+}
+
 // Returns { auth, db } (db = Firestore for ranks). firebase-admin is only imported in this mode.
 export async function createFirebaseAuth(env = process.env) {
   const admin = (await import('firebase-admin')).default;
@@ -43,7 +51,8 @@ export async function createFirebaseAuth(env = process.env) {
         const dec = await fbAuth.verifyIdToken(hello.token, true); // checkRevoked: a deleted / disabled account is refused even with an unexpired token
         let name = '';
         try { const u = await db.collection('users').doc(dec.uid).get(); name = u.exists ? u.data().username : ''; } catch { /* fall through */ }
-        return { uid: dec.uid, username: sanitizeName(name || dec.name || '') };
+        if (!(await ownsName(db, dec.uid, name))) name = ''; // users/{uid}.username is client-writable: trust it only if usernames/ reserves it for this uid
+        return { uid: dec.uid, username: sanitizeName(name || '') };
       },
     },
   };
