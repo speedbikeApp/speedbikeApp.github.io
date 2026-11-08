@@ -12,6 +12,7 @@ function resetAbilities(b) {
   b.boostMeter = 1; b.boosting = false; b.boostLeft = 0;
   b.jumpMeter = 1; b.jumpT = -1;
   b.falling = false; b.vy = 0; b.justLanded = false; b.jumpG = b.y || 0; b.spawnProt = 0; // height / fall state (phase 7)
+  b.sinceTurn = 0; // units driven since the last turn (canTurn); not the trail segment length, which ramps / jumps split by height
   b.boostsUsed = 0; b.jumpsUsed = 0; // per-round counters
   resetAbilityState(b); // cooldowns / active timers / once-per-round flags; equipped abilities persist
 }

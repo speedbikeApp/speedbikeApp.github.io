@@ -105,14 +105,13 @@ export function turnBike(b, side) { // side: -1 left, +1 right
   if (isAirborne(b) && !b.airTurn) return; // no turning mid-air (Air Turn ability sets airTurn)
   const { dx, dz } = b;
   if (side < 0) { b.dx = dz; b.dz = -dx; } else { b.dx = -dz; b.dz = dx; }
-  b.trail.push(newSegment(b));
+  b.trail.push(newSegment(b)); b.sinceTurn = 0;
 }
 
 // Turns are allowed once the newest segment is at least minTurnGap long (keeps double-tap lanes safe).
 export function canTurn(b) {
   if (isAirborne(b) && !b.airTurn) return false;
-  const s = b.trail[b.trail.length - 1];
-  return !!s && Math.abs(s.x2 - s.x1) + Math.abs(s.z2 - s.z1) >= CFG.minTurnGap - 1e-9;
+  return (b.sinceTurn || 0) >= CFG.minTurnGap - 1e-9; // distance since the last turn: on a ramp the trail splits every height step
 }
 
 // Returns undefined (no hit), null (wall) or owner id of the trail hit.
@@ -153,7 +152,7 @@ export function step(state, dt) {
     if (Math.abs(b.y - cy) >= CFG.jump.trailStep - 1e-9 || (b.justLanded && cy !== b.y)) b.trail.push(newSegment(b));
     b.justLanded = false;
     const x0 = b.x, z0 = b.z, d = b.speed * dt;
-    b.x += b.dx * d; b.z += b.dz * d;
+    b.x += b.dx * d; b.z += b.dz * d; b.sinceTurn = (b.sinceTurn || 0) + d;
     const s = b.trail[b.trail.length - 1];
     s.x2 = b.x; s.z2 = b.z;
     moved.push([b, x0, z0, settle(b, map, yPrev, dt), yPrev]);

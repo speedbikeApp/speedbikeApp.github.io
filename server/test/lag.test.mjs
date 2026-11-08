@@ -87,7 +87,7 @@ function harness(mode = 'standard') {
   h.evs = (id, kind) => msgs[0].filter((m) => m.t === 'ev' && m.id === id && (!kind || m.kind === kind));
   h.crashes = () => msgs[0].filter((m) => m.t === 'crash');
   // teleport a bike (call between ticks); `back` units of existing trail behind it so it may turn at once
-  h.place = (i, x, z, dx, dz, back = 5) => { const b = h.bike(i); b.x = x; b.z = z; b.dx = dx; b.dz = dz; b.trail.length = 0; b.trail.push({ x1: x - dx * back, z1: z - dz * back, x2: x, z2: z, y0: 0, h: CFG.trailHeight, owner: i }); };
+  h.place = (i, x, z, dx, dz, back = 5) => { const b = h.bike(i); b.x = x; b.z = z; b.dx = dx; b.dz = dz; b.trail.length = 0; b.trail.push({ x1: x - dx * back, z1: z - dz * back, x2: x, z2: z, y0: 0, h: CFG.trailHeight, owner: i }); b.sinceTurn = back; };
   return h;
 }
 const CAP_TICKS = Math.ceil(CAP_MS * CFG.tickHz / 1000);
