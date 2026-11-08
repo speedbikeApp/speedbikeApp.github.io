@@ -56,6 +56,7 @@ function clearPause() { paused = false; showPause(false); audio.setPaused(false)
 
 function startGame(id) {
   if (typeof id === 'string' && MODES[id]) modeId = id; // play again / restart keep the current mode
+  demoMap = null; state.playerId = 0; // must come first: the menu mock match left playerId = -1; next menu gets a new random map
   match.setMode(MODES[modeId]);
   commitSession();
   const diff = getSave().settings.aiDifficulty;
@@ -74,7 +75,6 @@ function startGame(id) {
   setBikeStyle(state.bikes[state.playerId], eq);
   aiDefs.forEach((a, i) => { const b = state.bikes[i + 1]; b.color = a.color; b.name = a.name; setBikeInfo(b.id, a.name, a.color); setBikeStyle(b, DEFAULT_PARTS); });
   roundCnt = { boosts: 0, jumps: 0 };
-  demoMap = null; state.playerId = 0; // a real game ends the menu mock match; the next one gets a new random map
   screen = 'game'; rewarded = false; setMatchReward(null);
   document.body.classList.remove('menu');
   clearPause(); clearQueue();
