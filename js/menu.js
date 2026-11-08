@@ -8,6 +8,8 @@ import { ACHIEVEMENTS, getAchievement, achValue, achProgress } from './achieveme
 import { ABILITIES, ABILITY_IDS } from './abilities.js';
 import { setBloom, setMaxDpr, initPreview, setPreviewParts, drawPreview } from './render.js';
 import { MAPS } from './maps.js';
+import { CUSTOM } from './custommaps.js';
+import { MODES } from './modes.js';
 import * as audio from './audio.js';
 import { setPlayerName } from './hud.js';
 import { initAccountUi, openAccount, accountEsc, isSignedIn } from './account-ui.js';
@@ -31,7 +33,7 @@ export function showScreen(name, backdrop = 'home') {
   document.body.classList.toggle('menu', FULL_MENU.includes(name) || ((name === 'scrSettings' || name === 'scrControls') && settingsFrom === 'main'));
   if (name === 'scrMain') { $('mCoins').textContent = getSave().coins; $('mName').textContent = getSave().profile.username; }
   if (name === 'scrMode') { syncDiff(); $('mSelMapName').textContent = mapLabel(getSave().settings.spMap); }
-  if (name === 'scrMapSel') { msIdx = Math.max(0, MS_IDS.indexOf(getSave().settings.spMap)); syncMapSel(); }
+  if (name === 'scrMapSel') { MS_IDS = ['random', ...Object.keys(MAPS), ...customIds()]; msIdx = Math.max(0, MS_IDS.indexOf(getSave().settings.spMap)); syncMapSel(); }
   if (onMapPreview) onMapPreview(name === 'scrMapSel' ? MS_IDS[msIdx] : null);
   if (name === 'scrAbilities') renderAbilities('');
   if (name === 'scrGarage') openGarage();
@@ -130,12 +132,14 @@ function renderStats() {
 const AB_MSG = { max: 'AT 99 - BUY INFINITE', need99: 'NEED 99 CHARGES FIRST', owned: 'ALREADY UNLIMITED', coins: 'NOT ENOUGH SBCOINS', full: 'ALL SLOTS FULL - UNEQUIP ONE FIRST' };
 
 // ---- single-player MAP SELECT: RANDOM + built-in maps; main.js shows the preview (onMapPreview(id|'random'|null)) ----
-const MS_IDS = ['random', ...Object.keys(MAPS)];
-const mapLabel = (id) => (id === 'random' ? 'RANDOM' : MAPS[id].name);
+const customIds = () => Object.keys(CUSTOM).sort((a, b) => CUSTOM[a].name.localeCompare(CUSTOM[b].name));
+let MS_IDS = ['random', ...Object.keys(MAPS)]; // rebuilt each time the screen opens (custom maps load in the background)
+const mapLabel = (id) => (id === 'random' ? 'RANDOM' : (MAPS[id] || CUSTOM[id] || { name: 'RANDOM' }).name); // unknown (not loaded / deleted) -> random at match start
 let msIdx = 0, onMapPreview = null;
 function syncMapSel() {
   $('msName').textContent = mapLabel(MS_IDS[msIdx]);
-  $('msHint').textContent = MS_IDS[msIdx] === 'random' ? 'A RANDOM MAP EACH MATCH' : '3D / HYPER USE ONLY THEIR OWN MAPS';
+  const c = CUSTOM[MS_IDS[msIdx]];
+  $('msHint').textContent = c ? 'CUSTOM MAP: ' + c.modes.map((k) => MODES[k].label).join(' / ') : MS_IDS[msIdx] === 'random' ? 'A RANDOM MAP EACH MATCH' : '3D / HYPER USE ONLY THEIR OWN MAPS';
 }
 function stepMap(d) {
   msIdx = (msIdx + d + MS_IDS.length) % MS_IDS.length; syncMapSel();

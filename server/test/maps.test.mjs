@@ -78,6 +78,23 @@ assert.ok(pool.poolFor('deathmatch')); assert.equal(pool.poolFor('hyper'), null)
 const tiered = base('Tiered'); tiered.platforms.push({ x0: -4, z0: -4, x1: 4, z1: 4, y: 3 });
 const s3 = await boss.op('mapSave', { map: tiered }); assert.ok(s3.ok, s3.why); assert.deepEqual(pool.poolFor('3d').map, ['tiers', 'stairs', s3.mapId]);
 
+// modes: validated, normalised, default for maps saved without; a map joins exactly the pools of its modes
+assert.deepEqual(s1.map.modes, ['standard', 'deathmatch'], 'old maps: standard + deathmatch'); assert.deepEqual(s3.map.modes, ['standard', 'deathmatch', '3d'], 'tiered old maps also 3d');
+for (const bad of [[], 'hyper', ['nope'], ['standard', 5], null]) { const r = await boss.op('mapSave', { map: { ...base('X'), modes: bad } }); assert.equal(r.ok, false, JSON.stringify(bad)); assert.match(r.why, /MODES/); }
+const sm = await boss.op('mapSave', { map: { ...base('Modal'), modes: ['3d', 'hyper', 'hyper'] } }); assert.ok(sm.ok, sm.why); assert.deepEqual(sm.map.modes, ['hyper', '3d'], 'deduped, canonical order');
+assert.deepEqual((await boss.op('mapGet', { id: sm.mapId })).map.modes, ['hyper', '3d']);
+assert.deepEqual(pool.poolFor('hyper'), { map: ['arena', sm.mapId], maps: { [sm.mapId]: pool.defs[sm.mapId] } });
+assert.ok(pool.poolFor('3d').map.includes(sm.mapId), 'flat map explicitly in 3d joins it'); assert.ok(!pool.poolFor('standard').map.includes(sm.mapId) && !pool.poolFor('deathmatch').map.includes(sm.mapId));
+// GET /maps: public, validated defs with modes, CORS like /catalog
+const url = `http://127.0.0.1:${port}/maps`;
+let hr = await fetch(url, { headers: { Origin: 'http://localhost:8814' } }); const hj = await hr.json();
+assert.equal(hr.status, 200); assert.equal(hr.headers.get('access-control-allow-origin'), 'http://localhost:8814'); assert.equal(hr.headers.get('cache-control'), 'public, max-age=60');
+assert.equal(hj.maps.length, Object.keys(pool.defs).length); const jm = hj.maps.find((m) => m.id === sm.mapId);
+assert.deepEqual([jm.name, jm.modes], ['Modal', ['hyper', '3d']]); assert.equal(validateMap(jm.def).ok, true); assert.deepEqual(jm.def.modes, jm.modes);
+hr = await fetch(url, { headers: { Origin: 'https://evil.example' } }); assert.equal(hr.headers.get('access-control-allow-origin'), null); assert.equal(hr.status, 200);
+hr = await fetch(url, { method: 'POST' }); assert.equal(hr.status, 405);
+assert.ok((await boss.op('mapDelete', { id: sm.mapId })).ok);
+
 // a room whose seed picks a custom map: start message carries the full def, the server sim uses the same one
 function room(mode, seed) {
   const msgs = [[], [], [], []];

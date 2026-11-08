@@ -15,6 +15,7 @@ import { initMenu, showScreen, applySettings, closeSettings, inSettings, current
 import * as online from './online.js';
 import { queueMode } from './multi-ui.js';
 import { initCatalog } from './catalog.js';
+import { initCustomMaps, CUSTOM } from './custommaps.js';
 import { initUpdate } from './update.js';
 
 const DT = 1 / CFG.tickHz;
@@ -30,6 +31,7 @@ const spBikes = state.bikes; // singleplayer bikes: state.bikes is swapped for t
 
 let modeId = 'standard';
 const match = createMatch(state, MODES.standard, Math.random, {
+  maps: CUSTOM, // single-player custom maps (custommaps.js), resolved at match start
   onRoundStart() { roundCnt = { boosts: 0, jumps: 0 }; clearQueue(); resetCamera(); resetEffects(); },
   onRespawn(b) { if (b.id === state.playerId) { clearQueue(); resetCamera(); } }, // Death Match
 });
@@ -121,6 +123,7 @@ function leaveOnline() { online.leave(); quitToMenu(); }
 function playAgainOnline() { const m = online.currentMode(); leaveOnline(); showScreen('scrMulti'); if (m) queueMode(m); }
 online.net.on('start', (msg) => startOnline(msg));
 online.watchAuth();
+initCustomMaps(); // admin-made maps for single-player: cached copy now, fresh one in the background
 initCatalog(); // garage catalog: cached copy now, fresh one in the background
 
 initHud(CFG.players.map((p, i) => ({ id: i, name: p.name, color: p.color })), {
@@ -256,7 +259,7 @@ function frame(now) {
   if (screen === 'online' && online.isActive()) { frameOnline(now, dt); requestAnimationFrame(frame); return; }
   if (screen === 'menu' && previewMap) { // map-select: demo match frozen (not ticked), only the map is drawn
     const ids = Object.keys(MAPS);
-    renderMapPreview(MAPS[previewMap === 'random' ? ids[Math.floor(now / 2500) % ids.length] : previewMap], dt);
+    renderMapPreview(MAPS[previewMap === 'random' ? ids[Math.floor(now / 2500) % ids.length] : previewMap] || CUSTOM[previewMap] || MAPS.arena, dt);
     requestAnimationFrame(frame); return;
   }
   if (screen === 'menu') { // background mock match: sim + render only, 30 Hz-safe cap on catch-up

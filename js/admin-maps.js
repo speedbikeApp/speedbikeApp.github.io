@@ -7,7 +7,7 @@ import { registerAdminTab, ADMIN_ERR } from './admin-core.js';
 import { scene, camera, setEditorView, makeBikeMesh } from './render.js';
 import { MAPS, groundAt } from './maps.js';
 import { spawnPoints } from './state.js';
-import { validateMap, rayBox, rectPlatform, groundHit, pickObject, platformBox, spawnBox, dirOfYaw, yawOfDir, platformCorners, LIM } from './mapdef.js';
+import { validateMap, defaultModes, MODE_IDS, rayBox, rectPlatform, groundHit, pickObject, platformBox, spawnBox, dirOfYaw, yawOfDir, platformCorners, LIM } from './mapdef.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 const btn = (label, cls, fn) => { const b = el('button', 'mbtn frame' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; };
@@ -35,7 +35,7 @@ const CSS = `body.mapEditing > *:not(canvas):not(#mapEd) { display: none !import
 #mapEd .win > h4 { margin: 0 -8px 6px; padding: 4px 8px; background: #0ff3; cursor: move; font-size: 11px; letter-spacing: 3px; color: #fff; }
 #mapEd .win label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 3px 0; }
 #mapEd .win input { width: 84px; background: #012; color: #fff; border: 1px solid #357; padding: 3px 5px; font: inherit; }
-#mapEd .win input[type=text] { width: 120px; } #mapEd .win input:disabled { opacity: .5; }
+#mapEd .win input[type=text] { width: 120px; } #mapEd .win input[type=checkbox] { width: auto; } #mapEd .win input:disabled { opacity: .5; }
 #mapEd .win .mbtn { min-width: 0; min-height: 28px; padding: 2px 8px; font-size: 12px; letter-spacing: 1px; margin: 2px 2px 2px 0; }
 #mapEd .win .mbtn.sel { background: rgba(0,255,255,.4); color: #fff; border-color: #fff; }
 #mapEd .win b { display: block; margin: 8px 0 2px; color: var(--neon, #0ff); font-size: 11px; letter-spacing: 2px; }
@@ -44,7 +44,7 @@ const CSS = `body.mapEditing > *:not(canvas):not(#mapEd) { display: none !import
 
 /** Open the editor on `def` (working copy, mutated in place). onClose(savedId|null) after it closes. */
 function openEditor({ def, id, call, onClose }) {
-  const m = def;
+  const m = def; if (!m.modes) m.modes = defaultModes(m); // maps saved before modes existed show their effective modes
   let curId = id, dirty = false, tool = 'select', sel = null, newY = 0, spawnsDirty = true, drag = null, mv = null;
   const keys = new Set(), view = { map: m, dirty: true, frame };
   const cam = { x: 0, y: Math.max(40, m.half * 0.9), z: m.half * 0.9, yaw: 0, pitch: -0.75 };
@@ -141,6 +141,13 @@ function openEditor({ def, id, call, onClose }) {
     field(setw, 'NAME', () => m.name, (v) => { m.name = v; }, { text: true, max: LIM.name });
     field(setw, 'ARENA SIZE (HALF)', () => m.half, (v) => { m.half = v; }, { step: 3 });
     field(setw, 'KILL HEIGHT', () => m.killY, (v) => { m.killY = v; });
+    const mr = el('div'); mr.append(el('b', '', 'MODES'));
+    for (const [k, l] of [['standard', 'STANDARD'], ['hyper', 'HYPER'], ['deathmatch', 'DEATH MATCH'], ['3d', '3D']]) {
+      const lb = el('label', '', l), cb = el('input'); cb.type = 'checkbox'; cb.checked = m.modes.includes(k); cb.dataset.mode = k;
+      cb.addEventListener('change', () => { const on = MODE_IDS.filter((x) => (x === k ? cb.checked : m.modes.includes(x))); if (!on.length) { cb.checked = true; return say('AT LEAST ONE MODE', 'bad'); } m.modes = on; changed(); });
+      lb.append(cb); mr.append(lb);
+    }
+    setw.append(mr);
     setw.append(el('div', 'hint', `${m.platforms.length}/${LIM.platforms} PLATFORMS | ${m.spawns.length}/${LIM.maxSpawns} SPAWNS`));
   }
 

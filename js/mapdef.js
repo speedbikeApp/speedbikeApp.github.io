@@ -6,6 +6,8 @@
 import { groundAt, axes, tiltOf, MAX_TILT } from './maps.js';
 
 export const LIM = { name: 20, platforms: 200, minSpawns: 4, maxSpawns: 8, minHalf: 20, maxHalf: 150, minSize: 3, maxSize: 200, maxY: 20 };
+export const MODE_IDS = ['standard', 'hyper', 'deathmatch', '3d']; // = keys of modes.js MODES (not imported: this file stays light)
+export const CUSTOM_ID_RE = /^u[0-9a-f]{10}$/; // server-made custom map ids
 export const NAME_RE = /^[A-Za-z0-9 _-]{1,20}$/;
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -50,7 +52,10 @@ export function validateMap(raw) {
   }
   const minY = Math.min(...platforms.flatMap((p) => cornerPts(p).map((c) => c[1])));
   if (!(killY >= -60 && killY <= minY - 2)) return no('KILL HEIGHT MUST BE BELOW ALL PLATFORMS (-60..)');
-  const map = { name, walls: false, half, killY, platforms, spawns: [] };
+  const map = { name, walls: false, half, killY, platforms, spawns: [], modes: [] };
+  if (raw.modes === undefined) map.modes = defaultModes(map); // saved before modes existed
+  else if (Array.isArray(raw.modes) && raw.modes.length && raw.modes.every((k) => MODE_IDS.includes(k))) map.modes = MODE_IDS.filter((k) => raw.modes.includes(k));
+  else return no('MODES: PICK AT LEAST ONE');
   for (const [i, q] of raw.spawns.entries()) {
     const n = i + 1;
     if (!q || typeof q !== 'object' || !fin(q.x) || !fin(q.z)) return no(`SPAWN ${n}: BAD NUMBER`);
@@ -68,6 +73,9 @@ export function validateMap(raw) {
 
 /** Does the map have real height differences (>= 1.5 between platform tops)? Then it may join the 3D mode pool. */
 export const isTiered = (map) => { const ys = map.platforms.map((p) => p.y); return Math.max(...ys) - Math.min(...ys) >= 1.5; };
+
+/** Modes of a map without an explicit list: standard + death match, plus 3d when it has real height. */
+export const defaultModes = (map) => ['standard', 'deathmatch', ...(isTiered(map) ? ['3d'] : [])];
 
 /** Drag corner -> corner on the ground plane to a platform (snapped to `snap`); null if smaller than the minimum size. */
 export function rectPlatform(ax, az, bx, bz, y, snap = 1) {

@@ -7,6 +7,7 @@ import { resetBike, spawnPoints } from './state.js';
 import { resolveTick, resolvePlayerOut, resolveTimeout, applyAwards, matchWinner, placements, rankings } from './rules.js';
 import { MAPS, mapOf, platformArea, toWorld } from './maps.js';
 import { probe } from './ai.js';
+import { customFor } from './custommaps.js';
 
 // A mode is data + crash/timeout policy. kind 'rounds' uses onCrash/onTimeout; kind 'deathmatch' uses CFG.deathMatch.
 // `speed` is a getter so CFG tuning (and tests) are read live. map = key into MAPS, or a list to pick one per match.
@@ -32,10 +33,13 @@ export const MODES = {
   },
 };
 
-// Single-player map choice: Standard / Death Match accept any built-in map, 3D / Hyper only their own pool.
-export const modeMaps = (id) => (id === 'standard' || id === 'deathmatch' ? Object.keys(MAPS) : [].concat(MODES[id].map));
-// The mode to play for a saved choice ('random' or invalid for this mode -> the mode's own random pool). Prototype keeps the live `speed` getter.
-export const modeWithMap = (id, sel) => (modeMaps(id).includes(sel) ? Object.create(MODES[id], { map: { value: [sel] } }) : MODES[id]);
+// Single-player map choice: Standard / Death Match accept any built-in map, 3D / Hyper only their own pool; plus the loaded custom maps of that mode.
+export const modeMaps = (id) => [...(id === 'standard' || id === 'deathmatch' ? Object.keys(MAPS) : [].concat(MODES[id].map)), ...customFor(id)];
+// The mode to play for a saved choice ('random' or unknown for this mode -> the mode's random pool, built-in + custom). Prototype keeps the live `speed` getter.
+export const modeWithMap = (id, sel) => {
+  const custom = customFor(id), pool = modeMaps(id).includes(sel) ? [sel] : custom.length ? [].concat(MODES[id].map, custom) : null;
+  return pool ? Object.create(MODES[id], { map: { value: pool } }) : MODES[id];
+};
 
 // Distance from a point to an axis-aligned trail segment.
 function segDist(px, pz, s) {

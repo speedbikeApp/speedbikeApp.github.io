@@ -6,6 +6,7 @@ import { CATS, DEFAULT_PARTS, PARTS, getPart, isPartId, freeParts, isCustomId } 
 import { getAchievement, newlyEarned } from './achievements.js';
 import { defaultKeys, validateKeys } from './input.js';
 import { MAPS } from './maps.js';
+import { CUSTOM_ID_RE } from './mapdef.js';
 
 export const KEY = 'speedbike.save.v1';
 export const VERSION = 2; // 2: consumable abilities (unlocks.abilityCount / abilityInf)
@@ -62,7 +63,7 @@ function clamp(d) {
   s.bloom = Math.min(3, Math.max(0, s.bloom));
   s.aiDifficulty = Math.min(2, Math.max(0, Math.round(s.aiDifficulty)));
   if (!(s.quality in CFG.quality)) s.quality = 'high';
-  if (s.spMap !== 'random' && !Object.hasOwn(MAPS, s.spMap)) s.spMap = 'random'; // single-player map choice
+  if (s.spMap !== 'random' && !Object.hasOwn(MAPS, s.spMap) && !(typeof s.spMap === 'string' && CUSTOM_ID_RE.test(s.spMap))) s.spMap = 'random'; // single-player map choice
   d.profile.username = sanitizeName(d.profile.username);
   d.coins = Math.max(0, Math.floor(d.coins)); d.updatedAt = Math.max(0, Math.floor(d.updatedAt));
   // abilities: only known ids; free ones are always unlocked; equipped must be unlocked, unique, <= maxSlots

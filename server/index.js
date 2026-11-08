@@ -14,7 +14,7 @@ import { Social } from './social.js';
 import { Admin, banActive, banView } from './admin.js';
 import { createJsonAdminStore, createFirestoreAdminStore } from './admin-store.js';
 import { registerPlayerOps } from './admin-players.js';
-import { createJsonMapStore, createFirestoreMapStore, createMapPool, registerMapOps } from './admin-maps.js';
+import { createJsonMapStore, createFirestoreMapStore, createMapPool, registerMapOps, createMapsHandler } from './admin-maps.js';
 import { createJsonCatalogStore, createFirestoreCatalogStore } from './catalog-store.js';
 import { createCatalog, registerItemOps, createCatalogHandler } from './admin-items.js';
 import { Parties } from './party.js';
@@ -39,6 +39,7 @@ export function createGameServer(opts) {
   const adminStore = opts.admin || createJsonAdminStore(null, socialStore);
   const mapStore = opts.maps || createJsonMapStore(null), mapPool = createMapPool(mapStore, log); // custom maps (admin-maps.js): rooms draw from mapPool
   const catalog = createCatalog(opts.catalog || createJsonCatalogStore(null));
+  const mapsHandler = createMapsHandler({ pool: mapPool, allowedOrigins, production: !!opts.production });
   const catalogHandler = createCatalogHandler({ catalog, allowedOrigins, production: !!opts.production, log });
   const sessions = new Set(), byUid = new Map(), rooms = new Map();
   let featured = featuredMode(Date.now()), onlineTimer = null, nextRoomId = 0;
@@ -268,6 +269,7 @@ export function createGameServer(opts) {
     if (req.url.split('?')[0] === '/auth/login') return void loginHandler(req, res).catch((e) => { log('[login] crashed:', e.message); if (!res.headersSent) res.writeHead(500); res.end(); });
     if (req.url.startsWith('/auth/') && req.url.split('?')[0] !== '/auth/login') return void accountsHandler(req, res).catch((e) => { log('[accounts] crashed:', e.message); if (!res.headersSent) res.writeHead(500); res.end(); });
     if (req.url.split('?')[0] === '/catalog') return void catalogHandler(req, res);
+    if (req.url.split('?')[0] === '/maps') return void mapsHandler(req, res).catch((e) => { log('[maps] failed:', e.message); if (!res.headersSent) res.writeHead(503); res.end(); });
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.url.split('?')[0] === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });

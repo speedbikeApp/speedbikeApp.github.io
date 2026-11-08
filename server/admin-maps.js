@@ -3,19 +3,20 @@
 //   mapGet {id}                -> {mapId, map, updatedAt}   (NOT `id`: the router would overwrite the reply's request id)
 //   mapSave {id?, map}         -> {mapId, map}      (no id = new; the server generates it; `map` is re-validated and normalised: js/mapdef.js)
 //   mapDelete {id}             -> {}
+// Map `modes` (mapdef.js MODE_IDS): which mode pools the map joins (rooms: poolFor; single-player: GET /maps, createMapsHandler).
 // codes: bad_id, not_found, bad_map (+ `why` text), too_many.
 // Store interface (async): list() -> [{id, map, updatedAt}], get(id), set(id, {map, updatedAt, by}), remove(id), flush().
 // Firestore: `maps/{id}` = {map, updatedAt, by}. Admin SDK only (no client rule in firestore.rules). JSON store = dev / tests.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { validateMap, isTiered } from '../js/mapdef.js';
+import { validateMap } from '../js/mapdef.js';
 import { MODES } from '../js/modes.js';
 import { adminError as E } from './admin.js';
+import { originAllowed } from './login.js';
 
 export const MAX_MAPS = 100;
 export const ID_RE = /^u[0-9a-f]{10}$/;
-const POOL_MODES = new Set(['standard', 'deathmatch', '3d']);
 
 export function createJsonMapStore(file) {
   let d = {};
@@ -63,13 +64,25 @@ export function createMapPool(store, log = () => {}) {
     /** For a room of `modeId`: { map:[ids], maps:{id:def} } with the custom maps added to the mode's pool, or null (no custom maps apply). */
     poolFor(modeId) {
       const base = MODES[modeId];
-      if (!base || !POOL_MODES.has(modeId)) return null;
-      const ids = Object.keys(defs).filter((id) => modeId !== '3d' || isTiered(defs[id]));
+      if (!base) return null;
+      const ids = Object.keys(defs).filter((id) => defs[id].modes.includes(modeId));
       return ids.length ? { map: [].concat(base.map, ids), maps: Object.fromEntries(ids.map((id) => [id, defs[id]])) } : null;
     },
   };
   pool.ready = pool.load().catch((e) => log('[maps] load failed:', e.message));
   return pool;
+}
+
+/** GET /maps: the public list single-player draws from (validated defs only): {ok, maps:[{id, name, modes, def}]}. Same CORS / cache style as /catalog. */
+export function createMapsHandler({ pool, allowedOrigins = [], production = false }) {
+  return async (req, res) => {
+    const origin = req.headers.origin, h = { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', Vary: 'Origin' };
+    if (origin && originAllowed(origin, allowedOrigins, production)) h['Access-Control-Allow-Origin'] = origin;
+    if (req.method !== 'GET') { res.writeHead(405, h); return res.end('{"ok":false}'); }
+    await pool.ready;
+    res.writeHead(200, h);
+    res.end(JSON.stringify({ ok: true, maps: Object.values(pool.defs).map(({ id, ...def }) => ({ id, name: def.name, modes: def.modes, def })) }));
+  };
 }
 
 export function registerMapOps({ admin, mapStore, pool, log = () => {} }) {
