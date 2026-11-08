@@ -46,7 +46,7 @@ const FORMS = {
       const email = val('acRegEmail').trim(), password = val('acRegPw');
       const r = await auth.signupStart(email, password, waking('acReg'));
       signup = { email, password }; resendAt = Date.now() + r.resendIn * 1000;
-      $('acCodeInfo').textContent = `We sent a 6-digit code to ${email}. It expires in 10 minutes.`;
+      $('acCodeInfo').textContent = `We sent a 6-digit code to ${email}. It expires in 10 minutes. Can't find it? Check your Spam folder.`;
       setTab('code'); $('acCodeIn').focus();
     },
   },
@@ -56,11 +56,11 @@ const FORMS = {
   },
   acFgPw: {
     fields: { acFgPwId: () => { const v = val('acFgPwId').trim(); return !v ? 'Enter your email or username' : v.includes('@') ? auth.validateEmail(v) : auth.validateUsername(v); } },
-    run: async () => { await auth.forgotPassword(val('acFgPwId'), waking('acFgPw')); return 'If an account exists, we emailed a link. It works for 3 minutes, on this network only.'; },
+    run: async () => { await auth.forgotPassword(val('acFgPwId'), waking('acFgPw')); return 'If an account exists, we emailed a link. It works for 3 minutes, on this network only. Check your Spam folder too.'; },
   },
   acFgUser: {
     fields: { acFgUserEmail: () => auth.validateEmail(val('acFgUserEmail')) },
-    run: async () => { await auth.forgotUsername(val('acFgUserEmail'), waking('acFgUser')); return 'If an account exists, we emailed the username.'; },
+    run: async () => { await auth.forgotUsername(val('acFgUserEmail'), waking('acFgUser')); return 'If an account exists, we emailed the username. Check your Spam folder too.'; },
   },
   acReset: {
     fields: { acResetPw: () => auth.validatePassword(val('acResetPw')), acResetPw2: () => (val('acResetPw2') === val('acResetPw') ? '' : 'Passwords do not match') },

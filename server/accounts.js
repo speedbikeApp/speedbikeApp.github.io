@@ -19,7 +19,22 @@ const eq = (a, b) => a.length === b.length && timingSafeEqual(Buffer.from(a), Bu
 const R = (status, code, extra = {}) => ({ status, body: { ok: false, code, ...extra }, retryAfter: extra.retryAfter });
 const OK = (extra = {}) => ({ status: 200, body: { ok: true, ...extra } });
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const page = (title, lines) => `<div style="font-family:sans-serif;max-width:480px"><h2>${esc(title)}</h2>${lines.map((l) => `<p>${l}</p>`).join('')}<p style="color:#888;font-size:12px">SpeedBike</p></div>`;
+// Game-styled e-mail (dark + neon cyan). Inline styles + one table only: mail apps drop <style> blocks and most CSS layout.
+// o = { big?: html shown large in a glowing box (code / username), button?: {href, label}, lines: [html], foot?: text }
+const FONT = "font-family:Verdana,Segoe UI,Arial,sans-serif";
+const page = (title, o) => `<!doctype html><html><body style="margin:0;padding:0;background:#02080c">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#02080c"><tr><td align="center" style="padding:28px 12px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#06141b;border:2px solid #00e5ff;border-radius:6px">
+<tr><td align="center" style="padding:26px 24px 6px;${FONT};font-size:26px;font-weight:bold;letter-spacing:6px;color:#00f0ff">SPEED<span style="color:#ffffff">BIKE</span></td></tr>
+<tr><td align="center" style="padding:0 24px 18px;${FONT};font-size:11px;letter-spacing:3px;color:#5fb7c4">NEON LIGHT-CYCLE ARENA</td></tr>
+<tr><td style="padding:0 24px"><div style="height:1px;background:#0b4652"></div></td></tr>
+<tr><td align="center" style="padding:22px 24px 8px;${FONT};font-size:18px;font-weight:bold;letter-spacing:2px;color:#ffffff">${esc(title.toUpperCase())}</td></tr>
+${o.big ? `<tr><td align="center" style="padding:10px 24px 14px"><div style="display:inline-block;padding:14px 26px;border:2px solid #00e5ff;border-radius:6px;background:#001f27;${FONT};font-size:30px;letter-spacing:8px;color:#00f0ff;box-shadow:0 0 14px #00e5ff">${o.big}</div></td></tr>` : ''}
+${o.button ? `<tr><td align="center" style="padding:12px 24px 16px"><a href="${esc(o.button.href)}" style="display:inline-block;padding:13px 30px;background:#00e5ff;border-radius:6px;${FONT};font-size:15px;font-weight:bold;letter-spacing:2px;color:#02080c;text-decoration:none">${esc(o.button.label)}</a></td></tr>` : ''}
+${o.lines.map((l) => `<tr><td align="center" style="padding:4px 28px;${FONT};font-size:14px;line-height:1.5;color:#b9dde3">${l}</td></tr>`).join('')}
+<tr><td style="padding:22px 24px 0"><div style="height:1px;background:#0b4652"></div></td></tr>
+<tr><td align="center" style="padding:12px 24px 20px;${FONT};font-size:11px;color:#4f7f88">${esc(o.foot || 'You got this email because someone used it on SpeedBike. If it was not you, you can ignore it.')}</td></tr>
+</table></td></tr></table></body></html>`;
 
 export function createAccountsHandler(opts = {}) {
   const {
@@ -62,7 +77,7 @@ export function createAccountsHandler(opts = {}) {
         await mailer.send({
           to: email, subject: 'Your SpeedBike verification code',
           text: `Your SpeedBike verification code is ${code}\n\nIt expires in 10 minutes. If you did not try to sign up, ignore this email.`,
-          html: page('Your SpeedBike code', [`Your verification code is <b style="font-size:24px;letter-spacing:4px">${code}</b>`, 'It expires in 10 minutes. If you did not try to sign up, ignore this email.']),
+          html: page('Your verification code', { big: `<b>${code}</b>`, lines: ['Enter this code in SpeedBike to finish signing up.', 'It expires in 10 minutes.'] }),
         });
       } catch (e) { log('[signup] mail failed:', e && e.message); return R(503, 'mail_failed'); }
       pending.set(email, { salt, codeHash: sha(salt, email, code), exp: t + CODE_TTL, sentAt: t, attempts: 0 });
@@ -108,7 +123,7 @@ export function createAccountsHandler(opts = {}) {
           sendBg({
             to: rec.email, subject: 'Reset your SpeedBike password',
             text: `Open this link to choose a new SpeedBike password:\n${link}\n\nThe link works once, for 3 minutes, and only on the same network (IP address) you requested it from. If you did not ask for this, ignore this email.`,
-            html: page('Reset your password', [`<a href="${esc(link)}">Choose a new password</a>`, 'The link works once, for 3 minutes, and only on the same network (IP address) you requested it from.', 'If you did not ask for this, ignore this email.']),
+            html: page('Reset your password', { button: { href: link, label: 'CHOOSE A NEW PASSWORD' }, lines: ['The link works once, for 3 minutes, and only on the same network (IP address) you requested it from.'], foot: 'If you did not ask for this, ignore this email: your password stays the same.' }),
           });
         }
       } catch (e) { log('[forgot] backend error:', e && e.message); }
@@ -126,7 +141,7 @@ export function createAccountsHandler(opts = {}) {
         if (name) sendBg({
           to: rec.email, subject: 'Your SpeedBike username',
           text: `Your SpeedBike username is: ${name}\n\nIf you did not ask for this, you can ignore this email.`,
-          html: page('Your SpeedBike username', [`Your username is <b>${esc(name)}</b>`, 'If you did not ask for this, you can ignore this email.']),
+          html: page('Your username', { big: `<b>${esc(name)}</b>`, lines: ['Sign in to SpeedBike with this username or your email.'] }),
         });
       } catch (e) { log('[forgot] backend error:', e && e.message); }
       await floor(t0);
