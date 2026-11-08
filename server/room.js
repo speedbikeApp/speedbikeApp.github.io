@@ -13,6 +13,7 @@ import { createState, createBike } from '../js/state.js';
 import { performance } from 'node:perf_hooks';
 import { step, turnBike, canTurn, isAirborne, startBoost, startJump } from '../js/physics.js';
 import { createMatch, MODES } from '../js/modes.js';
+import { MAPS } from '../js/maps.js';
 import { rankings } from '../js/rules.js';
 import { makeRng, createAI, aiThink, aiAbilities, aiUseAbilities } from '../js/ai.js';
 import { ABILITIES, isAbilityId, setLoadout, useAbilityId } from '../js/abilities.js';
@@ -27,7 +28,7 @@ const STAT_WIN = 10000;     // ms: window of the "max" timing stats
 
 export class Room {
   // players: [{uid, username, rank, colorIdx, send(msg), loadout?:[ability ids], bot?:true, level?:AI level}]  (bike id = index; humans first, then bots)
-  constructor({ id, mode, players, seed, timeScale = 1, maxRewindMs, onEnd, onLeave }) {
+  constructor({ id, mode, players, seed, mapPool, timeScale = 1, maxRewindMs, onEnd, onLeave }) {
     this.id = id; this.mode = mode; this.scale = timeScale; this.onEnd = onEnd || (() => {}); this.onLeave = onLeave || (() => {});
     this.hz = CFG.tickHz; this.tick = 0; this.over = false;
     this.seed = seed ?? (Math.random() * 2 ** 32) >>> 0;
@@ -52,15 +53,17 @@ export class Room {
     this.ais = new Map(); // bot id -> AI state (js/ai.js)
     this.botRng = makeRng((this.seed ^ 0x9e3779b9) >>> 0);
     this.players.forEach((p, i) => { if (p.bot) this.ais.set(i, createAI(p.level ?? 1, i * 2)); }); // staggered thinking
-    this.match = createMatch(this.state, MODES[mode], makeRng(this.seed), {
+    // custom maps (server/admin-maps.js poolFor): same mode with a longer map list; the defs are handed to startMatch
+    this.match = createMatch(this.state, mapPool ? Object.create(MODES[mode], { map: { value: mapPool.map } }) : MODES[mode], makeRng(this.seed), {
+      maps: mapPool && mapPool.maps,
       onRoundStart: () => { this.#killLeavers(); this.players.forEach((_, i) => { this.epoch[i]++; this.deathTick[i] = -1; this.lastIn[i] = -1; }); },
       onRespawn: (b) => { this.epoch[b.id]++; this.#ev(b, 'respawn'); },
     });
     this.match.startMatch();
 
     this.broadcast({
-      t: 'start', mode, mapId: this.state.map.id, seed: this.seed, tick0: 0, cfgOverrides: {},
-      players: this.players.map((p) => ({ id: p.id, uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, bot: !!p.bot, loadout: this.state.bikes[p.id].abilities.slice() })),
+      t: 'start', mode, mapId: this.state.map.id, ...(MAPS[this.state.map.id] ? {} : { map: this.state.map }), seed: this.seed, tick0: 0, cfgOverrides: {},
+      players: this.players.map((p) => ({ id: p.id, uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, bot: !!p.bot, loadout: this.state.bikes[p.id].abilities.slice(), ...(p.admin ? { admin: true } : {}) })),
     }, (p) => ({ you: p.id }));
     this.#syncPhase();
   }

@@ -30,6 +30,11 @@ service cloud.firestore {
 
     // friends/{uid} (friendships) is written and read ONLY by the game server (Admin SDK); there is deliberately no client rule, so it is denied by default.
 
+    // maps/{id} (custom maps from the admin MAPS tab: {map, updatedAt, by}) is written and read ONLY by the game server (Admin SDK); no client rule on purpose.
+    // admins/{uid} (admin flag) and bans/{uid} ({until, by, reason}) are written and read ONLY by the game server (Admin SDK); no client rule, so they are denied by default.
+
+    // items/{id} (custom garage items + overrides of built-in parts) is written and read ONLY by the game server (Admin SDK); clients get it from GET /catalog. No client rule, denied by default.
+
     // Reserved for later (leaderboards etc.): add new collections here. Everything else is denied by default.
   }
 }

@@ -80,7 +80,7 @@ Server → client:
 - `{t:'welcome', uid, username, rank, serverNow, featured, nextRotation, online}`
 - `{t:'queued', mode, position, inQueue}`
 - `{t:'lobby', mode, players:[{uid,username,rank,colorIdx}], countdownEndsAt, serverNow}` (sent on every change)
-- `{t:'start', mode, mapId, seed, tick0, you:<bikeId>, players:[{id,uid,username,rank,colorIdx,bot,loadout:[abilityId]}], cfgOverrides}` (bots: `bot:true`, `uid:null`, `rank:null`; `loadout` = provisional, from the queue)
+- `{t:'start', mode, mapId, seed, tick0, you:<bikeId>, players:[{id,uid,username,rank,colorIdx,bot,loadout:[abilityId]}], cfgOverrides, map?}` (`map` = full definition, only when `mapId` is a custom map the client doesn't have: validate it with `validateMap` from js/mapdef.js; bots: `bot:true`, `uid:null`, `rank:null`; `loadout` = provisional, from the queue)
 - `{t:'loadout', id, abilities}` (first countdown only: a player's final loadout)
 - `ev` / `snap` / `crash` / `round` / `end` (above)
 - `{t:'announce', text, kind:'tierPoint'|'tierUp'}`
@@ -149,6 +149,12 @@ Server -> client:
 | `{t:'error', code}` | new codes for `queue`: `not_leader`, `party_offline`, `member_busy` (plus `busy`) |
 
 Client UI: party row on the main menu next to the FRIENDS button (member names, gold crown on the leader, LEAVE at the end; compact, wraps above FRIENDS on narrow phones). The leader taps a member -> TRANSFER LEAD / KICK / CLOSE; non-leaders get nothing destructive. The mode buttons of MULTIPLAYER are disabled for non-leaders ("ONLY THE PARTY LEADER CAN START A GAME") and CANCEL becomes LEAVE PARTY on a queue / lobby screen a member was pulled into. INVITE TO PARTY in the FRIENDS list (`friends-ui.js setPartyHooks`).
+
+## Admin (`server/admin.js`, `admin-players.js`, `admin-store.js`; client `js/admin-core.js`, `js/admin-ui.js`)
+- Rights: env `ADMIN_USERNAMES` (permanent) or Firestore `admins/{uid}`. Bans: `bans/{uid}`. Both Admin-SDK only.
+- `welcome.admin` (bool), `adminstate {admin}` (rights changed), `banned {until, permanent, reason}` (hello refused / kicked / queue refused; socket closed 4003), `resync {username?, force?}` (admin edited the account), `error {code:'deleted'}`.
+- C->S `{t:'admin', op, id?, a:{...}}` -> S->C `{t:'ares', op, id, ok:true, ...}` | `{ok:false, code}` (`forbidden` for non-admins, `unknown_op`, op-specific codes). Players ops: `psearch{q}`, `pget{uid}`, `pban{uid, minutes|permanent, reason?}`, `punban{uid}`, `padmin{uid,on}`, `prename{uid,username}`, `pedit{uid, coins?, stats?}`, `pdelete{uid, confirm}`.
+- `POST /auth/login` answers 403 `{code:'banned', until, permanent, reason}` after a correct password for a banned account.
 
 ## Client UI
 - **PLAY** → choice screen: **SINGLEPLAYER** (the existing mode select, unchanged) / **MULTIPLAYER**.

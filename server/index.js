@@ -5,11 +5,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { WebSocketServer } from 'ws';
 import { featuredMode, nextRotation, isMultiplayerMode } from '../js/rotation.js';
-import { parseClientMessage, RateLimiter } from './protocol.js';
+import { parseClientMessage, RateLimiter, MAX_ADMIN } from './protocol.js';
 import { resolveAuthMode, createDevAuth, createFirebaseAuth, sanitizeName } from './auth.js';
 import { createJsonStore, createFirestoreStore } from './store.js';
 import { createJsonSocialStore, createFirestoreSocialStore } from './social-store.js';
 import { Social } from './social.js';
+import { Admin, banActive, banView } from './admin.js';
+import { createJsonAdminStore, createFirestoreAdminStore } from './admin-store.js';
+import { registerPlayerOps } from './admin-players.js';
+import { createJsonMapStore, createFirestoreMapStore, createMapPool, registerMapOps } from './admin-maps.js';
+import { createJsonCatalogStore, createFirestoreCatalogStore } from './catalog-store.js';
+import { createCatalog, registerItemOps, createCatalogHandler } from './admin-items.js';
 import { Parties } from './party.js';
 import { Matchmaker, LOBBY_MAX } from './matchmaker.js';
 import { Room } from './room.js';
@@ -19,12 +25,16 @@ import { createLoginHandler, createFirebaseLoginDeps } from './login.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// opts: { auth, store, social (social store, default: in memory), port, timeScale (TEST ONLY: speeds the sim up), countdownMs, allowedOrigins:[...] , log, loopMs (scheduler interval, default 16) }
+// opts: { maps (custom map store, default: in memory), auth, store, social (social store, default: in memory), admin (admin store, default: in memory), adminUsernames (ADMIN_USERNAMES: comma string or array), port, timeScale (TEST ONLY: speeds the sim up), countdownMs, allowedOrigins:[...] , log, loopMs (scheduler interval, default 16) }
 export function createGameServer(opts) {
   const { auth, store, timeScale = 1, allowedOrigins = [], log = console.log } = opts;
   // POST /auth/login (server/login.js). Without opts.login (dev auth / tests) the endpoint answers 503 {code:'unavailable'}.
   const loginHandler = opts.login || createLoginHandler({ enabled: false, allowedOrigins, production: !!opts.production });
   const socialStore = opts.social || createJsonSocialStore(null);
+  const adminStore = opts.admin || createJsonAdminStore(null, socialStore);
+  const mapStore = opts.maps || createJsonMapStore(null), mapPool = createMapPool(mapStore, log); // custom maps (admin-maps.js): rooms draw from mapPool
+  const catalog = createCatalog(opts.catalog || createJsonCatalogStore(null));
+  const catalogHandler = createCatalogHandler({ catalog, allowedOrigins, production: !!opts.production, log });
   const sessions = new Set(), byUid = new Map(), rooms = new Map();
   let featured = featuredMode(Date.now()), onlineTimer = null, nextRoomId = 0;
 
@@ -43,6 +53,14 @@ export function createGameServer(opts) {
     send: (uid, m) => byUid.get(uid)?.send(m),
   });
 
+  // Admin console (server/admin.js): ops are registered by module; PLAYERS in admin-players.js. Other modules: `admin.register(op, handler)` (exposed on the returned object).
+  const admin = new Admin({ store: adminStore, names: opts.adminUsernames, log });
+  const kick = (uid, msg) => { const s = byUid.get(uid); if (!s) return; s.send(msg); cleanup(s); s.ws.close(4003, String(msg.code || msg.t)); };
+  registerItemOps({ admin, catalog, log }); // GARAGE tab (server/admin-items.js)
+  registerPlayerOps({ admin, adminStore, socialStore, social, rankStore: store, send: (uid, m) => byUid.get(uid)?.send(m), kick, sessionOf: (uid) => byUid.get(uid), log });
+
+  registerMapOps({ admin, mapStore, pool: mapPool, log }); // MAPS tab
+
   const queued = (s) => s.where?.type === 'queue' || s.where?.type === 'lobby';
   // Parties (server/party.js): in-memory. isBusy = queued / in a lobby / in a match.
   const parties = new Parties({
@@ -58,9 +76,9 @@ export function createGameServer(opts) {
     allowed: (mode, now) => isMultiplayerMode(mode, now),
     onStart: (lobby) => {
       // The lobby starts with 2..4 humans (countdown over, or full): free slots are filled with bots (server/bots.js).
-      const humans = lobby.players.map((s) => ({ uid: s.uid, username: s.username, rank: s.rank, colorIdx: s.colorIdx, send: s.send, session: s, party: s.group != null, loadout: s.loadout }));
+      const humans = lobby.players.map((s) => ({ uid: s.uid, username: s.username, rank: s.rank, colorIdx: s.colorIdx, send: s.send, session: s, party: s.group != null, loadout: s.loadout, admin: s.admin }));
       const room = new Room({
-        id: ++nextRoomId, mode: lobby.mode, timeScale,
+        id: ++nextRoomId, mode: lobby.mode, timeScale, mapPool: mapPool.poolFor(lobby.mode),
         players: [...humans, ...makeBots(humans, LOBBY_MAX)],
         onLeave: handleLeave, onEnd: handleEnd,
       });
@@ -94,7 +112,7 @@ export function createGameServer(opts) {
         if (r.bot) { out.push({ id: r.id, uid: null, username: r.username, place: r.place, won: r.won, left: false, scores: r.scores, rankBefore: null, rankAfter: null, change: 'none', bot: true }); continue; }
         let entry = byId.get(r.id);
         if (!entry) { const l = p.leavePromise && await p.leavePromise; entry = { id: r.id, uid: r.uid, rankBefore: l?.rankBefore || p.rank, rankAfter: l?.rankAfter || p.rank, change: l?.change || 'none' }; }
-        out.push({ id: r.id, uid: r.uid, username: r.username, place: r.place, won: r.won, left: r.left, scores: r.scores, rankBefore: entry.rankBefore, rankAfter: entry.rankAfter, change: entry.change, ...(p.party ? { party: true } : {}) });
+        out.push({ id: r.id, uid: r.uid, username: r.username, place: r.place, won: r.won, left: r.left, scores: r.scores, rankBefore: entry.rankBefore, rankAfter: entry.rankAfter, change: entry.change, ...(p.party ? { party: true } : {}), ...(p.admin ? { admin: true } : {}) });
       }
       for (const p of room.players) {
         const s = p.session;
@@ -126,12 +144,17 @@ export function createGameServer(opts) {
     try {
       const id = await auth.verify(msg);
       if (s.dead) return;
+      const ban = await admin.activeBan(id.uid); // banned accounts never get a welcome (js/net.js shows the message)
+      if (s.dead) return;
+      if (ban) { s.send({ t: 'banned', ...banView(ban) }); log(`[admin] refused banned ${id.uid}`); s.ws.close(4003, 'banned'); return; }
+      s.admin = await admin.isAdmin(id.uid, id.username); s.ban = null;
+      if (s.dead) return;
       const old = byUid.get(id.uid);
       if (old && old !== s) { old.send({ t: 'error', code: 'replaced', message: 'signed in from another place' }); old.replaced = true; cleanup(old); old.ws.close(4002, 'replaced'); }
       s.uid = id.uid; s.username = id.username; s.rank = await store.getRank(id.uid);
       if (s.dead) return;
       s.authed = true; byUid.set(s.uid, s);
-      s.send({ t: 'welcome', uid: s.uid, username: s.username, rank: s.rank, serverNow: Date.now(), featured: featuredMode(Date.now()), nextRotation: nextRotation(Date.now()), online: online() });
+      s.send({ t: 'welcome', uid: s.uid, username: s.username, rank: s.rank, serverNow: Date.now(), featured: featuredMode(Date.now()), nextRotation: nextRotation(Date.now()), online: online(), admin: s.admin });
       announceOnline();
       parties.onConnect(s.uid);
       social.onConnect(s.uid, s.username).catch((e) => log('[social] connect failed:', e.message));
@@ -154,12 +177,14 @@ export function createGameServer(opts) {
     if (!s.authed) return s.send({ t: 'error', code: 'not_authed', message: 'send hello first' });
     switch (msg.t) {
       case 'ping': return s.send({ t: 'pong', c: msg.c, serverNow: Date.now() });
-      case 'queue': if (msg.loadout) s.loadout = msg.loadout; return void onQueue(s, msg.mode);
+      case 'queue': if (banActive(s.ban)) { s.send({ t: 'banned', ...banView(s.ban) }); return void s.ws.close(4003, 'banned'); }
+        if (msg.loadout) s.loadout = msg.loadout; return void onQueue(s, msg.mode);
       case 'loadout': if (s.room) s.room.setLoadout(s.bikeId, msg.abilities); else s.loadout = msg.abilities; return;
       case 'leaveQueue': return void onLeaveQueue(s);
       case 'leave':
         if (s.room) { s.room.leave(s.bikeId); s.room = null; s.where = null; } else mm.leave(s);
         return;
+      case 'admin': return void admin.handle(s, msg);
       case 'in': if (s.room) s.room.input(s.bikeId, msg); return;
       case 'pinvite': case 'paccept': case 'pdecline': case 'pkick': case 'ptransfer': case 'pleave': case 'plist': return void onParty(s, msg);
       default: return void onSocial(s, msg);
@@ -231,6 +256,7 @@ export function createGameServer(opts) {
 
   const server = http.createServer((req, res) => {
     if (req.url.split('?')[0] === '/auth/login') return void loginHandler(req, res).catch((e) => { log('[login] crashed:', e.message); if (!res.headersSent) res.writeHead(500); res.end(); });
+    if (req.url.split('?')[0] === '/catalog') return void catalogHandler(req, res);
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -241,13 +267,13 @@ export function createGameServer(opts) {
     res.end(req.url === '/' ? 'SpeedBike game server\n' : 'not found\n');
   });
   const wss = new WebSocketServer({
-    server, maxPayload: 4096,
+    server, maxPayload: MAX_ADMIN,
     verifyClient: ({ origin }) => !allowedOrigins.length || allowedOrigins.includes(origin),
   });
   wss.on('connection', (ws) => {
     const s = {
       ws, uid: null, username: '', rank: null, where: null, authed: false, helloPending: false, dead: false, alive: true, violations: 0,
-      room: null, bikeId: -1, colorIdx: 0, group: null, loadout: [],
+      room: null, bikeId: -1, colorIdx: 0, group: null, loadout: [], admin: false, ban: null,
       limiter: new RateLimiter(20, 30), searchLimiter: new RateLimiter(0.7, 5), socialLimiter: new RateLimiter(1, 10), partyLimiter: new RateLimiter(2, 12), inLimiter: new RateLimiter(30, 30),
       send: (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); },
     };
@@ -288,14 +314,14 @@ export function createGameServer(opts) {
   }, 15000);
 
   return {
-    server, wss, mm, rooms, sessions, parties,
+    server, wss, mm, rooms, sessions, parties, admin, adminStore, mapStore, mapPool,
     listen: (port = opts.port ?? 8787) => new Promise((resolve) => server.listen(port, () => resolve(server.address().port))),
     async close() {
       clearInterval(loop); clearInterval(beat); clearTimeout(onlineTimer);
       for (const s of sessions) s.ws.terminate();
       await new Promise((r) => wss.close(r));
       await new Promise((r) => server.close(r));
-      await store.flush?.(); await socialStore.flush?.();
+      await store.flush?.(); await socialStore.flush?.(); await adminStore.flush?.(); await opts.catalog?.flush?.(); await mapStore.flush?.();
     },
   };
 }
@@ -306,15 +332,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const mode = resolveAuthMode(env);
   if (mode === 'dev' && env.NODE_ENV === 'production' && env.DEV_AUTH !== '1') throw new Error('refusing dev auth in production; set Firebase credentials (or DEV_AUTH=1 to force)');
   const allowedOrigins = (env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean), production = env.NODE_ENV === 'production';
-  let auth, store, login, social;
+  let auth, store, login, social, adminStore, catalogStore, mapStore;
   if (mode === 'firebase') {
     const fb = await createFirebaseAuth(env); auth = fb.auth; store = createFirestoreStore(fb.db); social = createFirestoreSocialStore(fb.db, fb.FieldPath);
-    login = createLoginHandler({ enabled: true, allowedOrigins, production, log: console.log, ...createFirebaseLoginDeps({ db: fb.db, auth: fb.fbAuth }, env) });
+    adminStore = createFirestoreAdminStore(fb.db, fb.fbAuth); catalogStore = createFirestoreCatalogStore(fb.db); mapStore = createFirestoreMapStore(fb.db);
+    login = createLoginHandler({ enabled: true, allowedOrigins, production, log: console.log, banOf: async (uid) => { const b = await adminStore.getBan(uid); return banActive(b) ? b : null; }, ...createFirebaseLoginDeps({ db: fb.db, auth: fb.fbAuth }, env) });
   }
-  else { auth = createDevAuth(); store = createJsonStore(env.RANKS_FILE || path.join(HERE, 'data', 'ranks.json')); social = createJsonSocialStore(env.SOCIAL_FILE || path.join(HERE, 'data', 'social.json')); }
+  else { auth = createDevAuth(); store = createJsonStore(env.RANKS_FILE || path.join(HERE, 'data', 'ranks.json')); social = createJsonSocialStore(env.SOCIAL_FILE || path.join(HERE, 'data', 'social.json')); adminStore = createJsonAdminStore(env.ADMIN_FILE || path.join(HERE, 'data', 'admin.json'), social); }
+  mapStore ||= createJsonMapStore(env.MAPS_FILE || path.join(HERE, 'data', 'maps.json'));
+  catalogStore ||= createJsonCatalogStore(env.CATALOG_FILE || path.join(HERE, 'data', 'catalog.json'));
   console.log(`[server] auth=${auth.mode} ranks=${store.kind}`);
   const app = createGameServer({
-    auth, store, social, timeScale: Number(env.TIME_SCALE) || 1, // TIME_SCALE is for tests only
+    auth, store, social, admin: adminStore, catalog: catalogStore, maps: mapStore, adminUsernames: env.ADMIN_USERNAMES, timeScale: Number(env.TIME_SCALE) || 1, // TIME_SCALE is for tests only
     countdownMs: Number(env.LOBBY_COUNTDOWN_MS) || undefined,
     allowedOrigins, login, production,
   });

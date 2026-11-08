@@ -6,7 +6,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { CFG } from './config.js';
 import { protectLeft } from './abilities.js';
 import { MAPS } from './maps.js';
-import { glowHex, DEFAULT_PARTS } from './parts.js';
+import { glowHex, DEFAULT_PARTS, getPart } from './parts.js';
 import { makeCircuitTexture, makeTrailTexture, makeGridTexture } from './textures.js';
 
 const scene = new THREE.Scene();
@@ -102,12 +102,13 @@ function buildMap(map) {
     // BoxGeometry material order: +x, -x, +y, -y, +z, -z. Sides are dim circuit boards; the top is the glowing grid.
     const side = (len) => { const m = wallMat(len, SLAB_D / 3); m.color.setScalar(0.85); return m; };
     const mats = [side(d), side(d), floorMaterial(p), new THREE.MeshBasicMaterial({ color: 0x050508 }), side(w), side(w)];
+    const pg = new THREE.Group(); pg.position.set(cx, 0, cz); pg.rotation.y = p.rot || 0; mapGroup.add(pg); // yawed platforms: children are centre-relative
     const slab = new THREE.Mesh(new THREE.BoxGeometry(w, SLAB_D, d), mats);
-    slab.position.set(cx, p.y - 0.01 - SLAB_D / 2, cz); mapGroup.add(slab);
+    slab.position.set(0, p.y - 0.01 - SLAB_D / 2, 0); pg.add(slab);
     // glowing frame around the top edge (there are no walls: the edge itself is the border)
     for (const [ex, ez, sx, sz] of [[cx, p.z0, w, EDGE_T], [cx, p.z1, w, EDGE_T], [p.x0, cz, EDGE_T, d], [p.x1, cz, EDGE_T, d]]) {
       const e = new THREE.Mesh(new THREE.BoxGeometry(sx, EDGE_T, sz), slabEdgeMat);
-      e.position.set(ex, p.y, ez); mapGroup.add(e);
+      e.position.set(ex - cx, p.y, ez - cz); pg.add(e);
     }
   }
 }
@@ -222,7 +223,7 @@ const RIMS = {
   },
 };
 
-function makeBikeMesh(color, parts = {}) {
+export function makeBikeMesh(color, parts = {}) {
   const P = { body: parts.body, tire: parts.tire, rim: parts.rim };
   const g = new THREE.Group(), wheels = [], mats = [];
   const mk = (c) => { const m = new THREE.MeshBasicMaterial({ color: c }); mats.push(m); return m; };
@@ -232,14 +233,17 @@ function makeBikeMesh(color, parts = {}) {
     tireGlow: mk(glowColor(color, 0.9)),
     helmet: mk(new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.55)),
   };
-  const tire = TIRES[P.tire] || TIRES.slim, rim = RIMS[P.rim] || RIMS.spoked, body = BODIES[P.body] || BODIES.sleek;
+  // custom catalog items use their base part's model; an optional colour re-tints that part's accents (unknown ids fall back to the default model)
+  const pick = (cat, T, def) => { const p = getPart(cat, P[cat]), k = (p && p.base) || P[cat]; return [T[k] || T[def], p && p.custom && p.color != null ? tint(p.color) : M]; };
+  const tint = (c) => ({ ...M, glow: mk(glowColor(c, 1.6)), bright: mk(glowColor(c, 1.0)), tireGlow: mk(glowColor(c, 0.9)) });
+  const [tire, MT] = pick('tire', TIRES, 'slim'), [rim, MR] = pick('rim', RIMS, 'spoked'), [body, MB] = pick('body', BODIES, 'sleek');
   for (const z of [-0.85, 0.85]) {
     const w = new THREE.Group(); w.position.set(0, WHEEL_R, z);
-    const hw = tire(w, M);
-    for (const sx of [-1, 1]) rim(w, M, sx * (hw + 0.02), hw, sx);
+    const hw = tire(w, MT);
+    for (const sx of [-1, 1]) rim(w, MR, sx * (hw + 0.02), hw, sx);
     g.add(w); wheels.push(w);
   }
-  body(g, M);
+  body(g, MB);
   g.add(box(M.dark, 0.42, 0.55, 0.34, 0, 1.28, -0.1, 0.5));                // rider torso (leaning)
   g.add(box(M.bright, 0.44, 0.1, 0.12, 0, 1.4, -0.22, 0.5));               // back stripe
   const h = new THREE.Mesh(helmetGeo, M.helmet); h.position.set(0, 1.72, 0.18); g.add(h);
@@ -449,6 +453,12 @@ export function resetEffects() {
 
 // extra = seconds since the last physics tick (0 when frozen); bikes/newest trail ends are extrapolated by it.
 export function render(state, dt, followId, extra = 0) {
+  if (editorView) { // map editor (js/admin-maps.js) owns the camera and the scene content
+    if (editorView.dirty || editorView.map !== curMap) { buildMap(editorView.map); editorView.dirty = false; }
+    editorView.frame(dt);
+    if (composer && bloomStrength > 0) composer.render(dt); else renderer.render(scene, camera);
+    return;
+  }
   if (state.map && state.map !== curMap) buildMap(state.map);
   orbitR = Math.max(CFG.camera.spectate.orbitRadius, (curMap ? curMap.half : 50) * 1.2);
   let follow = null, alt = null;
@@ -482,6 +492,11 @@ export function render(state, dt, followId, extra = 0) {
   updateFx(dt);
   if (composer && bloomStrength > 0) composer.render(dt); else renderer.render(scene, camera);
 }
+
+// Map editor hook: while set ({map, dirty, frame(dt)}), render() draws editorView.map with the editor's camera (it moves `camera` / adds to `scene`).
+export { scene, camera };
+let editorView = null;
+export function setEditorView(v) { editorView = v; if (!v) curMap = null; } // curMap reset: the game map is rebuilt on the next frame
 
 // ---- Garage preview: a small separate renderer (no bloom), only drawn while the garage is open ----
 let pv = null;

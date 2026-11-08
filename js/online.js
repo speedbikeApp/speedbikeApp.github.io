@@ -7,6 +7,7 @@ import { createNet, buildHello, serverUrl } from './net.js';
 import { TickClock, createSim, resetSim, stepSim, predictInput, prunePending, applyEvent, applySnap, applyCrash, visCapture, visBlend, visDecay } from './netsim.js';
 import { MODES } from './modes.js';
 import { MAPS } from './maps.js';
+import { validateMap } from './mapdef.js';
 import { createBike, resetBike, spawnPoints } from './state.js';
 import { canTurn, isAirborne } from './physics.js';
 import { popTurn, popAction, clearQueue } from './input.js';
@@ -18,16 +19,26 @@ import { DEFAULT_PARTS, glowHex, colorDist, CLASH_DIST } from './parts.js';
 import { getSave, addCoins, coinsForPlacement, abilityCharges, spendAbility, spendPassives, usableAbilities } from './save.js';
 import { social } from './social.js';
 import { party } from './party.js';
+import { setAdmin, createCaller } from './admin-core.js';
+import { resyncCloud } from './cloudsave.js';
 
 // ---------------------------------------------------------------- presence (menus)
 export const net = createNet({ url: () => serverUrl(globalThis.location ? globalThis.location.search : ''), getHello: () => buildHello(auth) });
 export const mp = { rank: null, online: null, featured: null, nextRotation: 0 };
-net.on('welcome', (m) => { party.setMe(m.uid); mp.rank = m.rank || null; mp.online = m.online ?? null; mp.featured = m.featured || null; mp.nextRotation = m.nextRotation || 0; });
+net.on('welcome', (m) => { setAdmin(m.admin === true); party.setMe(m.uid); mp.rank = m.rank || null; mp.online = m.online ?? null; mp.featured = m.featured || null; mp.nextRotation = m.nextRotation || 0; });
 net.on('online', (m) => { mp.online = m.online; });
 net.on('rotation', (m) => { mp.featured = m.featured; mp.nextRotation = m.nextRotation; });
 net.on('rank', (m) => { mp.rank = m.rank; });
 net.on('announce', (m) => showAnnounce(m.text, m.kind));
-net.on('status', (s) => { if (s.state !== 'online') { mp.online = null; } if (s.state === 'idle' || s.state === 'denied') { social.reset(); party.reset(); } });
+net.on('status', (s) => { if (s.state !== 'online') { mp.online = null; } if (s.state === 'idle' || s.state === 'denied') { social.reset(); party.reset(); setAdmin(false); } });
+// Admin console (server/admin.js): `adminCall(op, args)` -> Promise<{ok,...}>; the server pushes `adminstate` when our rights change.
+const adminCaller = createCaller((m) => net.send(m));
+export const adminCall = adminCaller.call;
+net.on('ares', (m) => adminCaller.resolve(m));
+net.on('adminstate', (m) => setAdmin(m.admin === true));
+// An admin edited our account (name / coins / stats): re-read it. A deleted account signs out.
+net.on('resync', (m) => { if (m.username) auth.refreshUser().catch(() => {}); resyncCloud(m.force === true).catch(() => {}); });
+net.on('error', (m) => { if (m.code === 'deleted') auth.logout().catch(() => {}); });
 // Social (friends) mirror: the same persistent socket carries friend lists + presence (server/social.js). Extra listeners: friends-ui.js ('fres', 'fresults', 'fevent').
 for (const t of ['friends', 'fpresence', 'frank', 'fname']) net.on(t, (m) => social.apply(m));
 // Party mirror (server/party.js): `party` snapshots + `pinvites`; the UI (party-ui.js) also listens for 'pres' / 'pevent'. The server pulls members into the queue / match.
@@ -85,20 +96,21 @@ export function begin(msg, st, bikes0, exitCb) {
   restoreOverrides(); applyOverrides(msg.cfgOverrides);
   mode = MODES[msg.mode] || MODES.standard;
   const players = (msg.players || []).slice().sort((a, b) => a.id - b.id);
-  state.map = MAPS[msg.mapId] || MAPS.arena;
+  const cm = msg.map && !MAPS[msg.mapId] && validateMap(msg.map); // custom map: the server sends the whole definition (id = mapId)
+  state.map = cm && cm.ok ? { id: msg.mapId, ...cm.map } : MAPS[msg.mapId] || MAPS.arena;
   // colours: everyone gets their lobby colour; we use our own glow colour unless it clashes with another bike
   const mine = glowHex(getSave().equipped.parts.glow);
   const others = players.filter((p) => p.id !== youId).map(colorOf);
   const useGlow = others.every((c) => colorDist(c, mine) >= CLASH_DIST);
   state.bikes = players.map((p) => {
     const b = createBike(p.id, p.id === youId && useGlow ? mine : colorOf(p), 0, 0, 0, -1);
-    b.name = p.username; b.rank = p.rank; b.uid = p.uid; b.bot = !!p.bot;
+    b.name = p.username; b.rank = p.rank; b.uid = p.uid; b.bot = !!p.bot; b.admin = !!p.admin && !p.bot;
     setLoadout(b, p.loadout || []);   // provisional (queue time); everybody's final list follows as `loadout` messages during the countdown
     return b;
   });
   state.playerId = youId; state.tick = 0; state.time = 0;
   for (const b of state.bikes) setBikeStyle(b, DEFAULT_PARTS); // default parts for everybody (known limitation: garage parts are not synced)
-  setHudPlayers(state.bikes.map((b) => ({ id: b.id, name: b.name, color: b.color, rank: b.rank, uid: b.uid })), youId);
+  setHudPlayers(state.bikes.map((b) => ({ id: b.id, name: b.name, color: b.color, rank: b.rank, uid: b.uid, admin: b.admin })), youId);
   sim = createSim(state, 0); tc.reset();
   Object.assign(match, {
     mode, phase: 'countdown', cd: CFG.match.countdown, timeLeft: mode.roundTime, elapsed: 0, runTime: 0, round: 0,

@@ -6,6 +6,7 @@
 import { sanitizeName, NAME_MAX } from './save.js';
 import { firebaseConfig, isConfigured, FIREBASE_VERSION } from './firebase-config.js';
 import { CFG } from './config.js';
+import { banMessage } from './admin-core.js';
 
 export const USERNAME_MIN = 3;
 export const PASSWORD_MIN = 8;
@@ -126,6 +127,7 @@ export async function fetchLoginToken(url, username, password, deps = {}) {
     } catch { res = null; } // unreachable / asleep (no CORS headers on the proxy's wake-up page) / timed out
     if (res) {
       if (res.status === 200 && body && body.ok === true && typeof body.token === 'string' && body.token) return body.token;
+      if (res.status === 403 && body && body.code === 'banned') { const e = fail('login-unavailable'); e.code = 'banned'; e.message = banMessage(body); throw e; } // only sent after a correct password
       if (res.status === 401 || res.status === 400) throw fail('invalid-login');
       if (res.status === 429) {
         const secs = Number(body && body.retryAfter) || Number(res.headers?.get?.('retry-after')) || 60;
@@ -154,6 +156,8 @@ export async function login(identifier, password, opts = {}) {
   }
   return currentUser();
 }
+/** Re-read the signed-in user's profile (an admin may have renamed the account). */
+export async function refreshUser() { if (backend && backend.refresh) await backend.refresh(); }
 export async function logout() { if (backend) await backend.logout(); }
 export async function changeUsername(name) {
   const b = needUser();
@@ -294,6 +298,7 @@ async function createFirebase(emitUser, cfg) {
       const token = await fetchLoginToken(loginServerUrl(), username, password, { onStatus: opts && opts.onStatus });
       await authM.signInWithCustomToken(auth, token);
     }),
+    refresh: async () => { if (auth.currentUser) await publish(auth.currentUser); },
     logout: () => wrap(async () => { await authM.signOut(auth); }),
     changeUsername: (name) => wrap(async () => {
       const uid = auth.currentUser.uid, old = user.username;

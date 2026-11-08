@@ -3,6 +3,7 @@
 // Firebase Auth REST API and hands back a Firebase CUSTOM TOKEN for signInWithCustomToken. The email and the REST id/refresh tokens never leave here.
 //
 // Everything that touches the outside world is injected (lookup, verifyPassword, createToken, now, sleep) so the module is unit-testable offline.
+// banOf(uid) -> active ban | null (server/admin.js): banned accounts get 403 {code:'banned', until, permanent} after a correct password.
 // Failure policy: unknown user / wrong password / disabled account / malformed username all give the SAME 401 {ok:false, code:'invalid_credentials'}
 // after the same minimum delay, so neither the body nor the timing tells whether a username exists.
 
@@ -49,7 +50,7 @@ export const originAllowed = (origin, allowedOrigins, production) => allowedOrig
 
 export function createLoginHandler(opts = {}) {
   const {
-    enabled = false, lookup, verifyPassword, createToken, allowedOrigins = [], production = false,
+    enabled = false, lookup, verifyPassword, createToken, banOf, allowedOrigins = [], production = false,
     now = () => Date.now(), sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
     minFailMs = 700,                       // every failure takes at least this long (incl. unknown usernames)
     ipMax = 10, ipWindowMs = 5 * 60 * 1000, nameMax = 10, nameWindowMs = 15 * 60 * 1000,
@@ -75,6 +76,8 @@ export function createLoginHandler(opts = {}) {
       if (!rec || !rec.uid || !rec.email) return await fail();
       const v = await verifyPassword(rec.email, password); // {ok:true} | {ok:false, code:'invalid'|'too_many'}
       if (!v.ok) return v.code === 'too_many' ? await fail(tooMany(300)) : await fail();
+      const ban = banOf ? await banOf(rec.uid) : null; // only after the password was right: a wrong guess never learns whether an account is banned
+      if (ban) return { status: 403, body: { ok: false, code: 'banned', until: ban.until ?? null, permanent: ban.until == null, reason: ban.reason || '' } };
       const token = await createToken(rec.uid);
       return { status: 200, body: { ok: true, token } };
     } catch (e) {

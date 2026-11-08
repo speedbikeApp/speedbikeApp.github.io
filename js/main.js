@@ -13,6 +13,7 @@ import { glowHex, DEFAULT_PARTS, resolveAiColors } from './parts.js';
 import { initMenu, showScreen, applySettings, closeSettings, inSettings, currentScreen, menuBack } from './menu.js';
 import * as online from './online.js';
 import { queueMode } from './multi-ui.js';
+import { initCatalog } from './catalog.js';
 
 const DT = 1 / CFG.tickHz;
 const state = createState();
@@ -96,6 +97,7 @@ function leaveOnline() { online.leave(); quitToMenu(); }
 function playAgainOnline() { const m = online.currentMode(); leaveOnline(); showScreen('scrMulti'); if (m) queueMode(m); }
 online.net.on('start', (msg) => startOnline(msg));
 online.watchAuth();
+initCatalog(); // garage catalog: cached copy now, fresh one in the background
 
 initHud(CFG.players.map((p, i) => ({ id: i, name: p.name, color: p.color })), {
   onPause: () => (screen === 'online' ? setLeave(true) : setPaused(true)),

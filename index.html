@@ -216,8 +216,24 @@
   /* ---- friends ---- */
   .fi { width: 10px; height: 12px; flex: none; color: #3aa0ff; filter: drop-shadow(0 0 3px #3aa0ff); vertical-align: middle; margin: 0 2px; }
   .hrow .fi { width: 9px; height: 11px; margin: 0; }
+  .ai { color: #fc3; text-shadow: 0 0 4px #fc3; margin: 0 2px; font-size: 1em; }
   #mFriends { position: fixed; left: 14px; bottom: 14px; min-width: 0; min-height: 40px; padding: 6px 14px; font-size: 14px; letter-spacing: 2px; display: flex; align-items: center; gap: 8px; z-index: 2; }
   #mFriends .fi { width: 14px; height: 16px; }
+  /* ---- admin ---- */
+  #mAdmin { position: fixed; top: 14px; right: 14px; min-width: 0; min-height: 36px; padding: 6px 14px; font-size: 13px; letter-spacing: 2px; z-index: 2; color: #fc3; border-color: #fc3; }
+  #mAdmin[hidden] { display: none; }
+  #scrAdmin { width: min(780px, 96vw); gap: 8px; }
+  #adTabs { width: 100%; } #adTabs .mbtn { padding: 6px 8px; font-size: 13px; letter-spacing: 2px; min-height: 38px; }
+  #adBody { width: 100%; box-sizing: border-box; max-height: calc(94dvh - 200px); min-height: 80px; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+  .adSec { border: 1px solid #357; padding: 6px 8px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; letter-spacing: 1px; }
+  .adSec > b { color: var(--neon); font-size: 12px; letter-spacing: 2px; }
+  .adLine { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .adLine input { background: #012; color: #fff; border: 1px solid #357; padding: 6px 8px; font: inherit; min-width: 0; width: 110px; box-sizing: border-box; }
+  .adLine input.wide { flex: 1; width: auto; }
+  .adLine .mbtn { min-width: 0; min-height: 32px; padding: 3px 12px; font-size: 12px; letter-spacing: 1px; }
+  .adStats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 10px; }
+  .adStats label { display: flex; justify-content: space-between; gap: 6px; align-items: center; font-size: 12px; } .adStats input { width: 80px; background: #012; color: #fff; border: 1px solid #357; padding: 3px 5px; font: inherit; }
+  .adMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; } .adMsg.ok { color: #7f7; } .adMsg.bad { color: #f88; }
   .fbadge { min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; background: #f33; color: #fff; font-size: 11px; font-weight: 800; letter-spacing: 0; text-align: center; box-shadow: 0 0 8px #f33; }
   .fbadge[hidden] { display: none; }
   /* ---- party ---- */
@@ -361,6 +377,7 @@
       <button id="mStats" class="mbtn frame" type="button">STATS</button>
     </div>
     <button id="mAccount" class="mbtn frame" type="button">ACCOUNT</button>
+    <button id="mAdmin" class="mbtn frame" type="button" hidden>ADMIN</button>
     <div id="coinLine"><span class="coins">SBCOINS <b id="mCoins">0</b></span> &nbsp; <span id="mName"></span></div>
     <div id="mAcct"></div>
     <div id="mDock">
@@ -430,6 +447,12 @@
     </div>
     <div id="frMsg"></div>
     <button id="frBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrAdmin" class="screen frame">
+    <h2>ADMIN</h2>
+    <div id="adTabs" class="mrow"></div>
+    <div id="adBody"></div>
+    <button id="adBack" class="mbtn frame" type="button">BACK</button>
   </div>
   <div id="scrQueue" class="screen frame">
     <h2 id="qMode">STANDARD</h2>

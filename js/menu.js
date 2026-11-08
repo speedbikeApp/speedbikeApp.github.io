@@ -2,7 +2,7 @@
 // Settings are applied live (render + audio) and persisted through save.js.
 import { CFG } from './config.js';
 import { getSave, setSetting, setUsername, saveSoon, buyAbility, buyInfinite, abilityCharges, infinitePrice, STACK_MAX, toggleEquip, buyPart, equipPart, partOwned } from './save.js';
-import { CATS, CAT_LABEL, partList, getPart, glowHex } from './parts.js';
+import { CATS, CAT_LABEL, partList, getPart, glowHex, isShown, DEFAULT_PARTS } from './parts.js';
 import { ACHIEVEMENTS, getAchievement, achValue, achProgress } from './achievements.js';
 import { ABILITIES, ABILITY_IDS } from './abilities.js';
 import { setBloom, setMaxDpr, initPreview, setPreviewParts, drawPreview } from './render.js';
@@ -11,6 +11,7 @@ import { setPlayerName } from './hud.js';
 import { initAccountUi, openAccount, accountEsc, isSignedIn } from './account-ui.js';
 import { initMultiUi, onScreen as multiScreen, multiBack } from './multi-ui.js';
 import { initFriendsUi, onScreen as friendsScreen } from './friends-ui.js';
+import { initAdminUi, onScreen as adminScreen } from './admin-ui.js';
 import { initPartyUi } from './party-ui.js';
 import { ACTIONS, ACTION_LABEL, groups, codeLabel, rebind, defaultKeys, setBindings, getBindings, captureNextKey, GAMEPAD_LAYOUT } from './input.js';
 
@@ -18,8 +19,8 @@ const $ = (id) => document.getElementById(id);
 let current = null;      // visible screen id or null
 let settingsFrom = null; // 'main' | 'pause'
 
-const SCREENS = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrSettings', 'scrControls'];
-const FULL_MENU = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount']; // screens shown over the empty arena (HUD hidden)
+const SCREENS = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrAdmin', 'scrSettings', 'scrControls'];
+const FULL_MENU = ['scrMain', 'scrPlay', 'scrMode', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrAdmin']; // screens shown over the empty arena (HUD hidden)
 export function showScreen(name, backdrop = 'home') {
   current = name;
   $('menu').style.display = name ? 'flex' : 'none';
@@ -35,6 +36,7 @@ export function showScreen(name, backdrop = 'home') {
   if (name === 'scrAccount') openAccount();
   if (name === 'scrMulti' || name === 'scrQueue' || name === 'scrLobby') multiScreen(name);
   if (name === 'scrFriends') friendsScreen();
+  if (name === 'scrAdmin') adminScreen();
   if (name === 'scrSettings') syncSettingsUi();
   if (name !== 'scrControls') cancelCapture();
   if (name === 'scrControls') renderControls('');
@@ -85,11 +87,11 @@ function openGarage() {
 function stopPreview() { cancelAnimationFrame(gRaf); gRaf = 0; }
 function renderGarage(msg) {
   const d = getSave(), eqId = d.equipped.parts[gCat];
-  if (!gSel || !getPart(gCat, gSel)) gSel = eqId;
+  if (!gSel || !getPart(gCat, gSel)) gSel = getPart(gCat, eqId) ? eqId : DEFAULT_PARTS[gCat]; // equipped custom id not in the catalog (yet): show the default
   $('gHead').textContent = `SBCOINS ${d.coins}`;
   $('gMsg').textContent = msg;
   for (const b of $('gTabs').children) b.classList.toggle('sel', b.dataset.cat === gCat);
-  $('gList').innerHTML = partList(gCat).map((p) => {
+  $('gList').innerHTML = partList(gCat).filter((p) => isShown(p, partOwned(gCat, p.id))).map((p) => {
     const owned = partOwned(gCat, p.id), tag = p.id === eqId ? 'EQUIPPED' : owned ? 'OWNED' : p.ach ? 'LOCKED' : `${p.price}`;
     return `<button class="mbtn frame gcard${p.id === gSel ? ' sel' : ''}${owned ? '' : ' locked'}" type="button" data-id="${p.id}">${swatch(p)}<b>${p.name.toUpperCase()}</b><small class="${owned || p.ach ? '' : 'coins'}">${tag}</small></button>`;
   }).join('');
@@ -150,6 +152,7 @@ export function initMenu(h) {
   on('modeBack', () => showScreen('scrPlay'));
   initMultiUi({ show: showScreen, openAccount: () => showScreen('scrAccount') });
   initFriendsUi({ show: showScreen, openAccount: () => showScreen('scrAccount') });
+  initAdminUi({ show: showScreen });
   initPartyUi();
   on('mAbilities', () => showScreen('scrAbilities'));
   on('mGarage', () => showScreen('scrGarage'));
@@ -217,7 +220,7 @@ export function closeSettings() {
 export function menuBack() {
   if (current === 'scrMode' || current === 'scrMulti') { showScreen('scrPlay'); return true; }
   if (current === 'scrQueue' || current === 'scrLobby') return multiBack(current);
-  if (current === 'scrPlay' || current === 'scrFriends' || current === 'scrAbilities' || current === 'scrGarage' || current === 'scrStats') { showScreen('scrMain'); return true; }
+  if (current === 'scrPlay' || current === 'scrFriends' || current === 'scrAdmin' || current === 'scrAbilities' || current === 'scrGarage' || current === 'scrStats') { showScreen('scrMain'); return true; }
   return false;
 }
 export const inSettings = () => current === 'scrSettings' || current === 'scrControls';

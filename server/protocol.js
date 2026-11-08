@@ -3,6 +3,7 @@ import { CFG } from '../js/config.js';
 import { isAbilityId } from '../js/abilities.js';
 export const MAX_MSG = 1024;        // bytes, every message ...
 export const MAX_HELLO = 4096;      // ... except hello (a Firebase ID token alone is ~1 KB)
+export const MAX_ADMIN = 32768;     // ... and admin (map / item editors send whole documents); the socket's maxPayload matches
 export const MODES_ALL = ['standard', 'hyper', '3d', 'deathmatch'];
 export const INPUT_KINDS = ['turn', 'boost', 'jump', 'ability', 'swap'];
 
@@ -31,7 +32,7 @@ export function parseClientMessage(raw) {
   let o;
   try { o = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf8')); } catch { return bad('bad_json', 'invalid JSON'); }
   if (!o || typeof o !== 'object' || Array.isArray(o) || !isStr(o.t, 16)) return bad('bad_message', 'missing type');
-  if (len > (o.t === 'hello' ? MAX_HELLO : MAX_MSG)) return bad('too_large', 'message too large');
+  if (len > (o.t === 'hello' ? MAX_HELLO : o.t === 'admin' ? MAX_ADMIN : MAX_MSG)) return bad('too_large', 'message too large');
   switch (o.t) {
     case 'hello':
       if (o.dev === true) {
@@ -72,6 +73,12 @@ export function parseClientMessage(raw) {
       return ok({ t: o.t });
     case 'frefresh': // after a username change; `username` is only honoured in dev-auth mode (index.js)
       return ok(isStr(o.username, 40) ? { t: 'frefresh', username: o.username } : { t: 'frefresh' });
+    case 'admin': { // admin console (server/admin.js): the router re-checks admin rights; args are validated by each op
+      if (!isStr(o.op, 32) || !/^[A-Za-z]\w*$/.test(o.op)) return bad('bad_message', 'bad admin op');
+      if (o.a !== undefined && (!o.a || typeof o.a !== 'object' || Array.isArray(o.a))) return bad('bad_message', 'bad admin args');
+      if (o.id !== undefined && !(isNum(o.id) || isStr(o.id, 16))) return bad('bad_message', 'bad admin id');
+      return ok({ t: 'admin', op: o.op, ...(o.id !== undefined ? { id: o.id } : {}), a: o.a || {} });
+    }
     case 'ping':
       if (!(isNum(o.c) || isStr(o.c, 32))) return bad('bad_message', 'bad ping');
       return ok({ t: 'ping', c: o.c });

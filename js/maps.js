@@ -4,6 +4,8 @@
 //   walls   : legacy flag (physics still supports fatal walls) - every shipped map is false: open edges, fall off = crash.
 //   half    : half-size of the square that bounds the whole map (grid/minimap/camera scale), centred on the origin.
 //   killY   : a falling bike below this height crashes (no platform to catch it).
+//   platform.rot : optional yaw in radians about the platform centre (absent = 0; Three's rotation.y sense). Support / fall / side-crash all go
+//                  through groundAt(), which maps the point into the platform's local frame.
 //   spawns  : optional fixed spawn list [{x,z,dx,dz,y}] ordered S,W,N,E (null = computed from CFG.arena.half).
 import { CFG } from './config.js';
 
@@ -77,13 +79,26 @@ export const MAPS = { arena, tiers, stairs, crater };
 export const mapOf = (state) => (state && state.map) || arena;
 
 const E = 1e-6;
+// Platform-local <-> world for a yawed platform (rotation about its centre; same sense as Three's rotation.y).
+export function toLocal(p, x, z) {
+  if (!p.rot) return [x, z];
+  const cx = (p.x0 + p.x1) / 2, cz = (p.z0 + p.z1) / 2, dx = x - cx, dz = z - cz, c = Math.cos(p.rot), s = Math.sin(p.rot);
+  return [cx + dx * c - dz * s, cz + dx * s + dz * c];
+}
+export function toWorld(p, x, z) {
+  if (!p.rot) return [x, z];
+  const cx = (p.x0 + p.x1) / 2, cz = (p.z0 + p.z1) / 2, dx = x - cx, dz = z - cz, c = Math.cos(p.rot), s = Math.sin(p.rot);
+  return [cx + dx * c + dz * s, cz - dx * s + dz * c];
+}
 // Highest platform top containing (x,z), or -Infinity over the void. Bounds inclusive (a bike on the very edge is supported).
 export function groundAt(map, x, z) {
   const P = map.platforms;
   let g = -Infinity;
   for (let i = 0; i < P.length; i++) {
     const p = P[i];
-    if (p.y > g && x >= p.x0 - E && x <= p.x1 + E && z >= p.z0 - E && z <= p.z1 + E) g = p.y;
+    if (p.y <= g) continue;
+    const [lx, lz] = p.rot ? toLocal(p, x, z) : [x, z];
+    if (lx >= p.x0 - E && lx <= p.x1 + E && lz >= p.z0 - E && lz <= p.z1 + E) g = p.y;
   }
   return g;
 }

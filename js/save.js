@@ -2,7 +2,7 @@
 // missing / corrupt / old data never breaks the game. No DOM; storage is looked up lazily (tests stub globalThis.localStorage).
 import { CFG } from './config.js';
 import { ABILITIES, ABILITY_IDS, isAbilityId, FREE_ABILITIES } from './abilities.js';
-import { CATS, DEFAULT_PARTS, PARTS, getPart, isPartId, freeParts } from './parts.js';
+import { CATS, DEFAULT_PARTS, PARTS, getPart, isPartId, freeParts, isCustomId } from './parts.js';
 import { getAchievement, newlyEarned } from './achievements.js';
 import { defaultKeys, validateKeys } from './input.js';
 
@@ -82,14 +82,21 @@ function clamp(d) {
   for (const k of Object.keys(d.stats)) d.stats[k] = Math.max(0, d.stats[k]);
   // achievements: known ids only; parts: known ids, free ones always owned; equipped part must be owned else default
   d.unlocks.achievements = [...new Set(d.unlocks.achievements.filter((id) => !!getAchievement(id)))];
+  // Custom ids (c_...) are kept even when unknown: the catalog (js/catalog.js) may not have loaded yet, and dropping them would wipe what the player bought.
   for (const cat of CATS) {
-    const own = new Set([...d.unlocks.parts[cat].filter((id) => isPartId(cat, id)), ...freeParts(cat)]);
-    d.unlocks.parts[cat] = PARTS[cat].map((p) => p.id).filter((id) => own.has(id));
+    const known = (id) => isPartId(cat, id) || isCustomId(id);
+    const own = new Set([...d.unlocks.parts[cat].filter(known), ...freeParts(cat)]);
+    for (const p of PARTS[cat]) if (p.custom && p.ach && d.unlocks.achievements.includes(p.ach)) own.add(p.id); // achievement-gated custom parts (built-ins are granted by checkAchievements)
+    const extra = [...own].filter((id) => !isPartId(cat, id)).slice(0, 200);
+    d.unlocks.parts[cat] = [...PARTS[cat].map((p) => p.id).filter((id) => own.has(id)), ...extra];
     const eq = d.equipped.parts[cat];
-    d.equipped.parts[cat] = isPartId(cat, eq) && own.has(eq) ? eq : DEFAULT_PARTS[cat];
+    d.equipped.parts[cat] = known(eq) && own.has(eq) ? eq : DEFAULT_PARTS[cat];
   }
   return d;
 }
+
+/** Re-run validation after the catalog changed (free / achievement parts may have become owned). */
+export function reclamp() { clamp(getSave()); saveSoon(); }
 
 export function parseSave(text) {
   let raw = null;

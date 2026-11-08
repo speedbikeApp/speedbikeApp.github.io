@@ -1,4 +1,4 @@
-// Rank storage. Interface: async getRank(uid) -> rank record, async setRank(uid, rank, username).
+// Rank storage. Interface: async getRank(uid) -> rank record, async setRank(uid, rank, username), async deleteRank(uid).
 // JSON file (dev / no credentials) or Firestore `ranks/{uid}` through the Admin SDK (clients can only read, see firestore.rules).
 import fs from 'node:fs';
 import path from 'node:path';
@@ -28,6 +28,7 @@ export function createJsonStore(file) {
     kind: 'json',
     async getRank(uid) { const v = data.get(uid); return v ? migrateRank(v) : defaultRank(); },
     async setRank(uid, rank, username = '') { data.set(uid, { ...normalizeRank(rank), username }); await save(); },
+    async deleteRank(uid) { if (data.delete(uid)) await save(); },
     flush: () => chain,
   };
 }
@@ -38,6 +39,7 @@ export function createFirestoreStore(db) {
     kind: 'firestore',
     async getRank(uid) { const s = await col.doc(uid).get(); return s.exists ? migrateRank(s.data()) : defaultRank(); },
     async setRank(uid, rank, username = '') { await col.doc(uid).set({ ...normalizeRank(rank), username }); },
+    async deleteRank(uid) { await col.doc(uid).delete(); },
     flush: async () => {},
   };
 }

@@ -40,7 +40,7 @@ export async function createFirebaseAuth(env = process.env) {
       mode: 'firebase',
       async verify(hello) {
         if (!hello.token) throw new Error('missing token');
-        const dec = await fbAuth.verifyIdToken(hello.token);
+        const dec = await fbAuth.verifyIdToken(hello.token, true); // checkRevoked: a deleted / disabled account is refused even with an unexpired token
         let name = '';
         try { const u = await db.collection('users').doc(dec.uid).get(); name = u.exists ? u.data().username : ''; } catch { /* fall through */ }
         return { uid: dec.uid, username: sanitizeName(name || dec.name || '') };

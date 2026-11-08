@@ -105,7 +105,7 @@ export class Matchmaker {
   }
 
   #sendLobby(l) {
-    const msg = { t: 'lobby', mode: l.mode, players: l.players.map((p) => ({ uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx })), countdownEndsAt: l.endsAt, serverNow: this.now() };
+    const msg = { t: 'lobby', mode: l.mode, players: l.players.map((p) => ({ uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, ...(p.admin ? { admin: true } : {}) })), countdownEndsAt: l.endsAt, serverNow: this.now() };
     for (const p of l.players) p.send(msg);
   }
 

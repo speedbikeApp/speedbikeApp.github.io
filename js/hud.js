@@ -18,6 +18,9 @@ let bikes = [], mapCtx = null, mapFrame = 0, reward = null;
 let baseBikes = [], meId = 0, onlineHud = false, onlineResult = null; // online: bikes carry {rank}, meId = our bike id
 // Blue person icon next to the name of one of OUR friends (online matches: scoreboard + results). Only the viewer's friends get it.
 export const FRIEND_ICON = '<svg class="fi" viewBox="0 0 12 14" aria-label="friend"><title>Friend</title><circle cx="6" cy="4" r="3" fill="currentColor"/><path d="M0.5 14c0-3.6 2.4-5.6 5.5-5.6s5.5 2 5.5 5.6z" fill="currentColor"/></svg>';
+// Admin marker (pencil) shown next to an admin's name wherever FRIEND_ICON is; the server flags players with admin:true.
+export const ADMIN_ICON = '<span class="ai" title="Admin" aria-label="admin">✎</span>';
+const adminIcon = (a) => (a ? ADMIN_ICON : '');
 const friendIcon = (uid) => (uid && social.isFriend(uid) ? FRIEND_ICON : '');
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -178,14 +181,14 @@ export function setScoreboard(state, match, dm) {
   for (let i = 0; i < bikes.length; i++) {
     const b = bikes[i], r = scoreRow(dm, b.id, match, state.bikes[b.id].alive);
     const rk = b.rank ? `${b.rank.tier}${b.rank.div}${b.rank.wins}` : '';
-    const fr = friendIcon(b.uid), key = `${b.name}|${b.color}|${r.n}|${r.segs}|${r.out}|${r.dim}|${rk}|${fr ? 1 : 0}`;
+    const fr = friendIcon(b.uid), ad = adminIcon(b.admin), key = `${b.name}|${b.color}|${r.n}|${r.segs}|${r.out}|${r.dim}|${rk}|${fr ? 1 : 0}|${ad ? 1 : 0}`;
     if (cache['sb' + b.id] === key) continue;
     cache['sb' + b.id] = key;
     const el = rowEls[i], c = css(b.color);
     el.style.setProperty('--c', c);
     el.classList.toggle('dim', r.dim);
     let segs = ''; for (let k = 0; k < r.segs; k++) segs += k < r.n ? '<i class="on"></i>' : '<i></i>';
-    el.innerHTML = `${BIKE_SVG}<span class="hn">${esc(b.name)}</span>${fr}${b.rank ? badgeHtml(b.rank) : ''}<span class="hp">${segs}</span><span class="hv">${r.out ? 'OUT' : r.n}</span>`;
+    el.innerHTML = `${BIKE_SVG}<span class="hn">${esc(b.name)}</span>${ad}${fr}${b.rank ? badgeHtml(b.rank) : ''}<span class="hp">${segs}</span><span class="hv">${r.out ? 'OUT' : r.n}</span>`;
   }
 }
 // Small centred status line under the timer (Death Match: respawn countdown / eliminated). '' hides it.
@@ -223,7 +226,7 @@ function onlineResultHtml(match) {
   const R = onlineResult, dm = match.mode.kind === 'deathmatch';
   const rows = R.rows.slice().sort((a, b) => a.place - b.place || a.id - b.id);
   const me = R.rows.find((r) => r.id === R.meId);
-  const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${r.bot ? '' : badgeHtml(r.rankAfter || r.rankBefore)} ${colored(r.id, esc(r.username))}${friendIcon(r.uid)} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
+  const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${r.bot ? '' : badgeHtml(r.rankAfter || r.rankBefore)} ${colored(r.id, esc(r.username))}${adminIcon(r.admin)}${friendIcon(r.uid)} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
   const first = rows.filter((r) => r.place === 1);
   const title = me && me.won ? 'YOU WIN!' : me && me.place === 1 ? 'TIED FOR 1ST' : first.length === 1 ? `${esc(first[0].username).toUpperCase()} WINS` : 'DRAW';
   let rank = '';
@@ -279,8 +282,10 @@ export function drawMinimap(state) {
     const t = Math.max(0, Math.min(1, (p.y + 4) / 8)); // low -> dark, high -> brighter
     c.fillStyle = `rgba(${Math.round(20 + 60 * t)},${Math.round(60 + 120 * t)},${Math.round(70 + 100 * t)},0.35)`;
     c.strokeStyle = '#3f9';
+    c.save(); if (p.rot) { c.translate(o + (p.x0 + p.x1) / 2 * k, o + (p.z0 + p.z1) / 2 * k); c.rotate(-p.rot); c.translate(-o - (p.x0 + p.x1) / 2 * k, -o - (p.z0 + p.z1) / 2 * k); }
     c.fillRect(o + p.x0 * k, o + p.z0 * k, (p.x1 - p.x0) * k, (p.z1 - p.z0) * k);
     if (!map.walls) c.strokeRect(o + p.x0 * k, o + p.z0 * k, (p.x1 - p.x0) * k, (p.z1 - p.z0) * k);
+    c.restore();
   }
   c.lineWidth = 3; c.lineCap = 'round';
   for (const b of state.bikes) {

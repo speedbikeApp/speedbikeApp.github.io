@@ -5,7 +5,7 @@
 import { CFG } from './config.js';
 import { resetBike, spawnPoints } from './state.js';
 import { resolveTick, resolvePlayerOut, resolveTimeout, applyAwards, matchWinner, placements, rankings } from './rules.js';
-import { MAPS, mapOf, platformArea } from './maps.js';
+import { MAPS, mapOf, platformArea, toWorld } from './maps.js';
 import { probe } from './ai.js';
 
 // A mode is data + crash/timeout policy. kind 'rounds' uses onCrash/onTimeout; kind 'deathmatch' uses CFG.deathMatch.
@@ -51,7 +51,7 @@ export function pickRespawn(state, bike, rng = Math.random) {
     let r = rng() * total, p = P[P.length - 1];
     for (const q of P) { r -= platformArea(q); if (r <= 0) { p = q; break; } }
     const mx = Math.min(D.margin, (p.x1 - p.x0) * 0.4), mz = Math.min(D.margin, (p.z1 - p.z0) * 0.4);
-    const x = p.x0 + mx + rng() * (p.x1 - p.x0 - 2 * mx), z = p.z0 + mz + rng() * (p.z1 - p.z0 - 2 * mz);
+    const [x, z] = toWorld(p, p.x0 + mx + rng() * (p.x1 - p.x0 - 2 * mx), p.z0 + mz + rng() * (p.z1 - p.z0 - 2 * mz));
     let d = 1e4;
     for (const o of others) {
       d = Math.min(d, Math.hypot(o.x - x, o.z - z));
@@ -87,8 +87,9 @@ export function createMatch(state, mode = MODES.standard, rng = Math.random, hoo
     bonusCoins(id) { return m.mode.kind === 'deathmatch' ? (m.kills[id] || 0) * CFG.deathMatch.coinsPerKill : 0; },
 
     startMatch() {
-      const pool = [].concat(m.mode.map); // online clients get the server's pick as start.mapId
-      state.map = MAPS[pool[pool.length > 1 ? Math.floor(m.rng() * pool.length) : 0]] || MAPS.arena;
+      const pool = [].concat(m.mode.map); // online clients get the server's pick as start.mapId (+ start.map for custom maps)
+      const id = pool[pool.length > 1 ? Math.floor(m.rng() * pool.length) : 0];
+      state.map = (hooks.maps && hooks.maps[id]) || MAPS[id] || MAPS.arena; // hooks.maps = server's custom maps {id: def}
       m.scores = {}; for (const b of state.bikes) m.scores[b.id] = 0;
       m.round = 0; m.placements = null; m.ranks = null; m.winner = null; m.lastResult = null;
       if (m.mode.kind === 'deathmatch') { // scores = kills

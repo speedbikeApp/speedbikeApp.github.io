@@ -5,6 +5,7 @@
 // Events: every server message type ('welcome','queued','lobby','start','ev','snap','crash','round','end','announce','rotation','pong','error')
 // plus 'status' ({state, attempt, error}) and 'close'. State: 'idle' | 'connecting' | 'online' | 'offline' | 'denied'.
 import { CFG } from './config.js';
+import { banMessage } from './admin-core.js';
 
 // Server URL: ?server=ws://host:port wins over CFG.net.url.
 export function serverUrl(search = '', cfg = CFG.net) {
@@ -99,6 +100,10 @@ export function createNet(opts = {}) {
         if (sent !== undefined && typeof m.serverNow === 'number') clock.addPong(sent, now(), m.serverNow);
       } else if (m.t === 'error' && (m.code === 'auth_failed' || m.code === 'not_authed') && state !== 'online') {
         wanted = false; setState('denied', 'Sign-in rejected by the server');
+      } else if (m.t === 'banned') {
+        wanted = false; setState('denied', banMessage(m));
+      } else if (m.t === 'error' && m.code === 'deleted') {
+        wanted = false; setState('denied', 'Account deleted');
       } else if (m.t === 'error' && m.code === 'replaced') {
         wanted = false; setState('denied', 'Signed in from another place');
       }

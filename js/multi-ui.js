@@ -109,6 +109,7 @@ function renderLobby(m) {
     row.className = 'lrow' + (p.uid === myUid ? ' me' : '');
     const dot = document.createElement('i'); dot.className = 'dot'; dot.style.setProperty('--c', '#' + CFG.players[(p.colorIdx | 0) % CFG.players.length].color.toString(16).padStart(6, '0'));
     const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.username;
+    if (p.admin) { const ad = document.createElement('span'); ad.className = 'ai'; ad.title = 'Admin'; ad.textContent = '✎'; nm.append(' ', ad); }
     const bd = document.createElement('span'); bd.innerHTML = badgeHtml(p.rank || defaultRank());
     row.append(dot, nm, bd); list.appendChild(row);
   }

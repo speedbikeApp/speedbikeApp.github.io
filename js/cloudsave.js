@@ -82,6 +82,17 @@ export function cloudUserChanged(u) {
   if (uid) pull();
 }
 
+/** An admin edited the cloud progress (server `resync`). Normal: pull + merge now. force: take the cloud values as they are (lets edits that LOWER stats stick; unsynced local changes are dropped). */
+export async function resyncCloud(force) {
+  if (!uid) return;
+  if (!force) { synced = false; return pull(); }
+  const me = uid, g = gen;
+  let cloud; try { cloud = await auth.loadProgress(); } catch { return; }
+  if (g !== gen || me !== uid || !cloud) return;
+  applyProgress(progressOf(parseSave(JSON.stringify(cloud))), me); synced = true;
+  try { onApplied(); } catch { /* ignore */ }
+}
+
 export function initCloudSave() {
   setProgressListener(schedule);
   try {
