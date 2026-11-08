@@ -3,6 +3,7 @@ import { CFG } from './config.js';
 import { abilityCharges } from './save.js';
 import { activeDef, ABILITIES, isActive, canUse, protectLeft } from './abilities.js';
 import { MAPS } from './maps.js';
+import { platformCorners } from './mapdef.js';
 import { getAchievement } from './achievements.js';
 import { getPart } from './parts.js';
 import { badgeHtml, badgeInfo, rankChange } from './rankview.js';
@@ -282,10 +283,8 @@ export function drawMinimap(state) {
     const t = Math.max(0, Math.min(1, (p.y + 4) / 8)); // low -> dark, high -> brighter
     c.fillStyle = `rgba(${Math.round(20 + 60 * t)},${Math.round(60 + 120 * t)},${Math.round(70 + 100 * t)},0.35)`;
     c.strokeStyle = '#3f9';
-    c.save(); if (p.rot) { c.translate(o + (p.x0 + p.x1) / 2 * k, o + (p.z0 + p.z1) / 2 * k); c.rotate(-p.rot); c.translate(-o - (p.x0 + p.x1) / 2 * k, -o - (p.z0 + p.z1) / 2 * k); }
-    c.fillRect(o + p.x0 * k, o + p.z0 * k, (p.x1 - p.x0) * k, (p.z1 - p.z0) * k);
-    if (!map.walls) c.strokeRect(o + p.x0 * k, o + p.z0 * k, (p.x1 - p.x0) * k, (p.z1 - p.z0) * k);
-    c.restore();
+    c.beginPath(); platformCorners(p).forEach(([x, z], i) => c[i ? 'lineTo' : 'moveTo'](o + x * k, o + z * k)); c.closePath(); c.fill();
+    if (!map.walls) c.stroke();
   }
   c.lineWidth = 3; c.lineCap = 'round';
   for (const b of state.bikes) {

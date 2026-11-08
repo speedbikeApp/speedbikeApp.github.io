@@ -26,16 +26,25 @@ function mountPlayers(root) {
   let me = null;
   const run = async (op, args, okText) => { toast(msg, '...'); const r = await adminCall(op, args); if (r.ok) toast(msg, okText || 'DONE', 'ok'); else toast(msg, errText(r), 'bad'); return r; };
 
+  const rows = (ps) => { for (const p of ps) {
+    const row = el('div', 'frRow ' + (p.online ? 'on' : 'off')), nm = el('button', 'nm', p.username + (p.admin ? ' ✎' : ''));
+    nm.type = 'button'; nm.addEventListener('click', () => open(p.uid));
+    row.append(el('span', 'st', p.online ? '[ONLINE]' : '[OFFLINE]'), nm); list.appendChild(row);
+  } };
+  async function browse(after) { // all players A-Z, 50 per page
+    const r = await run('plist', after ? { after } : {}, '');
+    if (!r.ok) return;
+    more.remove(); rows(r.players);
+    if (r.next) { more.onclick = () => browse(r.next); list.appendChild(more); }
+  }
+  const more = btn('LOAD MORE', '', () => {});
   async function search() {
     list.textContent = ''; detail.textContent = '';
+    if (!q.value.trim()) return browse();
     const r = await run('psearch', { q: q.value }, '');
     if (!r.ok) return;
     if (!r.results.length) return void toast(msg, 'NO PLAYERS FOUND');
-    for (const p of r.results) {
-      const row = el('div', 'frRow ' + (p.online ? 'on' : 'off')), nm = el('button', 'nm', p.username + (p.admin ? ' ✎' : ''));
-      nm.type = 'button'; nm.addEventListener('click', () => open(p.uid));
-      row.append(el('span', 'st', p.online ? '[ONLINE]' : '[OFFLINE]'), nm); list.appendChild(row);
-    }
+    rows(r.results);
   }
   form.addEventListener('submit', (e) => { e.preventDefault(); search(); });
 
@@ -84,7 +93,7 @@ function mountPlayers(root) {
     dl.append(cf, db);
     me = p;
   }
-  q.focus();
+  q.focus(); search();
   return () => { me = null; };
 }
 

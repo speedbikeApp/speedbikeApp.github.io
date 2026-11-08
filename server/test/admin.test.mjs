@@ -40,7 +40,7 @@ await mod.hello();
 assert.deepEqual([...parseAdminNames('A, b ,,')], ['a', 'b']);
 
 // ---- non-admin is refused every admin action (and nothing changes)
-for (const [op, a] of [['psearch', { q: 'bo' }], ['pget', { uid: 'uBob' }], ['pban', { uid: 'uBob', permanent: true }], ['punban', { uid: 'uBob' }], ['padmin', { uid: 'uAlice', on: true }],
+for (const [op, a] of [['psearch', { q: 'bo' }], ['plist', {}], ['pget', { uid: 'uBob' }], ['pban', { uid: 'uBob', permanent: true }], ['punban', { uid: 'uBob' }], ['padmin', { uid: 'uAlice', on: true }],
   ['prename', { uid: 'uBob', username: 'Hacked' }], ['pedit', { uid: 'uAlice', coins: 99999 }], ['pdelete', { uid: 'uBob', confirm: 'Bobby' }], ['echo', { x: 1 }], ['nonexistent', {}]]) {
   const r = await alice.op(op, a);
   assert.deepEqual([r.ok, r.code], [false, 'forbidden'], op);
@@ -49,6 +49,16 @@ assert.equal(await adminStore.isAdmin('uAlice'), false); assert.equal(await admi
 assert.equal((await boss.op('nonexistent')).code, 'unknown_op');
 assert.equal((await boss.op('echo', { x: 7 })).got, 7, 'registered op runs for admins');
 assert.equal((await boss.op('psearch', { q: 'x' })).code, 'bad_query');
+
+// ---- plist: alphabetical, paged, limit-capped
+const pl = await boss.op('plist', {});
+const all = pl.players.map((p) => p.username); assert.ok(all.length >= 3 && !pl.next);
+assert.deepEqual(all, [...all].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())), 'sorted by username');
+assert.equal(pl.players.find((p) => p.username === 'Boss').admin, true);
+const p1 = await boss.op('plist', { limit: 2 }), p2 = await boss.op('plist', { limit: 2, after: p1.next });
+assert.equal(p1.players.length, 2); assert.ok(p1.next); assert.deepEqual([...p1.players, ...p2.players].map((p) => p.username).slice(0, all.length), all.slice(0, p1.players.length + p2.players.length));
+assert.equal((await boss.op('plist', { limit: 9999 })).players.length, all.length, 'limit capped at 50');
+assert.equal((await boss.op('plist', { after: 5 })).code, 'bad_query');
 
 // ---- search + get
 const sr = await boss.op('psearch', { q: 'bo' });

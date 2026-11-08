@@ -6,6 +6,7 @@
 //   getUsers(uids)           -> Map uid -> { username } | null (null = the account no longer exists). THROWS on backend errors (never treat
 //                               an error as "deleted").
 //   findByPrefix(lower, n)   -> [{ uid, username }]  (usernames whose lowercase starts with `lower`)
+//   listUsers(after, n)      -> [{ uid, username, key }] up to n users ordered by key (= lowercase username) after the cursor `after` ('' = start)
 //   noteUser(uid, username)  -> dev mode only: remembers who connected (Firestore has users/{uid} + usernames/{lowercase} already)
 //   deleteLinks(uid)         -> drops the friendship doc of a deleted account
 //   flush()
@@ -55,6 +56,9 @@ export function createJsonSocialStore(file) {
       for (const [uid, u] of users) if (u.username.toLowerCase().startsWith(lower)) out.push({ uid, username: u.username });
       return out.sort((a, b) => a.username.toLowerCase().localeCompare(b.username.toLowerCase())).slice(0, limit);
     },
+    async listUsers(after, limit = 20) {
+      return [...users].map(([uid, u]) => ({ uid, username: u.username, key: u.username.toLowerCase() })).filter((u) => u.key > after).sort((a, b) => (a.key < b.key ? -1 : 1)).slice(0, limit);
+    },
     async noteUser(uid, username) { if (!users.has(uid) || users.get(uid).username !== username) { users.set(uid, { username }); save(); } },
     async deleteUser(uid) { users.delete(uid); links.delete(uid); save(); }, // tests (simulates account deletion)
     async deleteLinks(uid) { links.delete(uid); save(); },
@@ -94,6 +98,12 @@ export function createFirestoreSocialStore(db, FieldPath) {
       const found = q.docs.map((d) => ({ uid: d.data().uid, key: d.id })).filter((d) => typeof d.uid === 'string');
       const info = await this.getUsers(found.map((f) => f.uid));
       return found.filter((f) => info.get(f.uid)).map((f) => ({ uid: f.uid, username: info.get(f.uid).username }));
+    },
+    async listUsers(after, limit = 20) {
+      let q = names.orderBy(FieldPath.documentId()); if (after) q = q.startAfter(after);
+      const found = (await q.limit(limit).get()).docs.map((d) => ({ uid: d.data().uid, key: d.id })).filter((d) => typeof d.uid === 'string');
+      const info = await this.getUsers(found.map((f) => f.uid));
+      return found.filter((f) => info.get(f.uid)).map((f) => ({ uid: f.uid, username: info.get(f.uid).username, key: f.key }));
     },
     async noteUser() {},
     async deleteLinks(uid) { await col.doc(uid).delete(); },

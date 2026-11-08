@@ -102,13 +102,13 @@ function buildMap(map) {
     // BoxGeometry material order: +x, -x, +y, -y, +z, -z. Sides are dim circuit boards; the top is the glowing grid.
     const side = (len) => { const m = wallMat(len, SLAB_D / 3); m.color.setScalar(0.85); return m; };
     const mats = [side(d), side(d), floorMaterial(p), new THREE.MeshBasicMaterial({ color: 0x050508 }), side(w), side(w)];
-    const pg = new THREE.Group(); pg.position.set(cx, 0, cz); pg.rotation.y = p.rot || 0; mapGroup.add(pg); // yawed platforms: children are centre-relative
+    const pg = new THREE.Group(); pg.position.set(cx, p.y, cz); pg.rotation.order = 'YXZ'; pg.rotation.set(p.rx || 0, p.rot || 0, p.rz || 0); mapGroup.add(pg); // children are relative to the top-face centre (tilt/yaw pivot)
     const slab = new THREE.Mesh(new THREE.BoxGeometry(w, SLAB_D, d), mats);
-    slab.position.set(0, p.y - 0.01 - SLAB_D / 2, 0); pg.add(slab);
+    slab.position.set(0, -0.01 - SLAB_D / 2, 0); pg.add(slab);
     // glowing frame around the top edge (there are no walls: the edge itself is the border)
     for (const [ex, ez, sx, sz] of [[cx, p.z0, w, EDGE_T], [cx, p.z1, w, EDGE_T], [p.x0, cz, EDGE_T, d], [p.x1, cz, EDGE_T, d]]) {
       const e = new THREE.Mesh(new THREE.BoxGeometry(sx, EDGE_T, sz), slabEdgeMat);
-      e.position.set(ex - cx, p.y, ez - cz); pg.add(e);
+      e.position.set(ex - cx, 0, ez - cz); pg.add(e);
     }
   }
 }
@@ -443,6 +443,16 @@ function updateOrbit(dt) {
   cam.fov += (CFG.camera.fov - cam.fov) * damp(CFG.camera.fovLerp, dt);
   if (Math.abs(camera.fov - cam.fov) > 0.01) { camera.fov = cam.fov; camera.updateProjectionMatrix(); }
 }
+// Menu background: high above the arena centre, looking down, slowly turning (a near-vertical view needs a slight tilt for lookAt).
+function updateTop(dt) {
+  cam.orbit += 0.05 * dt;
+  const h = orbitR * 1.5, r = orbitR * 0.25;
+  want.set(Math.cos(cam.orbit) * r, h, Math.sin(cam.orbit) * r);
+  camera.position.lerp(want, damp(2, dt));
+  look.set(0, 0, 0); camera.lookAt(look);
+  cam.fov += (CFG.camera.fov - cam.fov) * damp(CFG.camera.fovLerp, dt);
+  if (Math.abs(camera.fov - cam.fov) > 0.01) { camera.fov = cam.fov; camera.updateProjectionMatrix(); }
+}
 // Call at every round start: snap the camera back to the player and clear leftover effects.
 export function resetCamera() { cam.yaw = null; cam.specId = null; cam.y = 0; cam.fall = 0; }
 export function resetEffects() {
@@ -452,7 +462,7 @@ export function resetEffects() {
 }
 
 // extra = seconds since the last physics tick (0 when frozen); bikes/newest trail ends are extrapolated by it.
-export function render(state, dt, followId, extra = 0) {
+export function render(state, dt, followId, extra = 0, overview = false) {
   if (editorView) { // map editor (js/admin-maps.js) owns the camera and the scene content
     if (editorView.dirty || editorView.map !== curMap) { buildMap(editorView.map); editorView.dirty = false; }
     editorView.frame(dt);
@@ -480,7 +490,8 @@ export function render(state, dt, followId, extra = 0) {
     syncTrail(b, v, ex + (b.vox ? b.vox * b.dx : 0) + (b.voz ? b.voz * b.dz : 0), dt); // trail head follows the part of the offset along the heading
     if (b.alive) { if (b.id === followId) follow = b; else if (b.id === cam.specId) alt = b; }
   }
-  if (follow) { cam.specId = null; const v = bikeViews.get(follow.id); updateChase(follow, v.px, v.pz, dt, 0); }
+  if (overview) updateTop(dt);
+  else if (follow) { cam.specId = null; const v = bikeViews.get(follow.id); updateChase(follow, v.px, v.pz, dt, 0); }
   else {
     if (!alt) { // pick a survivor to spectate (first alive), or orbit if none
       cam.specId = null;

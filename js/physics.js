@@ -1,7 +1,7 @@
 // Pure logic (no three). Fixed-step movement + swept collision.
 import { CFG } from './config.js';
 import { newSegment } from './state.js';
-import { mapOf, groundAt } from './maps.js';
+import { mapOf, groundAt, tiltOf, MAX_TILT } from './maps.js';
 import { hooks, tickAbilities, speedMult, boostDuration, jumpRecharge, canDoubleJump, isProtected } from './abilities.js';
 
 const EPS = 1e-6;
@@ -83,7 +83,8 @@ function updateAbilities(b, dt) {
 // falling when the ground ends, and follows steps within Y_TOL.
 function settle(b, map, yPrev, dt) {
   const g = groundAt(map, b.x, b.z);
-  if (g > yPrev + Y_TOL) return 'side';
+  const tol = map.platforms.some(tiltOf) ? Y_TOL + b.speed * dt * Math.tan(MAX_TILT) : Y_TOL; // ramps: climbing/descending one tick of a max slope is not a step
+  if (g > yPrev + tol) return 'side';
   if (b.jumpT >= 0) { // scripted arc: lands when it comes down onto ground
     if (g > -Infinity && b.y <= g + 1e-9 && b.y < yPrev) {
       b.y = g; b.jumpT = -1; b.djUsed = false; b.falling = false; b.vy = 0; b.justLanded = true;
@@ -91,7 +92,7 @@ function settle(b, map, yPrev, dt) {
     return undefined;
   }
   if (!b.falling) {
-    if (g >= b.y - Y_TOL) { if (g !== b.y) { b.y = g; } return undefined; } // flat ground / small step
+    if (g >= b.y - tol) { if (g !== b.y) { b.y = g; } return undefined; } // flat ground / small step
     b.falling = true; b.vy = 0;
   }
   b.vy -= CFG.gravity * dt; b.y += b.vy * dt;

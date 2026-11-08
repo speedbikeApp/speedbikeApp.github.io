@@ -62,6 +62,13 @@ const ls = await boss.op('mapList'); assert.deepEqual(ls.maps.map((m) => [m.name
 const g = await boss.op('mapGet', { id: s1.mapId }); assert.equal(g.map.name, 'Alpha'); assert.ok(g.updatedAt > 0);
 const up = await boss.op('mapSave', { id: s1.mapId, map: { ...g.map, name: 'Alpha2' } }); assert.equal(up.mapId, s1.mapId); assert.equal((await boss.op('mapGet', { id: s1.mapId })).map.name, 'Alpha2');
 assert.equal((await boss.op('mapList')).maps.length, 2, 'update does not duplicate');
+// ramps: rx/rz are stored; too steep is refused; spawn y follows the slope; then removed again so the pool checks below stay exact
+const rampMap = (a) => { const m = base('Ramp'); m.platforms = [{ x0: -20, z0: -20, x1: 20, z1: 20, y: 0, rx: 0.2, rz: -0.1, ...a }]; m.killY = -20; return m; };
+const sr = await boss.op('mapSave', { map: rampMap() }); assert.ok(sr.ok, sr.why);
+assert.deepEqual([sr.map.platforms[0].rx, sr.map.platforms[0].rz], [0.2, -0.1]); assert.notEqual(sr.map.spawns[1].y, 0, 'spawn height derived from the tilted surface');
+const stp = await boss.op("mapSave", { map: rampMap({ rx: 1.2 }) }); assert.equal(stp.ok, false); assert.match(stp.why, /TOO STEEP/);
+assert.equal((await boss.op('mapSave', { map: rampMap({ rz: 'x' }) })).ok, false);
+assert.ok((await boss.op('mapDelete', { id: sr.mapId })).ok);
 
 // pool: custom maps join standard + deathmatch (not hyper; 3d only when tiered)
 const pool = app.mapPool;

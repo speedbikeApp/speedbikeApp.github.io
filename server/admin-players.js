@@ -1,5 +1,6 @@
 // PLAYERS tab ops. args are untrusted (admin.js already verified the sender is an admin). Ops:
-//   psearch {q} -> {results:[{uid,username,online,admin}]}      pget {uid} -> {player}
+//   psearch {q} -> {results:[{uid,username,online,admin}]}   plist {after?, limit<=50} -> {players:[{uid,username,online,admin}], next?} (by username)
+//       pget {uid} -> {player}
 //   pban {uid, minutes | permanent:true, reason?}   punban {uid}   padmin {uid, on}
 //   prename {uid, username}   pedit {uid, coins?, stats?:{key:number}}   pdelete {uid, confirm:<their username>}
 import { normalizeQuery, isUid } from './protocol.js';
@@ -26,6 +27,14 @@ export function registerPlayerOps(deps) {
     const q = normalizeQuery(a.q); if (!q) throw E('bad_query');
     const [found, admins] = await Promise.all([socialStore.findByPrefix(q, 20), adminStore.adminUids()]);
     return { results: found.map((f) => ({ uid: f.uid, username: f.username, online: !!sessionOf(f.uid), admin: admins.has(f.uid) || admin.isBootstrap(f.username) })) };
+  });
+
+  admin.register('plist', async (a) => {
+    if (a.after !== undefined && (typeof a.after !== 'string' || a.after.length > 64)) throw E('bad_query');
+    const limit = Number.isInteger(a.limit) ? Math.min(50, Math.max(1, a.limit)) : 50;
+    const [rows, admins] = await Promise.all([socialStore.listUsers(a.after || '', limit + 1), adminStore.adminUids()]); // +1 row tells whether more follow
+    const page = rows.slice(0, limit);
+    return { players: page.map((f) => ({ uid: f.uid, username: f.username, online: !!sessionOf(f.uid), admin: admins.has(f.uid) || admin.isBootstrap(f.username) })), ...(rows.length > limit ? { next: page[page.length - 1].key } : {}) };
   });
 
   admin.register('pget', async (a) => {

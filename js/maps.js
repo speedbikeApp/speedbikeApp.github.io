@@ -6,6 +6,8 @@
 //   killY   : a falling bike below this height crashes (no platform to catch it).
 //   platform.rot : optional yaw in radians about the platform centre (absent = 0; Three's rotation.y sense). Support / fall / side-crash all go
 //                  through groundAt(), which maps the point into the platform's local frame.
+//   platform.rx / rz : optional pitch / roll in radians (Euler order YXZ with rot; pivot = top-face centre). Tilted = ramp: groundAt returns the
+//                  plane height; |tilt| <= MAX_TILT (mapdef.js validates). Absent = 0.
 //   spawns  : optional fixed spawn list [{x,z,dx,dz,y}] ordered S,W,N,E (null = computed from CFG.arena.half).
 import { CFG } from './config.js';
 
@@ -90,15 +92,32 @@ export function toWorld(p, x, z) {
   const cx = (p.x0 + p.x1) / 2, cz = (p.z0 + p.z1) / 2, dx = x - cx, dz = z - cz, c = Math.cos(p.rot), s = Math.sin(p.rot);
   return [cx + dx * c + dz * s, cz - dx * s + dz * c];
 }
-// Highest platform top containing (x,z), or -Infinity over the void. Bounds inclusive (a bike on the very edge is supported).
+export const MAX_TILT = 40 * Math.PI / 180; // steepest ramp (angle of the surface normal from vertical); validateMap enforces it
+export const tiltOf = (p) => !!(p.rx || p.rz);
+// Platform frame (Three Euler 'YXZ' = Ry(rot) Rx(rx) Rz(rz)): world directions of local x, y (normal), z. Pivot = top-face centre (cx, y, cz).
+export function axes(p) {
+  const ca = Math.cos(p.rot || 0), sa = Math.sin(p.rot || 0), cb = Math.cos(p.rx || 0), sb = Math.sin(p.rx || 0), cc = Math.cos(p.rz || 0), sc = Math.sin(p.rz || 0);
+  return [[ca * cc + sa * sb * sc, cb * sc, -sa * cc + ca * sb * sc], [-ca * sc + sa * sb * cc, cb * cc, sa * sc + ca * sb * cc], [sa * cb, -sb, ca * cb]];
+}
+// Height of platform p's top surface at (x,z), or -Infinity outside its footprint. Tilted platforms are planes through the pivot.
+function topAt(p, x, z) {
+  if (!tiltOf(p)) {
+    const [lx, lz] = p.rot ? toLocal(p, x, z) : [x, z];
+    return lx >= p.x0 - E && lx <= p.x1 + E && lz >= p.z0 - E && lz <= p.z1 + E ? p.y : -Infinity;
+  }
+  const [ex, ey, ez] = axes(p), dx = x - (p.x0 + p.x1) / 2, dz = z - (p.z0 + p.z1) / 2, dy = -(ey[0] * dx + ey[2] * dz) / ey[1];
+  const lx = ex[0] * dx + ex[1] * dy + ex[2] * dz, lz = ez[0] * dx + ez[1] * dy + ez[2] * dz;
+  return Math.abs(lx) <= (p.x1 - p.x0) / 2 + E && Math.abs(lz) <= (p.z1 - p.z0) / 2 + E ? p.y + dy : -Infinity;
+}
+// Highest platform top at (x,z), or -Infinity over the void. Bounds inclusive (a bike on the very edge is supported).
 export function groundAt(map, x, z) {
   const P = map.platforms;
   let g = -Infinity;
   for (let i = 0; i < P.length; i++) {
     const p = P[i];
-    if (p.y <= g) continue;
-    const [lx, lz] = p.rot ? toLocal(p, x, z) : [x, z];
-    if (lx >= p.x0 - E && lx <= p.x1 + E && lz >= p.z0 - E && lz <= p.z1 + E) g = p.y;
+    if (p.y <= g && !p.rx && !p.rz) continue;
+    const h = topAt(p, x, z);
+    if (h > g) g = h;
   }
   return g;
 }

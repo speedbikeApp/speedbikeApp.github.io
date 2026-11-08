@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { groundAt, toLocal, toWorld, MAPS } from '../js/maps.js';
 import { step } from '../js/physics.js';
 import { createBike, createState } from '../js/state.js';
-import { validateMap, rectPlatform, rayBox, groundHit, pickObject, dirOfYaw, yawOfDir, isTiered, platformCorners } from '../js/mapdef.js';
+import { validateMap, rectPlatform, rayBox, groundHit, pickObject, dirOfYaw, yawOfDir, isTiered, platformCorners, platformBox } from '../js/mapdef.js';
 import { pickRespawn } from '../js/modes.js';
 
 const dt = 1 / 120;
@@ -80,4 +80,45 @@ const good = () => ({ name: 'My Map_1', half: 36, killY: -14, platforms: [{ x0: 
 { // built-in maps still validate-free: no rot anywhere
   for (const m of Object.values(MAPS)) for (const p of m.platforms) assert.equal(p.rot, undefined);
 }
+{ // ramps: pitch/roll tilt a platform into a sloped surface (pivot = top-face centre)
+  const up = (a) => ({ x0: 0, z0: -5, x1: 20, z1: 5, y: 0, ...a });
+  const map = { platforms: [up({ rz: 0.3 })] };
+  near(groundAt(map, 10, 0), 0); const hl = groundAt(map, 5, 0), hr = groundAt(map, 15, 0);
+  near(hl + hr, 0, 1e-9); near((hr - hl) / 10, Math.tan(0.3), 1e-9); // rises toward +x with slope tan(tilt)
+  assert.equal(groundAt(map, 21, 0), -Infinity); assert.equal(groundAt(map, 10, 6), -Infinity);
+  const pm = { platforms: [up({ rx: 0.3 })] }; near(Math.abs(groundAt(pm, 10, 4) - groundAt(pm, 10, -4)) / 8, Math.tan(0.3), 1e-9); // pitch slopes along z
+  near(groundAt({ platforms: [up({ rot: 0.7, rz: 0.2 })] }, 10, 0), 0);
+  assert.equal(platformCorners(up({ rz: 0.3 })).length, 4);
+  const pk = { platforms: [{ x0: -10, z0: -10, x1: 10, z1: 10, y: 0, rz: 0.5 }], spawns: [] };
+  assert.deepEqual(pickObject(pk, [0, 10, 0], [0, -1, 0]), { kind: 'platform', index: 0 });
+  near(rayBox([8, 30, 0], [0, -1, 0], platformBox(pk.platforms[0])), 30 - groundAt(pk, 8, 0), 1e-6); // pick volume follows the tilt
+}
+{ // a bike drives up a ramp: no side crash, y follows the surface; off the far edge it falls (void)
+  const rz = 0.5, ry = Math.sin(rz) * 10, fx = 10 - 10 * Math.cos(rz); // ramp foot (x=fx, y=0) meets the flat platform
+  const map = { half: 80, killY: -30, walls: false, platforms: [{ x0: -60, z0: -10, x1: fx + 0.02, z1: 10, y: 0 }, { x0: 0, z0: -10, x1: 20, z1: 10, y: ry, rz }] };
+  near(groundAt(map, fx + 0.01, 0), 0, 0.02);
+  for (const sp of [15, 40]) {
+    const s = createState(); s.map = map; const b = createBike(0, 0, -30, 0, 1, 0); b.speed = b.baseSpeed = sp; s.bikes.push(b);
+    let ev = [], top = -9, lastY = 0;
+    for (let i = 0; i < 120 * 6 && !ev.length; i++) { ev = step(s, dt); if (b.x > fx + 0.5 && b.x < 18 && !ev.length) { near(b.y, groundAt(map, b.x, b.z), 1e-6); assert.ok(!b.falling); } top = Math.max(top, b.y); }
+    assert.ok(top > 8, `rode up the ramp at ${sp}: top ${top}`); assert.equal(ev[0].cause, 'void', 'fell off the high edge, no side crash'); assert.ok(b.x > 19.5, `${b.x}`);
+  }
+  const s = createState(); s.map = map; const b = createBike(0, 0, 18, 0, -1, 0); s.bikes.push(b); b.y = groundAt(map, 18, 0); // and back down
+  for (let i = 0; i < 120 * 3; i++) { const ev = step(s, dt); assert.equal(ev.length, 0); if (b.x < 5) break; assert.ok(!b.falling); }
+  const flat = { half: 80, killY: -30, walls: false, platforms: [{ x0: -60, z0: -10, x1: 0, z1: 10, y: 0 }, { x0: 0, z0: -10, x1: 20, z1: 10, y: 1 }] };
+  const t = createState(); t.map = flat; const c = createBike(0, 0, -10, 0, 1, 0); t.bikes.push(c);
+  let ev = []; for (let i = 0; i < 120 * 3 && !ev.length; i++) ev = step(t, dt);
+  assert.equal(ev[0].cause, 'side', 'a step up at a flat platform side still crashes');
+}
+{ // validation of tilt
+  const t = (a) => { const m = good(); m.platforms[0] = { ...m.platforms[0], ...a }; return validateMap(m); };
+  const ok = t({ rx: 0.2 }); assert.ok(ok.ok, ok.why); assert.equal(ok.map.platforms[0].rx, 0.2); assert.equal(ok.map.platforms[0].rz, undefined);
+  assert.match(t({ rz: 0.9 }).why, /TOO STEEP/); assert.match(t({ rx: -0.8 }).why, /TOO STEEP/); assert.match(t({ rx: NaN }).why, /TOO STEEP/);
+  assert.match(t({ rx: 0.65, rz: 0.65 }).why, /TOO STEEP/, 'combined tilt past the limit');
+  const mk = good(); mk.half = 40; mk.platforms[0] = { x0: -30, z0: -30, x1: 30, z1: 30, y: 0, rx: 0.5 }; mk.killY = -3; // lowest corner ~ -15 -> killY must be below it
+  assert.equal(validateMap(mk).ok, false); assert.match(validateMap(mk).why, /KILL/); mk.killY = -20; assert.equal(validateMap(mk).ok, true);
+  const sp = good(); sp.platforms[0].rz = 0.3; sp.platforms[0].x0 = -20; sp.platforms[0].x1 = 20; sp.platforms[0].z0 = -20; sp.platforms[0].z1 = 20; sp.killY = -20;
+  const v = validateMap(sp); assert.ok(v.ok, v.why); assert.ok(Math.abs(v.map.spawns[1].y - groundAt(v.map, -18, 0)) < 0.01 && v.map.spawns[1].y !== 0, 'spawn y follows the ramp');
+}
+{ for (const m of Object.values(MAPS)) for (const p of m.platforms) assert.ok(p.rx === undefined && p.rz === undefined); }
 console.log('mapedit tests passed');

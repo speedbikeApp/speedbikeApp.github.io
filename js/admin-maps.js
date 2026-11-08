@@ -1,7 +1,7 @@
 // ADMIN > MAPS tab: pick / create / delete custom maps, then a full-screen 3D editor (free camera, floating TOOLS + SETTINGS windows).
 // Server ops (server/admin-maps.js): mapList, mapGet {id}, mapSave {id?, map}, mapDelete {id}. Pure maths + validation: js/mapdef.js (also run by the server).
 // Editor controls: WASD move (relative to the view), Space up, Shift down, hold LEFT mouse + drag = look (PLATFORM tool: drag draws, Alt+drag looks),
-// RIGHT click = select object under the mouse, Del = delete selected, Esc = close. DOM + three only; the render loop is render.js (setEditorView).
+// RIGHT click = select object under the mouse (hold + drag = move it on the horizontal plane at its height), Del = delete selected, Esc = close. DOM + three only; the render loop is render.js (setEditorView).
 import * as THREE from 'three';
 import { registerAdminTab, ADMIN_ERR } from './admin-core.js';
 import { scene, camera, setEditorView, makeBikeMesh } from './render.js';
@@ -45,7 +45,7 @@ const CSS = `body.mapEditing > *:not(canvas):not(#mapEd) { display: none !import
 /** Open the editor on `def` (working copy, mutated in place). onClose(savedId|null) after it closes. */
 function openEditor({ def, id, call, onClose }) {
   const m = def;
-  let curId = id, dirty = false, tool = 'select', sel = null, newY = 0, spawnsDirty = true, drag = null;
+  let curId = id, dirty = false, tool = 'select', sel = null, newY = 0, spawnsDirty = true, drag = null, mv = null;
   const keys = new Set(), view = { map: m, dirty: true, frame };
   const cam = { x: 0, y: Math.max(40, m.half * 0.9), z: m.half * 0.9, yaw: 0, pitch: -0.75 };
   const st = el('style'); st.textContent = CSS; document.head.append(st);
@@ -55,14 +55,14 @@ function openEditor({ def, id, call, onClose }) {
     h.addEventListener('pointermove', (e) => { if (o) { w.style.left = Math.max(0, e.clientX - o[0]) + 'px'; w.style.top = Math.max(0, e.clientY - o[1]) + 'px'; } });
     h.addEventListener('pointerup', () => { o = null; }); return w; };
   const tools = win('TOOLS', '12px', '12px'), setw = win('SETTINGS', 'calc(100vw - 260px)', '12px'), bar = el('div'); bar.id = 'mapEdBar'; root.append(bar);
-  const status = el('span'), hint = el('span', 'hint', 'WASD MOVE | SPACE UP | SHIFT DOWN | HOLD LEFT MOUSE: LOOK | RIGHT CLICK: SELECT | DEL: DELETE | ESC: CLOSE');
+  const status = el('span'), hint = el('span', 'hint', 'WASD MOVE | SPACE UP | SHIFT DOWN | HOLD LEFT MOUSE: LOOK | RIGHT CLICK: SELECT, HOLD + DRAG: MOVE | DEL: DELETE | ESC: CLOSE');
   bar.append(status, hint);
   const say = (t, k) => { status.textContent = t; status.className = k || ''; };
 
   // ---- scene extras: spawn bikes, selection box, platform drag preview ----
   const extras = new THREE.Group(); scene.add(extras);
   const spawnG = new THREE.Group(); extras.add(spawnG);
-  const selBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), new THREE.LineBasicMaterial({ color: new THREE.Color(0xffdd33).multiplyScalar(2) })); selBox.visible = false; extras.add(selBox);
+  const selBox = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)), new THREE.LineBasicMaterial({ color: new THREE.Color(0xffdd33).multiplyScalar(2) })); selBox.visible = false; selBox.rotation.order = 'YXZ'; extras.add(selBox);
   const ghost = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.35, depthWrite: false })); ghost.visible = false; extras.add(ghost);
   const freeSpawn = (g) => { for (const mt of g.userData.mats) mt.dispose(); g.userData.arrow.dispose(); }; // bike geometries are shared / cached: never disposed
   function rebuildSpawns() {
@@ -79,7 +79,7 @@ function openEditor({ def, id, call, onClose }) {
     selBox.visible = !!sel;
     if (!sel) return;
     const b = sel.kind === 'platform' ? platformBox(m.platforms[sel.index]) : spawnBox(m.spawns[sel.index]);
-    selBox.position.set(b.cx, b.cy, b.cz); selBox.scale.set(b.hx * 2 + 0.2, b.hy * 2 + 0.2, b.hz * 2 + 0.2); selBox.rotation.y = b.rot;
+    selBox.position.set(b.cx, b.cy, b.cz); selBox.scale.set(b.hx * 2 + 0.2, b.hy * 2 + 0.2, b.hz * 2 + 0.2); selBox.rotation.set(b.rx || 0, b.rot, b.rz || 0);
   }
   function frame(dt) {
     const K = (c) => (keys.has(c) ? 1 : 0), sp = 26 * dt, s = Math.sin(cam.yaw), c = Math.cos(cam.yaw);
@@ -128,7 +128,7 @@ function openEditor({ def, id, call, onClose }) {
       field(setw, 'Z', cz, (v) => { const h = d() / 2; p.z0 = r4(v - h); p.z1 = r4(v + h); });
       field(setw, 'WIDTH', w, (v) => { if (v > 0) { const c = cx(); p.x0 = r4(c - v / 2); p.x1 = r4(c + v / 2); } });
       field(setw, 'DEPTH', d, (v) => { if (v > 0) { const c = cz(); p.z0 = r4(c - v / 2); p.z1 = r4(c + v / 2); } });
-      field(setw, 'ROTATION (DEG)', () => (p.rot || 0) * DEG, (v) => { p.rot = v / DEG; if (!p.rot) delete p.rot; }, { step: 5 });
+      for (const [k, l] of [['rx', 'ROTATION X (PITCH)'], ['rot', 'ROTATION Y (YAW)'], ['rz', 'ROTATION Z (ROLL)']]) field(setw, l + ' DEG', () => (p[k] || 0) * DEG, (v) => { p[k] = v / DEG; if (!p[k]) delete p[k]; }, { step: 5 });
     } else if (sel) {
       const s = m.spawns[sel.index];
       setw.append(el('b', '', 'SPAWN POINT ' + (sel.index + 1)));
@@ -160,13 +160,25 @@ function openEditor({ def, id, call, onClose }) {
   root.addEventListener('pointerdown', (e) => {
     if (e.target !== root) return;
     root.setPointerCapture(e.pointerId);
-    if (e.button === 2) return pickAt(e);
+    if (e.button === 2) { // select; holding and dragging moves the object on the horizontal plane at its height
+      pickAt(e); if (!sel) return;
+      const o = sel.kind === 'platform' ? m.platforms[sel.index] : m.spawns[sel.index], [ro, rd] = rayOf(e), y = o.y, g = groundHit(ro, rd, y);
+      mv = g && { o, y, g, sx: e.clientX, sy: e.clientY, on: false, x0: o.x0, x1: o.x1, z0: o.z0, z1: o.z1, x: o.x, z: o.z };
+      return;
+    }
     if (e.button !== 0 && e.button !== 1) return;
     const look = e.button === 1 || e.altKey || tool !== 'platform';
     drag = { look, sx: e.clientX, sy: e.clientY, lx: e.clientX, ly: e.clientY, moved: false, a: null, b: null };
     if (!look) { const [o, d] = rayOf(e); drag.a = groundHit(o, d, newY); }
   });
   root.addEventListener('pointermove', (e) => {
+    if (mv) {
+      if (!mv.on && Math.hypot(e.clientX - mv.sx, e.clientY - mv.sy) < 5) return;
+      const [o, d] = rayOf(e), g = groundHit(o, d, mv.y); if (!g) return;
+      mv.on = true; const dx = Math.round((g[0] - mv.g[0]) * 2) / 2, dz = Math.round((g[1] - mv.g[1]) * 2) / 2, q = mv.o;
+      if (sel.kind === 'platform') { q.x0 = r4(mv.x0 + dx); q.x1 = r4(mv.x1 + dx); q.z0 = r4(mv.z0 + dz); q.z1 = r4(mv.z1 + dz); } else { q.x = r4(mv.x + dx); q.z = r4(mv.z + dz); }
+      changed(); buildSettings(); return;
+    }
     if (!drag) return;
     if (drag.look) {
       if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 5) return;
@@ -178,6 +190,7 @@ function openEditor({ def, id, call, onClose }) {
     }
   });
   const up = (e) => {
+    mv = null;
     if (!drag) return; const dg = drag; drag = null; ghost.visible = false;
     if (e.type === 'pointercancel') return;
     if (!dg.look && dg.a && dg.b) {

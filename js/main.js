@@ -8,6 +8,7 @@ import { initHud, setTimer, setPing, setScoreboard, setStatus, showPause, showLe
 import { createAI, updateAIs } from './ai.js';
 import { useAbility, cycleAbility, setLoadout, activeDef, ABILITIES } from './abilities.js';
 import { createMatch, MODES } from './modes.js';
+import { MAPS } from './maps.js';
 import { getSave, addSessionStats, recordMatch, recordRound, flushSave, abilityCharges, spendAbility, spendPassives } from './save.js';
 import { glowHex, DEFAULT_PARTS, resolveAiColors } from './parts.js';
 import { initMenu, showScreen, applySettings, closeSettings, inSettings, currentScreen, menuBack } from './menu.js';
@@ -73,24 +74,46 @@ function startGame(id) {
   setBikeStyle(state.bikes[state.playerId], eq);
   aiDefs.forEach((a, i) => { const b = state.bikes[i + 1]; b.color = a.color; b.name = a.name; setBikeInfo(b.id, a.name, a.color); setBikeStyle(b, DEFAULT_PARTS); });
   roundCnt = { boosts: 0, jumps: 0 };
+  demoMap = null; state.playerId = 0; // a real game ends the menu mock match; the next one gets a new random map
   screen = 'game'; rewarded = false; setMatchReward(null);
   document.body.classList.remove('menu');
   clearPause(); clearQueue();
   state.tick = 0;
   match.startMatch();
 }
+// Menu background: 4 bots play endlessly on a random built-in map (picked once per menu visit after a real game, not on every
+// return from garage/settings). Never touches the save/audio/HUD: trackMatch/trackAudio/session only run for real games.
+let demoMap = null;
+function startDemo() {
+  if (!demoMap) { const ids = Object.keys(MAPS); demoMap = ids[Math.floor(Math.random() * ids.length)]; }
+  state.playerId = -1; // nobody is "the player": plain bot-vs-bot rules, camera follows a survivor
+  match.setMode({ ...MODES.standard, map: demoMap, winPoints: 1e9 });
+  ais.clear();
+  state.bikes.forEach((b, i) => { ais.set(b.id, createAI(1, i * 2)); setLoadout(b, []); b.color = CFG.players[i].color; setBikeStyle(b, DEFAULT_PARTS); });
+  state.tick = 0;
+  match.startMatch();
+}
+function demoTick() {
+  if (match.phase === 'matchEnd') match.startMatch(); // same map, fresh match
+  if (match.phase !== 'running') { match.advance(DT); return; }
+  updateAIs(state, ais, state.tick++);
+  const events = step(state, DT);
+  for (const e of events) { const b = state.bikes.find((v) => v.id === e.victim); burst(b.x, b.z, b.color, b.y + 0.8); }
+  match.onTick(events, DT);
+}
 function quitToMenu() {
   commitSession(); flushSave();
   screen = 'menu'; clearPause();
-  for (const b of state.bikes) { b.alive = false; b.trail.length = 0; } // empty arena behind the menu (camera orbits)
-  match.phase = 'idle'; resetEffects();
+  for (const b of state.bikes) { b.alive = false; b.trail.length = 0; }
+  match.phase = 'idle'; resetEffects(); syncOverlays(match); audio.setEngine(false, 0, 1, false);
   showScreen('scrMain');
+  startDemo();
 }
 
 // ---- online match glue (the sim / HUD feed lives in online.js) ----
 function startOnline(msg) {
   commitSession(); flushSave();
-  screen = 'online'; clearPause(); clearQueue();
+  screen = 'online'; clearPause(); clearQueue(); demoMap = null;
   online.begin(msg, state, spBikes, (why) => { quitToMenu(); if (why) showAnnounce(why); });
 }
 function setLeave(on) { if (screen !== 'online' || online.match.phase === 'matchEnd') on = false; leaveOpen = on; showLeave(on); }
@@ -230,6 +253,13 @@ function frameOnline(now, dt) {
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.1); last = now;
   if (screen === 'online' && online.isActive()) { frameOnline(now, dt); requestAnimationFrame(frame); return; }
+  if (screen === 'menu') { // background mock match: sim + render only, 30 Hz-safe cap on catch-up
+    acc += dt;
+    for (let n = 0; acc >= DT && n < 4; n++) { demoTick(); acc -= DT; }
+    acc %= DT;
+    render(state, dt, -1, match.phase === 'running' ? acc : 0, true); // true = top-down overview, no bike followed
+    requestAnimationFrame(frame); return;
+  }
   if (screen === 'game' && !paused) {
     acc += dt;
     while (acc >= DT) { tick(); acc -= DT; }
