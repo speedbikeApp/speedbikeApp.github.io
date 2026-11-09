@@ -557,6 +557,14 @@ export function render(state, dt, followId, extra = 0, overview = false) {
   if (composer && bloomStrength > 0) composer.render(dt); else renderer.render(scene, camera);
 }
 
+// Spectating (our bike is out): left (-1) / right (+1) switches the camera to the previous / next bike still alive.
+export function spectateNext(state, dir, selfId) {
+  const ids = state.bikes.filter((b) => b.alive && b.id !== selfId).map((b) => b.id);
+  if (!ids.length) return;
+  const i = ids.indexOf(cam.specId);
+  cam.specId = ids[i < 0 ? 0 : (i + dir + ids.length) % ids.length];
+}
+
 // Map-select screen: just `map` seen from the menu's top-down orbit, no bikes / trails / debris (render() shows them again).
 export function renderMapPreview(map, dt) {
   if (map !== curMap) buildMap(map);

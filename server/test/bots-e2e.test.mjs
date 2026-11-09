@@ -62,7 +62,7 @@ assert.equal(eva.id, ia.id); assert.equal(eva.ability, 'turbo'); assert.deepEqua
 press(); a.send({ t: 'in', kind: 'ability', ability: 'stealth' }); // stealth is not in h1's loadout
 await sleep(300);
 assert.equal(a.msgs.filter((m) => m.t === 'ev' && m.kind === 'ability').length, 1, 'cooldown + not-equipped activations refused');
-const snap = [...a.msgs].reverse().find((m) => m.t === 'snap' && m.bikes[ia.id].ab);
+const snap = a.msgs.find((m) => m.t === 'snap' && m.tick > eva.tick && m.bikes[ia.id].ab?.cd?.turbo > 0); // after the press (the event carries the input tick; a later round reset clears it)
 assert.ok(snap && snap.bikes[ia.id].ab.cd.turbo > 0, 'snapshots carry the cooldown');
 // bots drive (events from bot bikes reach the humans)
 await a.next((m) => m.t === 'ev' && m.id >= 2 && m.kind === 'turn');

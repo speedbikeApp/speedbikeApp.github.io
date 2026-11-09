@@ -68,9 +68,13 @@
   #chevL { left: calc(10px * var(--hud)); } #chevR { right: calc(10px * var(--hud)); }
   #chevL { clip-path: polygon(100% 0, 0 50%, 100% 100%, 70% 50%); } #chevR { clip-path: polygon(0 0, 100% 50%, 0 100%, 30% 50%); }
   .chev.lit { background: #0ff; filter: drop-shadow(0 0 6px #0ff); transition: none; }
-  .abArrow { pointer-events: auto; width: 30px; height: 48px; padding: 0; border: 0; cursor: pointer; background: rgba(0,255,255,.55); touch-action: none; visibility: hidden; -webkit-tap-highlight-color: transparent; }
-  .abArrow:active { background: #0ff; filter: drop-shadow(0 0 6px #0ff); }
-  #abPrev { clip-path: polygon(100% 0, 0 50%, 100% 100%, 70% 50%); } #abNext { clip-path: polygon(0 0, 100% 50%, 0 100%, 30% 50%); }
+  /* power-up arrows: the drawn arrow (::before, clip-path) stays 30x48, the button around it is a larger invisible tap target that
+     grows outward (away from the hexagon) so it never covers the ability button */
+  .abArrow { pointer-events: auto; position: relative; width: 64px; height: 92px; margin: -22px 0; padding: 0; border: 0; cursor: pointer; background: none; touch-action: none; visibility: hidden; -webkit-tap-highlight-color: transparent; }
+  .abArrow::before { content: ''; position: absolute; top: 22px; width: 30px; height: 48px; background: rgba(0,255,255,.55); }
+  .abArrow:active::before { background: #0ff; filter: drop-shadow(0 0 6px #0ff); }
+  #abPrev { margin-left: -34px; } #abPrev::before { right: 0; clip-path: polygon(100% 0, 0 50%, 100% 100%, 70% 50%); }
+  #abNext { margin-right: -34px; } #abNext::before { left: 0; clip-path: polygon(0 0, 100% 50%, 0 100%, 30% 50%); }
   /* ---- abilities screen ---- */
   #abList { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
   .abItem { padding: 6px 10px; display: flex; flex-direction: column; gap: 3px; font-size: 12px; letter-spacing: 1px; text-align: left; }

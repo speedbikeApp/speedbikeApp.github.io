@@ -2,7 +2,7 @@ import { CFG } from './config.js';
 import { createState, createBike } from './state.js';
 import { step, turnBike, canTurn, isAirborne, startBoost, startJump } from './physics.js';
 import { initInput, popTurn, popAction, pushAction, clearQueue, setOnPause } from './input.js';
-import { render, renderMapPreview, burst, resetCamera, resetEffects, setBikeStyle } from './render.js';
+import { render, renderMapPreview, burst, resetCamera, resetEffects, setBikeStyle, spectateNext } from './render.js';
 import * as audio from './audio.js';
 import { initHud, setTimer, setPing, setScoreboard, setStatus, showPause, showLeave, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks, showAnnounce } from './hud.js';
 import { createAI, updateAIs } from './ai.js';
@@ -187,6 +187,7 @@ function tick() {
     if (isAirborne(me) && !me.airTurn) popTurn(now, true); // mid-air: buffered turns are dropped
     else { const t = popTurn(now, canTurn(me)); if (t) { turnBike(me, t); audio.turn(); flashTurn(t); } }
   }
+  else { const t = popTurn(performance.now()); if (t) spectateNext(state, t, me.id); } // out: left / right switch the spectated bike
   if (me.alive) session.distance += me.speed * DT;
   updateAIs(state, ais, state.tick++);
   const events = step(state, DT);

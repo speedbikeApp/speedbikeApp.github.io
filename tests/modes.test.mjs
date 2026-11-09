@@ -19,6 +19,21 @@ const at = (id, x, z, dx, dz, y = 0) => { const b = createBike(id, 0, x, z, dx, 
 const run = (s, secs, until) => { let ev = []; for (let i = 0, n = Math.round(secs * CFG.tickHz); i < n; i++) { ev = ev.concat(step(s, DT)); if (until && until()) break; } return ev; };
 const T = MAPS.tiers;
 
+// ---------------------------------------------------------------- online: the last human out ends the round (like single player)
+{
+  const mkM = (humans) => { const s = createState(); s.playerId = -1; for (let i = 0; i < 4; i++) s.bikes.push(createBike(i, 0, 0, 0, 0, -1));
+    const m = createMatch(s, MODES.standard, makeRng(3), { humans: () => humans }); m.startMatch(); m.phase = 'running'; return [s, m]; };
+  let [s, m] = mkM([0, 1]);
+  s.bikes[0].alive = false; m.onTick([{ victim: 0, killer: null }], DT);
+  assert.equal(m.phase, 'running', 'another human is still in: play on');
+  s.bikes[1].alive = false; m.onTick([{ victim: 1, killer: null }], DT);
+  assert.equal(m.phase, 'roundEnd', 'last human out: round ends at once');
+  assert.equal(m.lastResult.awards.length, 1); assert.ok([2, 3].includes(m.lastResult.awards[0]), 'a random alive bot scores');
+  [s, m] = mkM([0]);
+  s.bikes[2].alive = false; m.onTick([{ victim: 2, killer: null }], DT);
+  assert.equal(m.phase, 'running', 'a bot crashing does not end it');
+}
+
 // ---------------------------------------------------------------- Hyper
 {
   assert.equal(MODES.hyper.speed, 25); assert.equal(MODES.hyper.speed, CFG.hyper.speed);

@@ -49,7 +49,7 @@ export class Room {
       inputs: 0, rewound: 0, clamped: 0, future: 0, fallback: 0, ignored: 0, rewindTicks: 0, maxRewindTicks: 0 };
 
     this.state = createState();
-    this.state.playerId = -1; // nobody is "the player": round modes then use resolveTick, never resolvePlayerOut
+    this.state.playerId = -1; // nobody is "the player": with bots, hooks.humans makes the last human out end the round (js/modes.js)
     this.players.forEach((p, i) => this.state.bikes.push(createBike(i, CFG.players[p.colorIdx % CFG.players.length].color, 0, 0, 0, -1)));
     this.players.forEach((p, i) => setLoadout(this.state.bikes[i], p.loadout || []));
     this.ais = new Map(); // bot id -> AI state (js/ai.js)
@@ -58,6 +58,7 @@ export class Room {
     // custom maps (server/admin-maps.js poolFor): same mode with a longer map list; the defs are handed to startMatch
     this.match = createMatch(this.state, mapPool ? Object.create(MODES[mode], { map: { value: mapPool.map } }) : MODES[mode], makeRng(this.seed), {
       maps: mapPool && mapPool.maps,
+      ...(this.hasBots ? { humans: () => this.players.filter((p) => !p.bot && !p.left).map((p) => p.id) } : {}), // last human out ends the round (js/modes.js)
       onRoundStart: () => { this.#killLeavers(); this.players.forEach((_, i) => { this.epoch[i]++; this.deathTick[i] = -1; this.lastIn[i] = -1; }); },
       onRespawn: (b) => { this.epoch[b.id]++; this.#ev(b, 'respawn'); },
     });

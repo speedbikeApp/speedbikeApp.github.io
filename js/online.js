@@ -11,7 +11,7 @@ import { validateMap } from './mapdef.js';
 import { createBike, resetBike, spawnPoints } from './state.js';
 import { canTurn, isAirborne } from './physics.js';
 import { popTurn, popAction, clearQueue } from './input.js';
-import { burst, resetCamera, resetEffects, setBikeStyle } from './render.js';
+import { burst, resetCamera, resetEffects, setBikeStyle, spectateNext } from './render.js';
 import * as audio from './audio.js';
 import { setHudPlayers, resetHudPlayers, setOnlineResult, flashTurn, showAnnounce, setAbilityHud } from './hud.js';
 import { ABILITIES, setLoadout, cycleAbility, activeDef } from './abilities.js';
@@ -282,6 +282,7 @@ function advance(nowMs) {
     const me = state.bikes.find((b) => b.id === youId);
     while (n-- > 0) {
       if (me && me.alive) localInputs(me, nowMs);
+      else if (me) { const side = popTurn(nowMs); if (side) spectateNext(state, side, me.id); } // out: left / right switch the spectated bike
       for (const e of stepSim(sim)) { const b = bikeById(e.victim); if (b) fx(b); }
     }
   } else if (target > sim.tick) sim.tick = target;

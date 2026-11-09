@@ -17,8 +17,12 @@ function roundMode(id, label, speed, map = 'arena') {
     get speed() { return speed(); },
     roundTime: CFG.match.roundTime,
     winPoints: CFG.match.winPoints,
-    // The player crashing ends the round at once (random alive bot scores); bot-vs-bot crashes use the normal rules.
-    onCrash: (match, crashed, aliveBefore) => (crashed.includes(match.playerId()) ? resolvePlayerOut(aliveBefore, crashed, match.playerId(), match.rng) : resolveTick(aliveBefore, crashed, match.rng)),
+    // The last human crashing ends the round at once (a random alive bot scores): single player = the player, online = every human
+    // still in (server hooks.humans), so nobody watches bots finish the round. Otherwise the normal rules.
+    onCrash: (match, crashed, aliveBefore) => {
+      const hs = match.humans(), out = crashed.some((id) => hs.includes(id)) && !aliveBefore.some((id) => hs.includes(id) && !crashed.includes(id));
+      return out ? resolvePlayerOut(aliveBefore, crashed, match.playerId(), match.rng) : resolveTick(aliveBefore, crashed, match.rng);
+    },
     onTimeout: (match, alive) => resolveTimeout(alive),
   };
 }
@@ -90,6 +94,7 @@ export function createMatch(state, mode = MODES.standard, rng = Math.random, hoo
 
     setMode(md) { m.mode = md; },
     playerId() { return state.playerId; },
+    humans() { return hooks.humans ? hooks.humans() : [state.playerId]; }, // bike ids of humans still in (server: not left, not bots)
     // Seconds to show on the HUD timer.
     clock() { return m.mode.countUp ? m.elapsed : m.timeLeft; },
     // Bonus SBCoins on top of the placement coins (Death Match: per kill).
