@@ -12,6 +12,7 @@ import { CUSTOM } from './custommaps.js';
 import { MODES } from './modes.js';
 import * as audio from './audio.js';
 import { setPlayerName } from './hud.js';
+import * as tutorial from './tutorial.js';
 import { initAccountUi, openAccount, accountEsc, isSignedIn } from './account-ui.js';
 import { initMultiUi, onScreen as multiScreen, multiBack } from './multi-ui.js';
 import { initFriendsUi, onScreen as friendsScreen } from './friends-ui.js';
@@ -26,12 +27,17 @@ let settingsFrom = null; // 'main' | 'pause'
 const SCREENS = ['scrMain', 'scrPlay', 'scrMode', 'scrMapSel', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrAdmin', 'scrSettings', 'scrControls'];
 const FULL_MENU = ['scrMain', 'scrPlay', 'scrMode', 'scrMapSel', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrAdmin']; // screens shown over the empty arena (HUD hidden)
 export function showScreen(name, backdrop = 'home') {
+  tutorial.syncColor(); name = tutorial.gateScreen(name, tutorial.stage()); // tutorial stages lock the menu paths
   current = name;
   $('menu').style.display = name ? 'flex' : 'none';
   $('menu').className = backdrop; // 'home' (3D visible) | 'dim' (over the paused game)
   for (const id of SCREENS) $(id).classList.toggle('on', id === name);
   document.body.classList.toggle('menu', FULL_MENU.includes(name) || ((name === 'scrSettings' || name === 'scrControls') && settingsFrom === 'main'));
-  if (name === 'scrMain') { $('mCoins').textContent = getSave().coins; $('mName').textContent = getSave().profile.username; }
+  if (name === 'scrMain') {
+    $('mCoins').textContent = getSave().coins; $('mName').textContent = getSave().profile.username;
+    const tb = tutorial.menuButton(isSignedIn()); // TUTORIAL replaces PLAY as the bold button
+    $('mTut').hidden = !tb; $('mPlay').classList.toggle('primary', !tb); $('mPlay').classList.toggle('pulse', !!tutorial.matchStage());
+  }
   if (name === 'scrMode') { syncDiff(); $('mSelMapName').textContent = mapLabel(getSave().settings.spMap); }
   if (name === 'scrMapSel') { MS_IDS = ['random', ...Object.keys(MAPS), ...customIds()]; msIdx = Math.max(0, MS_IDS.indexOf(getSave().settings.spMap)); syncMapSel(); }
   if (onMapPreview) onMapPreview(name === 'scrMapSel' ? MS_IDS[msIdx] : null);
@@ -46,6 +52,7 @@ export function showScreen(name, backdrop = 'home') {
   if (name === 'scrSettings') syncSettingsUi();
   if (name !== 'scrControls') cancelCapture();
   if (name === 'scrControls') renderControls('');
+  tutorial.refresh(name);
 }
 export const currentScreen = () => current;
 
@@ -53,6 +60,7 @@ export const currentScreen = () => current;
 export function applySettings() {
   const s = getSave().settings;
   setBloom(s.bloom);
+  CFG.camera.fov = s.fov; // render.js reads it every frame
   setMaxDpr(CFG.quality[s.quality]);
   audio.setMasterVolume(s.masterVol); audio.setMusicVolume(s.musicVol); audio.setSfxVolume(s.sfxVol); audio.setMuted(s.muted); audio.setEngineVolume(s.engineVol);
   setBindings(s.keys);
@@ -87,7 +95,8 @@ const swatch = (p) => (p.color ? `<i class="sw" style="background:#${p.color.toS
 function previewParts() { const eq = getSave().equipped.parts; return { ...eq, ...(gPreview || {}) }; }
 function openGarage() {
   if (!gInit) { initPreview($('gCanvas')); gInit = true; }
-  gCat = 'body'; gSel = null; gPreview = null;
+  const forced = tutorial.stage() === 'color'; // tutorial: only the cyan colour, nothing else
+  gCat = forced ? 'glow' : 'body'; gSel = forced ? 'cyan' : null; gPreview = null;
   renderGarage('');
   gLast = performance.now();
   const loop = (now) => { drawPreview(Math.min(0.1, (now - gLast) / 1000)); gLast = now; gRaf = requestAnimationFrame(loop); };
@@ -100,7 +109,7 @@ function renderGarage(msg) {
   $('gHead').textContent = `SBCOINS ${d.coins}`;
   $('gMsg').textContent = msg;
   for (const b of $('gTabs').children) b.classList.toggle('sel', b.dataset.cat === gCat);
-  $('gList').innerHTML = partList(gCat).filter((p) => isShown(p, partOwned(gCat, p.id))).map((p) => {
+  $('gList').innerHTML = partList(gCat).filter((p) => isShown(p, partOwned(gCat, p.id)) && (tutorial.stage() !== 'color' || p.id === 'cyan')).map((p) => {
     const owned = partOwned(gCat, p.id), tag = p.id === eqId ? 'EQUIPPED' : owned ? 'OWNED' : p.ach ? 'LOCKED' : `${p.price}`;
     return `<button class="mbtn frame gcard${p.id === gSel ? ' sel' : ''}${owned ? '' : ' locked'}" type="button" data-id="${p.id}">${swatch(p)}<b>${p.name.toUpperCase()}</b><small class="${owned || p.ach ? '' : 'coins'}">${tag}</small></button>`;
   }).join('');
@@ -157,6 +166,7 @@ function syncSettingsUi() {
   $('sName').value = getSave().profile.username;
   $('sName').disabled = isSignedIn(); $('sName').title = isSignedIn() ? 'Set by your account (ACCOUNT screen)' : '';
   $('sBloom').value = s.bloom; $('vBloom').textContent = s.bloom === 0 ? 'OFF' : s.bloom.toFixed(2);
+  $('sFov').value = s.fov; $('vFov').textContent = s.fov;
   for (const [id, v, k] of [['sMaster', s.masterVol, 'vMaster'], ['sMusic', s.musicVol, 'vMusic'], ['sSfx', s.sfxVol, 'vSfx'], ['sEngine', s.engineVol, 'vEngine']]) {
     $(id).value = pct(v); $(k).textContent = k === 'vEngine' && !v ? 'OFF' : pct(v);
   }
@@ -165,10 +175,11 @@ function syncSettingsUi() {
   $('sQuality').value = s.quality;
 }
 
-// h: {onPlay(modeId), onResume, onRestart, onQuit}
+// h: {onPlay(modeId), onResume, onRestart, onQuit, onTutorial}
 export function initMenu(h) {
   const on = (id, fn) => $(id).addEventListener('click', fn);
   on('mPlay', () => showScreen('scrPlay'));
+  on('mTut', () => h.onTutorial());
   on('pSingle', () => showScreen('scrMode'));
   on('pMulti', () => showScreen('scrMulti'));
   on('playBack', () => showScreen('scrMain'));
@@ -190,12 +201,12 @@ export function initMenu(h) {
   on('mGarage', () => showScreen('scrGarage'));
   on('mStats', () => showScreen('scrStats'));
   on('mAccount', () => showScreen('scrAccount'));
-  initAccountUi({ back: () => showScreen('scrMain'), open: () => showScreen('scrAccount'), refresh: () => { if (['scrMain', 'scrAbilities', 'scrGarage', 'scrStats'].includes(current)) showScreen(current); } });
+  initAccountUi({ newAccount: () => h.onTutorial(true), back: () => showScreen('scrMain'), open: () => showScreen('scrAccount'), refresh: () => { if (['scrMain', 'scrAbilities', 'scrGarage', 'scrStats'].includes(current)) showScreen(current); } });
   // Esc: close the delete confirmation first, else back to the main menu (capture phase: runs before the pause handler)
   addEventListener('keydown', (e) => { if (e.code === 'Escape' && current === 'scrAccount') { e.preventDefault(); if (!accountEsc()) showScreen('scrMain'); } });
   on('gBack', () => { saveSoon(); showScreen('scrMain'); });
   on('stBack', () => showScreen('scrMain'));
-  $('gTabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-cat]'); if (b) { gCat = b.dataset.cat; gSel = null; renderGarage(''); } });
+  $('gTabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-cat]'); if (b && tutorial.stage() !== 'color') { gCat = b.dataset.cat; gSel = null; renderGarage(''); } });
   $('gList').addEventListener('click', (e) => { const b = e.target.closest('button[data-id]'); if (b) { gSel = b.dataset.id; renderGarage(''); } });
   on('gAct', () => {
     const a = $('gAct').dataset.act;
@@ -203,6 +214,7 @@ export function initMenu(h) {
     const r = a === 'buy' ? buyPart(gCat, gSel) : equipPart(gCat, gSel);
     if (r.ok && a === 'buy') equipPart(gCat, gSel);
     renderGarage(r.ok ? '' : G_MSG[r.reason] || '');
+    if (r.ok && tutorial.stage() === 'color') { tutorial.syncColor(); if (tutorial.stage() !== 'color') showScreen('scrMain'); }
   });
   on('abBack', () => { saveSoon(); showScreen('scrMain'); });
   $('abList').addEventListener('click', (e) => {
@@ -231,6 +243,7 @@ export function initMenu(h) {
     const v = name.value.replace(/[^A-Za-z0-9 _-]/g, '').slice(0, 12);
     if (v !== name.value) name.value = v;
   });
+  $('sFov').addEventListener('input', (e) => { const v = setSetting('fov', +e.target.value); CFG.camera.fov = v; $('vFov').textContent = v; });
   $('sBloom').addEventListener('input', (e) => {
     const v = setSetting('bloom', +e.target.value); setBloom(v); $('vBloom').textContent = v === 0 ? 'OFF' : v.toFixed(2);
   });

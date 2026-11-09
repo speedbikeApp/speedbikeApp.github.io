@@ -2,19 +2,23 @@
 //   psearch {q} -> {results:[{uid,username,online,admin}]}   plist {after?, limit<=50} -> {players:[{uid,username,online,admin}], next?} (by username)
 //       pget {uid} -> {player}
 //   pban {uid, minutes | permanent:true, reason?}   punban {uid}   padmin {uid, on}
+//   pitems {uid, part:{cat,id,own:bool}} | {uid, ability:{id, count?:0..99 (also ends unlimited), inf?:bool}}   give / take garage parts + power-ups (pget returns the current ones)
 //   prename {uid, username}   ppassword {uid, password}   pedit {uid, coins?, stats?:{key:number}}   pdelete {uid, confirm:<their username>}
 import { normalizeQuery, isUid } from './protocol.js';
 import { NAME_RE, normalizeLoginName, MAX_PASSWORD } from './login.js';
 import { PASSWORD_MIN } from './accounts.js';
 import { adminError as E, banActive, banView } from './admin.js';
+import { BUILTIN_PARTS, CATS, isCustomId } from '../js/parts.js';
+import { ABILITY_IDS, ABILITIES } from '../js/abilities.js';
+import { STACK_MAX } from '../js/save.js';
 
 export const STAT_KEYS = ['matches', 'wins', 'winStreak', 'bestStreak', 'kills', 'distance', 'boosts', 'jumps', 'bestRoundBoosts', 'bestRoundJumps', 'dmFlawless', 'wins3d', 'winsHyper']; // js/save.js stats
 export const MAX_VALUE = 1e9, MAX_BAN_MIN = 60 * 24 * 365 * 10;
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= MAX_VALUE ? Math.floor(v) : null);
 
-// deps: { admin, adminStore, socialStore, social, rankStore, send(uid,msg), kick(uid,msg), sessionOf(uid), log }
+// deps: { admin, catalog (server/admin-items.js createCatalog), adminStore, socialStore, social, rankStore, send(uid,msg), kick(uid,msg), sessionOf(uid), log }
 export function registerPlayerOps(deps) {
-  const { admin, adminStore, socialStore, social, rankStore, send, kick, sessionOf, log } = deps;
+  const { admin, catalog, adminStore, socialStore, social, rankStore, send, kick, sessionOf, log } = deps;
   const now = () => admin.now();
   const target = async (a) => {
     if (!isUid(a.uid)) throw E('bad_uid');
@@ -46,7 +50,8 @@ export function registerPlayerOps(deps) {
       ...t, online: !!sessionOf(t.uid), admin: isAdm || admin.isBootstrap(t.username), adminLocked: admin.isBootstrap(t.username),
       ban: banActive(ban, now()) ? { ...banView(ban), by: ban.by || '' } : null,
       rank: rank ? { tier: rank.tier, div: rank.div, wins: rank.wins, matches: rank.matches, totalWins: rank.totalWins } : null,
-      progress: { synced: !!prog, coins: Number(prog?.coins) || 0, updatedAt: Number(prog?.updatedAt) || 0, stats, achievements: prog?.unlocks?.achievements?.length || 0 },
+      progress: { synced: !!prog, coins: Number(prog?.coins) || 0, updatedAt: Number(prog?.updatedAt) || 0, stats, achievements: prog?.unlocks?.achievements?.length || 0,
+        parts: prog?.unlocks?.parts || {}, abilityCount: prog?.unlocks?.abilityCount || {}, abilityInf: prog?.unlocks?.abilityInf || [] },
     } };
   });
 
@@ -115,6 +120,35 @@ export function registerPlayerOps(deps) {
     act(ctx, 'edit', t, JSON.stringify({ coins: a.coins, stats: a.stats }));
     send(t.uid, { t: 'resync', force: true });
     return { progress: { coins: Number(next.coins) || 0, updatedAt: next.updatedAt } };
+  });
+
+  // Free parts / abilities (turbo) are always owned (js/save.js sanitizing re-adds them), so they cannot be taken.
+  admin.register('pitems', async (a, ctx) => {
+    const t = await target(a), p = (await adminStore.getProgress(t.uid)) || {}, u = p.unlocks || {};
+    const next = { ...p, unlocks: { ...u, parts: { ...(u.parts || {}) }, abilities: [...(u.abilities || [])], abilityCount: { ...(u.abilityCount || {}) }, abilityInf: [...(u.abilityInf || [])] } }, nu = next.unlocks;
+    if (a.part && typeof a.part === 'object') {
+      const { cat, id, own } = a.part;
+      if (!CATS.includes(cat) || typeof id !== 'string' || typeof own !== 'boolean') throw E('bad_item');
+      const base = BUILTIN_PARTS[cat].find((x) => x.id === id);
+      if (!base && !(isCustomId(id) && (await catalog.get()).items.some((x) => x.id === id && x.cat === cat))) throw E('bad_item');
+      if (base && base.price === 0 && !base.ach) throw E('bad_item');
+      const list = new Set(nu.parts[cat] || []); if (own) list.add(id); else list.delete(id);
+      nu.parts[cat] = [...list];
+    } else if (a.ability && typeof a.ability === 'object') {
+      const { id, count, inf } = a.ability;
+      if (!ABILITY_IDS.includes(id) || ABILITIES[id].price === 0) throw E('bad_item');
+      if (count !== undefined && !(Number.isInteger(count) && count >= 0 && count <= STACK_MAX)) throw E('bad_value');
+      if (inf !== undefined && typeof inf !== 'boolean') throw E('bad_value');
+      if (count !== undefined) { if (count) nu.abilityCount[id] = count; else delete nu.abilityCount[id]; nu.abilityInf = nu.abilityInf.filter((x) => x !== id); }
+      if (inf === true && !nu.abilityInf.includes(id)) nu.abilityInf.push(id);
+      if (inf === false) nu.abilityInf = nu.abilityInf.filter((x) => x !== id);
+      if ((nu.abilityCount[id] || nu.abilityInf.includes(id)) && !nu.abilities.includes(id)) nu.abilities.push(id);
+    } else throw E('bad_item');
+    next.updatedAt = Math.max(now(), (Number(p.updatedAt) || 0) + 1); // newer than the player's save (see pedit)
+    await adminStore.setProgress(t.uid, next);
+    act(ctx, 'items', t, JSON.stringify({ part: a.part, ability: a.ability }));
+    send(t.uid, { t: 'resync', force: true });
+    return { parts: nu.parts, abilityCount: nu.abilityCount, abilityInf: nu.abilityInf };
   });
 
   admin.register('pdelete', async (a, ctx) => {

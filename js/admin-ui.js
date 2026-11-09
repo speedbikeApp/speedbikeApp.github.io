@@ -8,6 +8,8 @@ import { rankLabel, defaultRank } from './ranks.js';
 import './admin-garage.js';
 import './admin-maps.js';
 import './admin-drops.js';
+import './admin-games.js';
+import { mountItems } from './admin-items.js';
 
 const $ = (id) => document.getElementById(id);
 let show = () => {}, active = 'players', cleanup = null;
@@ -73,6 +75,8 @@ function mountPlayers(root) {
       if ((await run('pedit', args, 'SAVED - THE PLAYER IS UPDATED IF ONLINE')).ok) reload();
     }));
 
+    mountItems(sec('GIVE ITEMS'), p, adminCall, (t, k) => toast(msg, t, k));
+
     const ban = sec('BAN'), bl = line(ban), mins = input('', { type: 'number', min: 1, step: 1, placeholder: 'MINUTES' }), why = input('wide', { type: 'text', maxLength: 100, placeholder: 'REASON (OPTIONAL)' });
     bl.append(mins, why);
     const bl2 = line(ban);
@@ -103,7 +107,7 @@ function mountPlayers(root) {
 
 function placeholder(root) { root.append(el('div', 'frEmpty', 'COMING SOON')); }
 registerAdminTab('players', 'PLAYERS', mountPlayers);
-for (const [id, label] of [['maps', 'MAPS'], ['garage', 'GARAGE']]) if (!hasAdminTab(id)) registerAdminTab(id, label, placeholder);
+for (const [id, label] of [['games', 'GAMES'], ['maps', 'MAPS'], ['garage', 'GARAGE']]) if (!hasAdminTab(id)) registerAdminTab(id, label, placeholder);
 
 // ---- page ----
 function openTab(id) {

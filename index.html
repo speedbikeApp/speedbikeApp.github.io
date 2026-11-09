@@ -332,6 +332,22 @@
     #scrPlay { gap: 6px; } .bigtxt { font-size: 15px; } .lrow { padding: 2px 8px; font-size: 12px; } .lrow .rb { font-size: 13px; } .rb.big { font-size: 20px; }
     .panel .orow { font-size: 13px; } .panel h2 { font-size: 20px; margin: 0; } .rkbanner { font-size: 17px; }
   }
+  /* ---- tutorial: prompt box, skip button, HUD highlight, locked menu paths ---- */
+  .mbtn.tut { font-weight: 800; font-size: 26px; color: #fff; min-height: 58px; border-color: #fc3; box-shadow: 0 0 18px #fc3, inset 0 0 10px rgba(255,200,50,.35); text-shadow: 0 0 10px #fc3; animation: tutGlow 1.6s infinite; }
+  .mbtn.tut small { font-size: 10px; } .mbtn.pulse { animation: tutGlow 1.2s infinite; }
+  @keyframes tutGlow { 50% { box-shadow: 0 0 30px #fc3, inset 0 0 14px rgba(255,200,50,.5); } }
+  #tutBox { position: fixed; top: calc(70px * var(--hud)); left: 50%; transform: translateX(-50%); z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 28px; text-align: center; pointer-events: none; border-color: #fc3; box-shadow: 0 0 18px #fc3; background: rgba(20,14,0,.8); }
+  #tutBox[hidden] { display: none; } body.menu #tutBox { top: 8px; }
+  #tutTitle { font-size: 34px; letter-spacing: 5px; color: #fff; text-shadow: 0 0 14px #fc3; } #tutSub { font-size: 16px; letter-spacing: 3px; color: #fc3; } #tutStep { font-size: 11px; letter-spacing: 3px; opacity: .7; }
+  #tutSkip { position: fixed; z-index: 31; left: 8px; bottom: calc(16px * var(--hud) + 92px * var(--hudb) + 8px); min-width: 0; min-height: 34px; padding: 4px 12px; font-size: 12px; letter-spacing: 2px; }
+  body.menu #tutSkip { bottom: 60px; } #tutSkip[hidden] { display: none; }
+  body.drill #timer, body.drill #hudTL, body.drill #minimap { display: none; }
+  @keyframes tutPulse { 50% { box-shadow: 0 0 26px #fc3; border-color: #fc3; opacity: 1; } }
+  body[data-tut=boost] #boostBtn, body[data-tut=jump] #jumpBtn, body[data-tut=ability] #abilityBtn, body[data-tut=swap] .abArrow { animation: tutPulse .8s infinite; opacity: 1; }
+  body:is([data-ts=standard], [data-ts=play]) :is(#scrMain .mbtn:not(#mPlay), #pMulti, #mSelMap, #diffRow, [data-mode]:not(#modeStd)) { opacity: .3; pointer-events: none; }
+  body[data-ts=color] :is(#gTabs, #gBack) { display: none; }
+  @media (max-width: 520px) { #tutBox { max-width: 92vw; box-sizing: border-box; padding: 6px 14px; } #tutTitle { font-size: 22px; letter-spacing: 3px; } #tutSub { font-size: 11px; letter-spacing: 2px; } }
+  @media (max-height: 460px) { #tutBox { padding: 4px 16px; top: calc(52px * var(--hud)); } #tutTitle { font-size: 22px; letter-spacing: 3px; } #tutSub { font-size: 12px; } .mbtn.tut { font-size: 20px; min-height: 40px; } }
   .overlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; font-size: calc(28px * var(--hudp)); text-shadow: 0 0 12px currentColor; }
   .overlay.modal { pointer-events: auto; background: rgba(0,0,0,.45); }
   .panel { transform: scale(var(--hudp)); padding: 18px 32px; min-width: 260px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
@@ -366,6 +382,8 @@
   <div id="abWrap"><button id="abilityBtn" class="none" type="button" tabindex="-1"><span id="abIcon">--</span><span id="abName">NONE</span><b id="abState"></b></button></div>
   <button id="abNext" class="abArrow" type="button" tabindex="-1" aria-label="Next power-up"></button>
 </div>
+<div id="tutBox" class="frame" hidden><b id="tutTitle"></b><span id="tutSub"></span><small id="tutStep"></small></div>
+<button id="tutSkip" class="mbtn frame" type="button" tabindex="-1" hidden>SKIP TUTORIAL</button>
 <div id="chevL" class="chev"></div><div id="chevR" class="chev"></div>
 <canvas id="minimap" class="frame" width="280" height="280"></canvas>
 <div id="status" class="overlay"></div>
@@ -392,6 +410,7 @@
   <div id="scrMain" class="screen">
     <h1 id="logo">SPEED<span>BIKE</span></h1>
     <div id="tagline">NEON LIGHT-CYCLE ARENA</div>
+    <button id="mTut" class="mbtn frame tut" type="button" hidden>TUTORIAL<small>LEARN THE CONTROLS</small></button>
     <button id="mPlay" class="mbtn frame primary" type="button">PLAY</button>
     <div class="mrow" style="width:100%">
       <button id="mSettings" class="mbtn frame" type="button">SETTINGS</button>
@@ -626,6 +645,7 @@
   <div id="scrSettings" class="screen frame">
     <h2>SETTINGS</h2>
     <label class="setrow"><span>NAME</span><input id="sName" type="text" maxlength="12" autocomplete="off" spellcheck="false"></label>
+    <label class="setrow"><span>FOV</span><input id="sFov" type="range" min="65" max="105" step="1"><span id="vFov"></span></label>
     <label class="setrow"><span>BLOOM</span><input id="sBloom" type="range" min="0" max="2" step="0.05"><span id="vBloom"></span></label>
     <label class="setrow"><span>MASTER</span><input id="sMaster" type="range" min="0" max="100" step="1"><span id="vMaster"></span></label>
     <label class="setrow"><span>MUSIC</span><input id="sMusic" type="range" min="0" max="100" step="1"><span id="vMusic"></span></label>

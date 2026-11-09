@@ -15,12 +15,16 @@ export const INFINITE_MULT = 100; // infinite = 100x the single price (bought at
 export const MIGRATE_CHARGES = 5; // charges given per previously-bought ability when upgrading a v1 save
 export const NAME_MAX = 12;
 export const DEFAULT_NAME = 'PLAYER';
+export const TUTORIAL_STAGES = ['new', 'drill', 'standard', 'color', 'play', 'done']; // see tutorial.js
 
+// camera field of view setting (degrees); the default is config's value at load (the setting writes CFG.camera.fov later)
+export const FOV_DEFAULT = CFG.camera.fov, FOV_MIN = 65, FOV_MAX = 105;
 export const defaults = () => ({
   version: VERSION,
   settings: { bloom: CFG.render.bloom.strength, masterVol: CFG.audio.master, musicVol: CFG.audio.music, sfxVol: CFG.audio.sfx, engineVol: 0.3,
-    muted: false, aiDifficulty: CFG.ai.difficulty, quality: 'high', keys: defaultKeys(), spMap: 'random' },
+    muted: false, aiDifficulty: CFG.ai.difficulty, quality: 'high', keys: defaultKeys(), spMap: 'random', fov: FOV_DEFAULT },
   profile: { username: DEFAULT_NAME },
+  tutorial: 'new', // per device, not part of the synced progress
   coins: 0,
   updatedAt: 0, // ms of the last progress change (cloud merge: newer save wins coins)
   cloudUid: '', // account uid this save's progress belongs to ('' = guest / never synced)
@@ -61,10 +65,13 @@ function clamp(d) {
   s.masterVol = c01(s.masterVol); s.musicVol = c01(s.musicVol); s.sfxVol = c01(s.sfxVol);
   s.engineVol = c01(s.engineVol); s.keys = validateKeys(s.keys);
   s.bloom = Math.min(3, Math.max(0, s.bloom));
+  s.fov = Math.round(Math.min(FOV_MAX, Math.max(FOV_MIN, Number(s.fov) || FOV_DEFAULT)));
   s.aiDifficulty = Math.min(2, Math.max(0, Math.round(s.aiDifficulty)));
   if (!(s.quality in CFG.quality)) s.quality = 'high';
   if (s.spMap !== 'random' && !Object.hasOwn(MAPS, s.spMap) && !(typeof s.spMap === 'string' && CUSTOM_ID_RE.test(s.spMap))) s.spMap = 'random'; // single-player map choice
   d.profile.username = sanitizeName(d.profile.username);
+  if (!TUTORIAL_STAGES.includes(d.tutorial)) d.tutorial = 'new';
+  if (d.tutorial === 'new' && d.stats.matches > 0) d.tutorial = 'done'; // players from before the tutorial never get it forced
   d.coins = Math.max(0, Math.floor(d.coins)); d.updatedAt = Math.max(0, Math.floor(d.updatedAt));
   // abilities: only known ids; free ones are always unlocked; equipped must be unlocked, unique, <= maxSlots
   const un = new Set(d.unlocks.abilities.filter(isAbilityId));

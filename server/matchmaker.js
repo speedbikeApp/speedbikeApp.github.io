@@ -74,6 +74,35 @@ export class Matchmaker {
     for (const l of [...this.lobbies]) if (now >= l.endsAt && l.players.length >= LOBBY_MIN) this.#start(l);
   }
 
+  // Admin: start a waiting lobby now (free seats become bots in onStart, same as the countdown running out).
+  forceStart(id) {
+    const l = this.lobbies.find((x) => x.id === id);
+    if (!l) return false;
+    this.#start(l); return true;
+  }
+
+  // Admin: start whoever waits in a mode's queue (e.g. a lone searcher who never got a lobby) with bots. One kind (party / solo) per match, like #pump.
+  forceStartQueue(mode) {
+    const q = this.queues.get(mode);
+    if (!q || !q.length) return false;
+    const party = q[0].players.some((p) => p.group != null), l = { id: ++this.seq, mode, party, players: [], endsAt: 0 };
+    this.lobbies.push(l);
+    for (let i = 0; i < q.length && l.players.length < LOBBY_MAX;) {
+      if (q[i].players.some((p) => p.group != null) !== party || q[i].players.length > LOBBY_MAX - l.players.length) { i++; continue; }
+      for (const p of q.splice(i, 1)[0].players) { p.colorIdx = [0, 1, 2, 3].find((c) => !l.players.some((x) => x.colorIdx === c)); p.where = { type: 'lobby', lobby: l }; l.players.push(p); }
+    }
+    this.#start(l); this.#notifyQueue(mode); return true;
+  }
+
+  /** Admin view: waiting lobbies + non-empty queues. */
+  view() {
+    const names = (ps) => ps.map((p) => p.username);
+    return {
+      lobbies: this.lobbies.map((l) => ({ id: l.id, mode: l.mode, party: l.party, players: names(l.players), endsAt: l.endsAt })),
+      queues: [...this.queues].filter(([, q]) => q.length).map(([mode, q]) => ({ mode, players: names(q.flatMap((e) => e.players)) })),
+    };
+  }
+
   stats() {
     let queued = 0, inLobby = 0;
     for (const q of this.queues.values()) for (const e of q) queued += e.players.length;

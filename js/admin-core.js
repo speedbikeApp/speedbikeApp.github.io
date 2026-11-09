@@ -9,7 +9,7 @@ export const isAdmin = () => admin;
 export function setAdmin(v) { v = v === true; if (v === admin) return; admin = v; for (const fn of [...listeners]) { try { fn(admin); } catch { /* ui bug must not break the socket */ } } }
 export function onAdminChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
-const ORDER = ['players', 'maps', 'garage'];
+const ORDER = ['players', 'games', 'maps', 'garage'];
 export function registerAdminTab(id, label, mount) { tabs.set(id, { id, label, mount }); }
 export const hasAdminTab = (id) => tabs.has(id);
 /** Tabs in display order: players, maps, garage, then any others in registration order. */
@@ -41,5 +41,5 @@ export function banMessage(m) {
 export const ADMIN_ERR = {
   forbidden: 'NOT AN ADMIN', unknown_op: 'UNKNOWN ACTION', unavailable: 'SERVER ERROR - TRY AGAIN', offline: 'NOT CONNECTED', timeout: 'NO ANSWER FROM SERVER', not_found: 'PLAYER NOT FOUND',
   bad_query: 'USE 2-12 LETTERS OR NUMBERS', bad_uid: 'BAD PLAYER', protected: 'NOT ALLOWED FOR THIS ACCOUNT', bad_minutes: 'ENTER MINUTES (1 OR MORE)', bad_name: 'NAME: 3-12 LETTERS, NUMBERS, SPACE _ -',
-  taken: 'NAME ALREADY TAKEN', bad_password: 'PASSWORD: 8 OR MORE CHARACTERS', bad_value: 'INVALID NUMBER', confirm_mismatch: 'TYPED NAME DOES NOT MATCH', bad_drops: 'INVALID DROP TABLE - CHECK THE RANGES',
+  taken: 'NAME ALREADY TAKEN', bad_password: 'PASSWORD: 8 OR MORE CHARACTERS', bad_value: 'INVALID NUMBER', confirm_mismatch: 'TYPED NAME DOES NOT MATCH', bad_drops: 'INVALID DROP TABLE - CHECK THE RANGES', bad_item: 'UNKNOWN OR ALWAYS-OWNED ITEM', bad_mode: 'BAD MODE',
 };

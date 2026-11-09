@@ -85,12 +85,12 @@ export function setLoadout(b, ids) {
 }
 export const activeDef = (b) => { const id = (b.abilities || [])[b.activeAbility]; return id && ABILITIES[id].type === 'active' ? ABILITIES[id] : null; };
 
-// Switch the hexagon to the next (dir 1) / previous (dir -1) equipped active ability. Returns true if it changed.
-export function cycleAbility(b, dir = 1) {
+// Switch the hexagon to the next (dir 1) / previous (dir -1) equipped active ability (that passes `ok`). Returns true if it changed.
+export function cycleAbility(b, dir = 1, ok = () => true) {
   const n = (b.abilities || []).length;
   for (let k = 1; k < n; k++) {
     const i = (((b.activeAbility + k * dir) % n) + n) % n;
-    if (ABILITIES[b.abilities[i]].type === 'active') { b.activeAbility = i; return true; }
+    if (ABILITIES[b.abilities[i]].type === 'active' && ok(b.abilities[i])) { b.activeAbility = i; return true; }
   }
   return false;
 }

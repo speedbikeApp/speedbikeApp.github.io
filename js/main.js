@@ -18,6 +18,7 @@ import { queueMode } from './multi-ui.js';
 import { initCatalog } from './catalog.js';
 import { initCustomMaps, CUSTOM } from './custommaps.js';
 import { initUpdate } from './update.js';
+import * as tutorial from './tutorial.js';
 
 const DT = 1 / CFG.tickHz;
 const state = createState();
@@ -41,6 +42,8 @@ let screen = 'menu'; // 'menu' | 'game' (singleplayer) | 'online' (multiplayer m
 let leaveOpen = false;
 let session = { kills: 0, distance: 0, boosts: 0, jumps: 0 }; // player tallies not yet written to the save
 let rewarded = false;
+let tutMatch = null; // 'standard' | 'play' while the running match is a tutorial stage
+let drillWait = 0;
 let roundCnt = { boosts: 0, jumps: 0 }; // player's boosts / jumps this round (Death Match: whole match) for achievements
 
 // Add the player's tallies to the save (call at round end, match end, quit, restart, page hide).
@@ -57,16 +60,20 @@ function setPaused(p) {
 }
 function clearPause() { paused = false; showPause(false); audio.setPaused(false); showLeave(false); leaveOpen = false; showScreen(null); }
 
-function startGame(id) {
+// drill: tutorial arena (alone, borrowed abilities, nothing counted); otherwise a normal match, or the tutorial's easy Standard.
+function startGame(id, drill = false) {
   if (typeof id === 'string' && MODES[id]) modeId = id; // play again / restart keep the current mode
   demoMap = null; state.playerId = 0; // must come first: the menu mock match left playerId = -1; next menu gets a new random map
-  match.setMode(modeWithMap(modeId, getSave().settings.spMap));
+  tutMatch = drill ? null : tutorial.matchStage(); drillWait = 0;
+  if (drill) tutorial.beginDrill(); else tutorial.endDrill();
+  match.setMode(drill ? Object.create(MODES.standard, { map: { value: 'arena' }, roundTime: { value: 1e9 }, winPoints: { value: 1e9 } }) : tutMatch ? MODES.standard : modeWithMap(modeId, getSave().settings.spMap));
   commitSession();
-  const diff = getSave().settings.aiDifficulty;
+  const diff = tutMatch ? 0 : getSave().settings.aiDifficulty; // tutorial match: EASY bots
   ais.clear();
-  for (let i = 1; i < state.bikes.length; i++) ais.set(i, createAI(diff, i * 2)); // staggered thinking
+  if (!drill) for (let i = 1; i < state.bikes.length; i++) ais.set(i, createAI(diff, i * 2)); // staggered thinking
   // loadouts (kept across rounds; resetBike only clears timers): player's equipped slots, AI per difficulty (Hard only)
-  { // consumables: passives cost 1 charge per match; equipped actives stay (unusable at 0 charges)
+  if (drill) setLoadout(state.bikes[state.playerId], tutorial.DRILL_ABILITIES);
+  else { // consumables: passives cost 1 charge per match; equipped actives stay (unusable at 0 charges)
     const eq = getSave().equipped.abilities, on = spendPassives(eq);
     setLoadout(state.bikes[state.playerId], eq.filter((id) => ABILITIES[id].type === 'active' || on.includes(id)));
   }
@@ -83,6 +90,19 @@ function startGame(id) {
   clearPause(); clearQueue();
   state.tick = 0;
   match.startMatch();
+  if (drill) killBots();
+  tutorial.refresh(null);
+  if (tutMatch === 'standard') showAnnounce('NOW TRY A REAL MATCH');
+}
+function killBots() { for (const b of state.bikes) if (b.id !== state.playerId) { b.alive = false; b.trail.length = 0; } }
+// Drill bookkeeping per tick: a crash restarts the current step (no punishment); once every step is done the real match follows.
+function drillAfter(events) {
+  if (tutorial.drillDone()) { if ((drillWait -= DT) <= 0) { if (tutorial.finishDrill()) startGame('standard'); else quitToMenu(); } return; }
+  if (events.length) { match.startRound(); match.cd = 1; killBots(); }
+}
+function skipTutorial() {
+  const wasDrill = tutorial.skip(); tutMatch = null;
+  if (wasDrill && screen === 'game') quitToMenu(); else { const c = currentScreen(); if (c) showScreen(c); else tutorial.refresh(null); }
 }
 // Menu background: 4 bots play endlessly on a random built-in map (picked once per menu visit after a real game, not on every
 // return from garage/settings). Never touches the save/audio/HUD: trackMatch/trackAudio/session only run for real games.
@@ -105,7 +125,7 @@ function demoTick() {
   match.onTick(events, DT);
 }
 function quitToMenu() {
-  commitSession(); flushSave();
+  commitSession(); flushSave(); tutorial.endDrill();
   screen = 'menu'; clearPause();
   for (const b of state.bikes) { b.alive = false; b.trail.length = 0; }
   match.phase = 'idle'; resetEffects(); syncOverlays(match); audio.setEngine(false, 0, 1, false);
@@ -137,12 +157,18 @@ initHud(CFG.players.map((p, i) => ({ id: i, name: p.name, color: p.color })), {
   onAbility: () => pushAction('ability'),
   onSwap: () => pushAction('swap'),
   onSwapBack: () => pushAction('swapBack'),
-  onPlayAgain: () => (screen === 'online' ? playAgainOnline() : startGame()),
+  onPlayAgain: () => (screen === 'online' ? playAgainOnline() : tutorial.stage() === 'color' ? quitToMenu() : startGame()),
   onMenu: () => (screen === 'online' ? leaveOnline() : quitToMenu()),
 });
 initUpdate();
 let previewMap = null; // map-select screen open: 'random' (cycles through the maps) | map id | null
-initMenu({ onMapPreview: (id) => { previewMap = id; }, onPlay: (id) => startGame(id), onResume: () => setPaused(false), onRestart: () => startGame(), onQuit: quitToMenu });
+initMenu({
+  onMapPreview: (id) => { previewMap = id; },
+  onPlay: (id) => { if (!tutorial.matchStage() || id === 'standard') startGame(id); }, // tutorial: only Standard
+  onResume: () => setPaused(false), onRestart: () => startGame(null, tutorial.isDrilling()), onQuit: quitToMenu,
+  onTutorial: (auto) => { if (auto && tutorial.stage() !== 'new') showScreen('scrMain'); else startGame(null, true); }, // auto = just registered: once, brand-new only
+});
+document.getElementById('tutSkip').addEventListener('click', (e) => { e.currentTarget.blur(); skipTutorial(); });
 initInput();
 audio.initAudio();
 // Phones: first tap (a user gesture) goes fullscreen and tries to lock landscape; failures are ignored.
@@ -182,13 +208,16 @@ function tick() {
   if (me.alive) {
     const now = performance.now();
     const act = popAction(now);
-    if (act === 'boost') { if (startBoost(me)) { audio.boost(); session.boosts++; roundCnt.boosts++; } } else if (act === 'jump') { if (startJump(me)) { audio.jump(); session.jumps++; roundCnt.jumps++; } }
-    else if (act === 'ability') { { const def = activeDef(me); if (def && abilityCharges(def.id) >= 1 && useAbility(me, state)) { spendAbility(def.id); audio.boost(); } } } else if (act === 'swap' || act === 'swapBack') cycleAbility(me, act === 'swap' ? 1 : -1);
+    const drill = tutorial.isDrilling();
+    const tally = (k) => { if (!drill) { session[k]++; roundCnt[k]++; } };
+    if (act === 'boost') { if (startBoost(me)) { audio.boost(); tally('boosts'); tutorial.drillEvent('boost'); } } else if (act === 'jump') { if (startJump(me)) { audio.jump(); tally('jumps'); tutorial.drillEvent('jump'); } }
+    else if (act === 'ability') { const def = activeDef(me); if (def && (drill || abilityCharges(def.id) >= 1) && useAbility(me, state)) { if (!drill) { spendAbility(def.id); if (abilityCharges(def.id) < 1) cycleAbility(me, 1, (id) => abilityCharges(id) >= 1); } audio.boost(); tutorial.drillEvent('ability'); } } // drill: borrowed power-ups, no charges
+    else if (act === 'swap' || act === 'swapBack') { if (cycleAbility(me, act === 'swap' ? 1 : -1)) tutorial.drillEvent('swap'); }
     if (isAirborne(me) && !me.airTurn) popTurn(now, true); // mid-air: buffered turns are dropped
-    else { const t = popTurn(now, canTurn(me)); if (t) { turnBike(me, t); audio.turn(); flashTurn(t); } }
+    else { const t = popTurn(now, canTurn(me)); if (t) { turnBike(me, t); audio.turn(); flashTurn(t); tutorial.drillEvent(t < 0 ? 'left' : 'right'); } }
   }
   else { const t = popTurn(performance.now()); if (t) spectateNext(state, t, me.id); } // out: left / right switch the spectated bike
-  if (me.alive) session.distance += me.speed * DT;
+  if (me.alive && !tutorial.isDrilling()) session.distance += me.speed * DT;
   updateAIs(state, ais, state.tick++);
   const events = step(state, DT);
   for (const e of events) {
@@ -197,6 +226,7 @@ function tick() {
     audio.crash(b.id === state.playerId);
     if (e.killer === state.playerId && e.victim !== state.playerId) session.kills++;
   }
+  if (tutorial.isDrilling()) { match.runTime += DT; if (tutorial.drillDone() && !drillWait) drillWait = 1.5; drillAfter(events); return; }
   match.onTick(events, DT);
 }
 
@@ -234,6 +264,7 @@ function trackMatch() {
     const r = recordMatch(rank, match.bonusCoins(state.playerId), { mode: match.mode.id, flawless });
     r.drops = awardDrops({ won: rank === 1, bonus: getSave().settings.aiDifficulty === 2 }); r.total = getSave().coins; // HARD bots = bonus win drops
     setMatchReward(r); showUnlocks(r.unlocked);
+    if (tutMatch) { tutorial.matchFinished(tutMatch); tutMatch = null; }
   }
 }
 

@@ -25,10 +25,10 @@ import { resyncCloud } from './cloudsave.js';
 
 // ---------------------------------------------------------------- presence (menus)
 export const net = createNet({ url: () => serverUrl(globalThis.location ? globalThis.location.search : ''), getHello: () => buildHello(auth) });
-export const mp = { rank: null, online: null, featured: null, nextRotation: 0 };
-net.on('welcome', (m) => { setAdmin(m.admin === true); party.setMe(m.uid); mp.rank = m.rank || null; mp.online = m.online ?? null; mp.featured = m.featured || null; mp.nextRotation = m.nextRotation || 0; });
+export const mp = { rank: null, online: null, featured: null, nextRotation: 0, manual: false }; // manual: an admin pinned the featured mode (no countdown)
+net.on('welcome', (m) => { setAdmin(m.admin === true); party.setMe(m.uid); mp.rank = m.rank || null; mp.online = m.online ?? null; mp.featured = m.featured || null; mp.nextRotation = m.nextRotation || 0; mp.manual = m.manual === true; });
 net.on('online', (m) => { mp.online = m.online; });
-net.on('rotation', (m) => { mp.featured = m.featured; mp.nextRotation = m.nextRotation; });
+net.on('rotation', (m) => { mp.featured = m.featured; mp.nextRotation = m.nextRotation; mp.manual = m.manual === true; });
 net.on('rank', (m) => { mp.rank = m.rank; });
 net.on('announce', (m) => showAnnounce(m.text, m.kind));
 net.on('status', (s) => { if (s.state !== 'online') { mp.online = null; } if (s.state === 'idle' || s.state === 'denied') { social.reset(); party.reset(); setAdmin(false); } });
@@ -219,7 +219,10 @@ on('ev', (m) => {
   if (was && r.applied && !r.respawned) { const e = smooth(was, cap); if (m.id === youId) { dbg.ownEvents++; dbg.ownErr = e; if (e > dbg.ownErrMax) dbg.ownErrMax = e; } else if (e > dbg.remoteErrMax) dbg.remoteErrMax = e; }
   else if (was && r.respawned) was.vox = was.voz = 0;
   if (r.respawned) delete match.respawnIn[m.id];
-  if (m.kind === 'ability' && m.id === youId && r.applied) spendAbility(m.ability); // the server confirmed the activation: now it costs a charge (turbo: free)
+  if (m.kind === 'ability' && m.id === youId && r.applied) { // the server confirmed the activation: now it costs a charge (turbo: free)
+    spendAbility(m.ability);
+    const me = bikeById(youId); if (me && abilityCharges(m.ability) < 1 && activeDef(me)?.id === m.ability) cycleAbility(me, 1, (id) => abilityCharges(id) >= 1); // last charge: show one that still has charges
+  }
   if (r.died && wasAlive) fx(was);
 });
 on('loadout', (m) => { const b = bikeById(m.id); if (b && m.id !== youId && Array.isArray(m.abilities)) setLoadout(b, m.abilities); });
@@ -244,13 +247,13 @@ on('end', (m) => {
   const me = rows.find((r) => r.id === youId);
   if (me && me.rankAfter) mp.rank = me.rankAfter;
   let reward = null;
-  if (me && !me.left) { // 2x the offline coins: placement + Death Match kill coins
+  if (me && !me.left && m.reason !== 'stopped') { // (an admin-stopped match pays nothing) 2x the offline coins: placement + Death Match kill coins
     const kills = MODES[m.mode]?.kind === 'deathmatch' ? (me.scores || 0) : 0;
     const earned = CFG.rewards.onlineMult * (coinsForPlacement(me.place) + kills * CFG.deathMatch.coinsPerKill);
     reward = { earned, total: addCoins(earned) };
     reward.drops = awardDrops({ won: me.place === 1, bonus: true }); reward.total = getSave().coins;
   }
-  setOnlineResult({ meId: youId, rows, mode: m.mode, reward });
+  setOnlineResult({ meId: youId, rows, mode: m.mode, reward, stopped: m.reason === 'stopped' });
   net.lock(false);
 });
 net.on('close', () => { if (active && match.phase !== 'matchEnd') { const cb = onExit; stop(); cb('CONNECTION LOST'); } });

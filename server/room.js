@@ -102,6 +102,16 @@ export class Room {
     if (humans === 0 || (humans < 2 && !this.hasBots)) this.#finish('forfeit'); // with bots the last human plays on against them
   }
 
+  /** Admin stop: ends the match right now; the host must not settle ranks for reason 'stopped'. */
+  stop() { this.#finish('stopped'); }
+
+  /** Admin view of the live match. */
+  adminView() {
+    const m = this.match;
+    return { id: this.id, mode: this.mode, map: this.state.map && this.state.map.id, phase: m.phase, round: m.round, scores: this.players.map((p) => m.scores[p.id] || 0),
+      players: this.players.map((p) => ({ username: p.username, ...(p.bot ? { bot: true } : {}), ...(p.left ? { left: true } : {}) })) };
+  }
+
   #humansIn() { return this.players.filter((q) => !q.left && !q.bot).length; }
 
   // Catch up to wall-clock time. `now` = monotonic ms. Drift-free: the target tick count comes from the absolute start time,

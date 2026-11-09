@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { WebSocketServer } from 'ws';
-import { featuredMode, nextRotation, isMultiplayerMode } from '../js/rotation.js';
+import { featuredMode, nextRotation, FIXED_MODES, FEATURED_CYCLE } from '../js/rotation.js';
 import { parseClientMessage, RateLimiter, MAX_ADMIN } from './protocol.js';
 import { resolveAuthMode, createDevAuth, createFirebaseAuth, sanitizeName } from './auth.js';
 import { createJsonStore, createFirestoreStore } from './store.js';
@@ -14,6 +14,7 @@ import { Social } from './social.js';
 import { Admin, banActive, banView } from './admin.js';
 import { createJsonAdminStore, createFirestoreAdminStore } from './admin-store.js';
 import { registerPlayerOps } from './admin-players.js';
+import { registerGameOps } from './admin-games.js';
 import { createJsonMapStore, createFirestoreMapStore, createMapPool, registerMapOps, createMapsHandler } from './admin-maps.js';
 import { createJsonCatalogStore, createFirestoreCatalogStore } from './catalog-store.js';
 import { createCatalog, registerItemOps, createCatalogHandler } from './admin-items.js';
@@ -42,7 +43,12 @@ export function createGameServer(opts) {
   const mapsHandler = createMapsHandler({ pool: mapPool, allowedOrigins, production: !!opts.production });
   const catalogHandler = createCatalogHandler({ catalog, allowedOrigins, production: !!opts.production, log });
   const sessions = new Set(), byUid = new Map(), rooms = new Map();
-  let featured = featuredMode(Date.now()), onlineTimer = null, nextRoomId = 0;
+  // Featured mode: the hourly rotation unless an admin pinned one (override, persisted in the catalog store so it survives restarts).
+  let override = null, featured = featuredMode(Date.now()), onlineTimer = null, nextRoomId = 0;
+  const featuredNow = (now) => override || featuredMode(now);
+  const rotationInfo = (now) => ({ featured, nextRotation: override ? 0 : nextRotation(now), manual: !!override }); // nextRotation 0 = no countdown (clients show "set by admin")
+  const applyFeatured = (now = Date.now()) => { featured = featuredNow(now); broadcastAll({ t: 'rotation', ...rotationInfo(now) }); };
+  catalog.getFeatured().then((m) => { if (FEATURED_CYCLE.includes(m)) { override = m; applyFeatured(); } }).catch((e) => log('[catalog] featured read failed:', e.message));
 
   const broadcastAll = (msg) => { for (const s of sessions) if (s.authed) s.send(msg); };
   const online = () => { let n = 0; for (const s of sessions) if (s.authed) n++; return n; };
@@ -63,7 +69,7 @@ export function createGameServer(opts) {
   const admin = new Admin({ store: adminStore, names: opts.adminUsernames, log });
   const kick = (uid, msg) => { const s = byUid.get(uid); if (!s) return; s.send(msg); cleanup(s); s.ws.close(4003, String(msg.code || msg.t)); };
   registerItemOps({ admin, catalog, log }); // GARAGE tab (server/admin-items.js)
-  registerPlayerOps({ admin, adminStore, socialStore, social, rankStore: store, send: (uid, m) => byUid.get(uid)?.send(m), kick, sessionOf: (uid) => byUid.get(uid), log });
+  registerPlayerOps({ admin, catalog, adminStore, socialStore, social, rankStore: store, send: (uid, m) => byUid.get(uid)?.send(m), kick, sessionOf: (uid) => byUid.get(uid), log });
 
   registerMapOps({ admin, mapStore, pool: mapPool, log }); // MAPS tab
 
@@ -79,7 +85,7 @@ export function createGameServer(opts) {
 
   const mm = new Matchmaker({
     countdownMs: opts.countdownMs,
-    allowed: (mode, now) => isMultiplayerMode(mode, now),
+    allowed: (mode, now) => FIXED_MODES.includes(mode) || mode === featuredNow(now),
     onStart: (lobby) => {
       // The lobby starts with 2..4 humans (countdown over, or full): free slots are filled with bots (server/bots.js).
       const humans = lobby.players.map((s) => ({ uid: s.uid, username: s.username, rank: s.rank, colorIdx: s.colorIdx, send: s.send, session: s, party: s.group != null, loadout: s.loadout, admin: s.admin }));
@@ -93,6 +99,11 @@ export function createGameServer(opts) {
       log(`[room ${room.id}] ${lobby.mode} started: ${room.players.map((p) => p.username).join(', ')}`);
     },
   });
+
+  registerGameOps({ admin, mm, rooms, log, featured: { // GAMES tab
+    view: () => ({ current: featured, override }),
+    set: async (m) => { await catalog.putFeatured(m); override = m; applyFeatured(); },
+  } });
 
   // A player quit / dropped mid-match: settle the loss right away so they can't dodge it by reconnecting.
   function handleLeave(p) {
@@ -109,8 +120,8 @@ export function createGameServer(opts) {
 
   async function handleEnd(room, { reason, results }) {
     try {
-      const stay = results.filter((r) => !r.left && !r.bot && !r.unranked && !room.players[r.id].party); // party members and unranked wins (Room #results) are not settled
-      const { ranks, announcements } = await settleMatch(store, stay);
+      const stay = reason === 'stopped' ? [] : results.filter((r) => !r.left && !r.bot && !r.unranked && !room.players[r.id].party); // party members and unranked wins (Room #results) are not settled; an admin stop settles nobody
+      const { ranks, announcements } = stay.length ? await settleMatch(store, stay) : { ranks: [], announcements: [] };
       const byId = new Map(ranks.map((r) => [r.id, r]));
       const out = [];
       for (const r of results) {
@@ -160,7 +171,7 @@ export function createGameServer(opts) {
       s.uid = id.uid; s.username = id.username; s.rank = await store.getRank(id.uid);
       if (s.dead) return;
       s.authed = true; byUid.set(s.uid, s);
-      s.send({ t: 'welcome', uid: s.uid, username: s.username, rank: s.rank, serverNow: Date.now(), featured: featuredMode(Date.now()), nextRotation: nextRotation(Date.now()), online: online(), admin: s.admin });
+      s.send({ t: 'welcome', uid: s.uid, username: s.username, rank: s.rank, serverNow: Date.now(), ...rotationInfo(Date.now()), online: online(), admin: s.admin });
       announceOnline(); sendSping(s);
       parties.onConnect(s.uid);
       social.onConnect(s.uid, s.username).catch((e) => log('[social] connect failed:', e.message));
@@ -325,8 +336,7 @@ export function createGameServer(opts) {
     mm.tick(now); parties.tick(now);
     if (t - lastSlow >= 1000) {
       lastSlow = t;
-      const f = featuredMode(now);
-      if (f !== featured) { featured = f; broadcastAll({ t: 'rotation', featured, nextRotation: nextRotation(now) }); }
+      if (featuredNow(now) !== featured) applyFeatured(now);
     }
   }, LOOP_MS);
   const beat = setInterval(() => {

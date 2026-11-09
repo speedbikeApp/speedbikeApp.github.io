@@ -242,10 +242,10 @@ function onlineResultHtml(match) {
   const me = R.rows.find((r) => r.id === R.meId);
   const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${r.bot ? '' : badgeHtml(r.rankAfter || r.rankBefore)} ${colored(r.id, esc(r.username))}${adminIcon(r.admin)}${friendIcon(r.uid)} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
   const first = rows.filter((r) => r.place === 1);
-  const title = me && me.won ? 'YOU WIN!' : me && me.place === 1 ? 'TIED FOR 1ST' : first.length === 1 ? `${esc(first[0].username).toUpperCase()} WINS` : 'DRAW';
+  const title = R.stopped ? 'MATCH STOPPED BY ADMIN' : me && me.won ? 'YOU WIN!' : me && me.place === 1 ? 'TIED FOR 1ST' : first.length === 1 ? `${esc(first[0].username).toUpperCase()} WINS` : 'DRAW';
   let rank = '';
   if (me && me.party) rank = '<div class="rkbox"><div class="rkd">PARTY MATCH - UNRANKED</div></div>'; // party games never change rank
-  else if (me && me.rankBefore && me.rankAfter) {
+  else if (!R.stopped && me && me.rankBefore && me.rankAfter) {
     const c = rankChange(me.rankBefore, me.rankAfter, me.change);
     const delta = c.banner ? '' : c.pipDelta > 0 ? '<div class="rkd up">+1 WIN PIP</div>' : c.pipDelta < 0 ? '<div class="rkd down">-1 WIN PIP</div>' : '';
     const banner = c.banner ? `<div class="rkbanner ${c.banner === 'PROMOTED' ? 'up' : 'down'}">${c.banner}<small>${esc(badgeLabel(me.rankAfter))}</small></div>` : '';

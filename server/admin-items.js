@@ -50,6 +50,8 @@ export function createCatalog(store) {
     // drop table: only validated tables are served; missing / invalid stored doc = defaults
     async getDrops() { if (!drops) drops = validateDrops(await store.getDrops()) || structuredClone(DEFAULT_DROPS); return drops; },
     async putDrops(t) { await store.putDrops(t); drops = t; },
+    getFeatured: () => store.getFeatured(),
+    putFeatured: (m) => store.putFeatured(m),
     async putItem(it) { const c = await get(); await store.put(it.id, it); const i = c.items.findIndex((x) => x.id === it.id); if (i >= 0) c.items[i] = it; else c.items.push(it); },
     async putOverride(id, o) { const c = await get(); if (o) { await store.put(id, o); c.overrides[id] = o; } else { await store.del(id); delete c.overrides[id]; } },
   };

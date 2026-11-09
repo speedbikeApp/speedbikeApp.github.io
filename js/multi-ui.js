@@ -23,6 +23,7 @@ const on = (name) => { const el = document.querySelector('.screen.on'); return !
 
 function serverClockNow() { return net.state === 'online' ? net.serverNow() : Date.now(); }
 function featuredId() { return mp.featured || featuredMode(serverClockNow()); }
+const featText = () => (mp.manual ? 'FEATURED - SET BY ADMIN' : `FEATURED - ROTATES IN ${fmtCountdown(rotationMs())}`);
 function rotationMs() { const at = mp.nextRotation || nextRotation(serverClockNow()); return at - serverClockNow(); }
 
 function statusInfo() {
@@ -48,7 +49,7 @@ export function renderMulti() {
   for (const btn of $('mpModes').children) btn.disabled = !ready || !lead || isStale();
   const f = featuredId();
   $('mpFeat').firstChild.nodeValue = MODE_LABEL[f] || f.toUpperCase();
-  $('mpFeat').querySelector('small').textContent = `FEATURED - ROTATES IN ${fmtCountdown(rotationMs())}`;
+  $('mpFeat').querySelector('small').textContent = featText();
   if (isStale()) $('mpMsg').textContent = 'A NEW UPDATE IS AVAILABLE - RELOAD TO PLAY ONLINE';
   else if (net.state === 'offline') $('mpMsg').textContent = 'SERVER OFFLINE - RETRYING. SINGLEPLAYER STILL WORKS.';
   else if (net.state === 'denied') $('mpMsg').textContent = '';
@@ -59,7 +60,7 @@ function msg(text) { $('mpMsg').textContent = text; $('mpMsg').dataset.keep = te
 
 function tick() {
   if (on('scrMulti')) {
-    if (isSignedIn()) { $('mpFeat').querySelector('small').textContent = `FEATURED - ROTATES IN ${fmtCountdown(rotationMs())}`; const f = featuredId(); $('mpFeat').firstChild.nodeValue = MODE_LABEL[f] || f.toUpperCase(); }
+    if (isSignedIn()) { $('mpFeat').querySelector('small').textContent = featText(); const f = featuredId(); $('mpFeat').firstChild.nodeValue = MODE_LABEL[f] || f.toUpperCase(); }
   } else if (on('scrLobby')) setLobbyCount();
 }
 function setLobbyCount() {
