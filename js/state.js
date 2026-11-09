@@ -27,7 +27,7 @@ export function createBike(id, color, x, z, dx, dz) {
 
 // Re-place a bike at a spawn point with a fresh trail (round reset).
 export function resetBike(b, p, speed = CFG.baseSpeed) {
-  b.x = p.x; b.z = p.z; b.y = p.y || 0; b.dx = p.dx; b.dz = p.dz; b.speed = speed; b.baseSpeed = speed; b.alive = true;
+  b.x = p.x; b.z = p.z; b.y = p.y || 0; b.dx = p.dx; b.dz = p.dz; b.speed = speed; b.baseSpeed = speed; b.alive = true; b.predDead = false;
   resetAbilities(b);
   b.trail.length = 0; b.trail.push(newSegment(b));
 }

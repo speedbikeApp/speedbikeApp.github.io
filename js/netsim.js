@@ -73,11 +73,15 @@ const bikeOf = (sim, id) => sim.state.bikes.find((v) => v.id === id);
 export function stepSim(sim) {
   record(sim);
   for (const b of sim.state.bikes) tagSegs(b, sim.tick);
+  const keep = new Map(); for (const b of sim.state.bikes) if (b.alive && b.id !== sim.state.playerId) keep.set(b.id, b.trail.slice());
   const events = step(sim.state, dtOf());
   sim.tick++;
   for (const e of events) { const v = bikeOf(sim, e.victim); if (v) v.deadTick = sim.tick; } // lets a snapshot older than this death be recognised as stale
+  // Another bike crashing HERE is only a guess (its turn may still be on the way): it stops but keeps its trail (shown, still solid) until
+  // the server's crash message (applyCrash) or an event / snapshot says it lives. Erasing it hid trails that still kill on the server.
+  for (const e of events) { const v = bikeOf(sim, e.victim); if (v && keep.has(v.id)) { v.trail = keep.get(v.id); v.predDead = true; } }
   for (const b of sim.state.bikes) tagSegs(b, sim.tick);
-  return events;
+  return events.filter((e) => !keep.has(e.victim)); // only confirmed-here deaths (our own) get the crash effect now
 }
 
 // ---- inputs ---------------------------------------------------------------------------------------------------------------
@@ -155,7 +159,8 @@ export function applyEvent(sim, ev, nowTick = sim.tick) {
     b.spawnProt = CFG.deathMatch.spawnProtect; b.trail[0].ct = ev.tick;
     return { applied: true, died: advanceBike(sim, b, ev.tick, nowTick), respawned: true };
   }
-  if (!b || !b.alive || typeof ev.tick !== 'number') return { applied: false, died: false };
+  if (!b || (!b.alive && !b.predDead) || typeof ev.tick !== 'number') return { applied: false, died: false };
+  if (b.predDead) { b.alive = true; b.predDead = false; } // the crash we guessed did not happen: this event rewinds the bike before it
   if (ev.kind !== 'turn' && ev.kind !== 'boost' && ev.kind !== 'jump' && ev.kind !== 'ability') return { applied: false, died: false };
   if (ev.kind === 'ability' && !(ABILITIES[ev.ability] && ABILITIES[ev.ability].type === 'active')) return { applied: false, died: false };
   const own = ev.id === sim.state.playerId;
@@ -211,8 +216,8 @@ function applyAbilityEv(b, id, dj) {
 /** Server says this bike crashed. Returns true if it was still alive here (caller shows the burst). */
 export function applyCrash(sim, msg) {
   const b = bikeOf(sim, msg.victim);
-  if (!b || !b.alive) return false;
-  b.alive = false; b.trail.length = 0;
+  if (!b || (!b.alive && !b.predDead)) return false;
+  b.alive = false; b.predDead = false; b.trail.length = 0;
   return true;
 }
 
@@ -245,6 +250,7 @@ export function applySnap(sim, snap, nowTick = sim.tick, opts = {}) {
     const b = bikeOf(sim, sb.id);
     if (!b || !sb.alive) continue;
     if (typeof sb.lives === 'number') b.lives = sb.lives;
+    if (!b.alive && b.predDead) { b.alive = true; b.predDead = false; } // guessed crash, server says alive: correct it like a drifted bike (keeps its trail)
     const revive = !b.alive;
     if (b.alive && sb.ab && b.abilities && b.abilities.length && !(sb.id === sim.state.playerId && sim.pending.length)) syncAbilities(b, sb.ab, n);
     // Our own bike crashed locally while an input of ours is still in flight: the server may not know that input yet (it will replay it

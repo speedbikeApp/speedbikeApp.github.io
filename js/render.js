@@ -356,7 +356,7 @@ function setRange(attr, startInst, n) {
 
 function syncTrail(b, v, ex, dt) {
   const n = b.trail.length, mesh = v.mesh;
-  if (!b.alive || n === 0) { // crashed: trail drops to the floor, then disappears
+  if ((!b.alive && !b.predDead) || n === 0) { // crashed: trail drops to the floor, then disappears (predDead: online crash not confirmed yet, keep it)
     if (mesh.count > 0) {
       if (v.dying < 0) v.dying = 0;
       v.dying += dt;
@@ -529,7 +529,7 @@ export function render(state, dt, followId, extra = 0, overview = false) {
     const v = viewFor(b); v.mesh.visible = true; fragMesh.visible = true;
     const ex = b.alive ? b.speed * extra : 0;
     v.px = b.x + b.dx * ex + (b.vox || 0); v.pz = b.z + b.dz * ex + (b.voz || 0); // vox/voz: online correction smoothing (netsim.js visBlend)
-    v.group.visible = b.alive;
+    v.group.visible = b.alive || !!b.predDead;
     v.group.position.set(v.px, b.y, v.pz);
     v.group.rotation.order = 'YXZ';
     v.group.rotation.y = Math.atan2(b.dx, b.dz);

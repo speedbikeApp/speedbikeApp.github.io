@@ -295,4 +295,20 @@ class FakeWS {
   assert.equal(await buildHello({ currentUser: () => null, status: () => ({ mode: 'mock' }), getIdToken: async () => null }), null);
   assert.equal(await buildHello({ currentUser: () => user, status: () => ({ mode: 'firebase' }), getIdToken: async () => null }), null);
 }
+{ // another bike crashing on the client is a guess: it keeps its (still solid) trail until the server confirms; a later event revives it
+  const C = mkSim(0), r = C.state.bikes[1];
+  r.x = CFG.arena.half - 2; r.z = 0; r.dx = 1; r.dz = 0; r.trail.length = 0; r.trail.push({ x1: r.x - 10, z1: 0, x2: r.x, z2: 0, y0: 0, h: CFG.trailHeight, owner: 1 });
+  let shown = [];
+  for (let i = 0; i < 600 && r.alive; i++) shown = shown.concat(NS.stepSim(C));
+  assert.ok(!r.alive && r.predDead, 'stopped as a guessed crash'); assert.equal(shown.length, 0, 'no crash effect for a guess');
+  assert.ok(r.trail.length >= 1, 'its trail stays (the server may still have it)');
+  assert.equal(NS.applyCrash(C, { victim: 1 }), true, 'server confirms: now it goes (effect shown)'); assert.equal(r.trail.length, 0); assert.ok(!r.predDead);
+  const C2 = mkSim(0), r2 = C2.state.bikes[1];
+  r2.x = CFG.arena.half - 2; r2.z = 0; r2.dx = 1; r2.dz = 0; r2.trail[0].x1 = r2.x; r2.trail[0].z1 = 0; r2.trail[0].x2 = r2.x; r2.trail[0].z2 = 0;
+  const t0 = C2.tick, x0 = r2.x;
+  for (let i = 0; i < 600 && r2.alive; i++) NS.stepSim(C2);
+  assert.ok(r2.predDead);
+  NS.applyEvent(C2, { id: 1, kind: 'turn', tick: t0 + 1, x: x0 + CFG.baseSpeed * DT, z: 0, y: 0, dx: 0, dz: 1 }, C2.tick); // it turned away in time on the server
+  assert.ok(r2.alive && !r2.predDead, 'the event revives it'); assert.ok(r2.dz === 1 && r2.trail.length >= 2, 'on its real path, trail kept');
+}
 console.log('net tests passed');
