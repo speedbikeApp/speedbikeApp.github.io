@@ -34,6 +34,31 @@ const T = MAPS.tiers;
   assert.equal(m.phase, 'running', 'a bot crashing does not end it');
 }
 
+// ---------------------------------------------------------------- random spawns per round
+{
+  const s = createState(); for (let i = 0; i < 2; i++) s.bikes.push(createBike(i, 0, 0, 0, 0, -1));
+  const m = createMatch(s, MODES.hyper, makeRng(7)); m.startMatch(); // arena: symmetric spawns
+  const seen = new Set();
+  for (let r = 0; r < 20; r++) {
+    m.startRound(); const [a, b] = s.bikes;
+    near(a.x, -b.x); near(a.z, -b.z); // 2 players: still opposite each other
+    seen.add(`${a.x},${a.z}`);
+  }
+  assert.ok(seen.size >= 3, 'spawns change between rounds');
+  assert.deepEqual(spawnPoints(2), spawnPoints(2), 'no rng: fixed layout');
+}
+
+// ---------------------------------------------------------------- multimap: a different map every round
+{
+  const s = createState(); for (let i = 0; i < 4; i++) s.bikes.push(createBike(i, 0, 0, 0, 0, -1));
+  const m = createMatch(s, MODES.multimap, makeRng(5)); m.startMatch();
+  const used = new Set([s.map.id]);
+  for (let r = 0; r < 12; r++) { const prev = s.map.id; m.startRound(); assert.notEqual(s.map.id, prev, 'never the same map twice in a row'); used.add(s.map.id);
+    assert.ok(s.bikes.every((b) => b.alive && b.trail.length === 1)); }
+  assert.ok(used.size >= 3, 'cycles through the maps');
+  assert.equal(MODES.multimap.speed, CFG.baseSpeed);
+}
+
 // ---------------------------------------------------------------- Hyper
 {
   assert.equal(MODES.hyper.speed, 25); assert.equal(MODES.hyper.speed, CFG.hyper.speed);
@@ -41,7 +66,7 @@ const T = MAPS.tiers;
   const s = createState(); for (let i = 0; i < 4; i++) s.bikes.push(createBike(i, 0, 0, 0, 0, -1));
   const m = createMatch(s, MODES.standard, makeRng(1)); m.setMode(MODES.hyper); m.startMatch();
   assert.ok(s.bikes.every((b) => b.speed === 25 && b.baseSpeed === 25));
-  const b = s.bikes[0], z0 = b.z; m.phase = 'running'; run(s, 1); near(Math.abs(b.z - z0), 25, 0.2);
+  const b = s.bikes[0], x0 = b.x, z0 = b.z; m.phase = 'running'; run(s, 1); near(Math.hypot(b.x - x0, b.z - z0), 25, 0.2);
 }
 
 // ---------------------------------------------------------------- platforms / height

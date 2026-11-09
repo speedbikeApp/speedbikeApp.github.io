@@ -198,7 +198,7 @@ function harness(mode = 'standard', loadouts = [], opts = {}) {
     }
     for (const { m } of down.filter((x) => x.at <= room.tick).map((x) => x)) {
       if (m.t === 'round') {
-        if (m.phase === 'countdown') { st.bikes.forEach((b, k) => resetBike(b, pts[k], CFG.baseSpeed)); resetSim(sim, m.tick); running = false; }
+        if (m.phase === 'countdown') { st.bikes.forEach((b, k) => resetBike(b, (m.bikes && m.bikes.find((o) => o.id === b.id)) || pts[k], CFG.baseSpeed)); resetSim(sim, m.tick); running = false; }
         else if (m.phase === 'running') { sim.tick = m.tick; sim.hist.clear(); running = true; go = m.tick; }
         else running = false;
       } else if (!running) continue;

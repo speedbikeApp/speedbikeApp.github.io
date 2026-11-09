@@ -43,7 +43,8 @@ export const CFG = {
   minTurnGap: 1,                  // min units travelled on a segment before the next turn (safe lane width)
   cameraSwing: 0.15,              // seconds to swing to new heading
   // low chase cam: high/close enough to see over the bike's own 2-high trail, bike sits lower-middle of screen
-  camera: { back: 7, up: 7.5, lookAhead: 12, wideLook: 0.5, lookY: 0, fov: 75, fovBoost: 12, fovLerp: 6,
+  // lower + closer + wider = the floor rushes past faster (feel of speed, fixlist 3; gameplay speed unchanged)
+  camera: { back: 6, up: 5.8, lookAhead: 12, wideLook: 0.5, lookY: 0, fov: 82, fovBoost: 16, fovLerp: 6,
     // spectating after the player crashes: damped chase of a survivor, or slow orbit when nobody is left
     spectate: { follow: 3, orbitSpeed: 0.2, orbitRadius: 60, orbitHeight: 38, orbitLerp: 2 } },
   bikeScale: 1.1,                 // model is ~2.7 local units long => ~2.97 world units = one tile

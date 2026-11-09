@@ -60,7 +60,7 @@ export function runLag(opts) {
     if (typeof m.tick === 'number') c.tc.sample(m.tick, now);
     const sim = c.sim;
     if (m.t === 'round') {
-      if (m.phase === 'countdown') { const pts = spawnPoints(4, c.state.map); c.state.bikes.forEach((b, i) => { resetBike(b, pts[i], MODES.standard.speed); b.trail[0].ct = -1; b.vox = b.voz = 0; }); NS.resetSim(sim, m.tick); c.phase = 'countdown'; }
+      if (m.phase === 'countdown') { const pts = spawnPoints(4, c.state.map); c.state.bikes.forEach((b, i) => { resetBike(b, (m.bikes && m.bikes.find((o) => o.id === b.id)) || pts[i], MODES.standard.speed); b.trail[0].ct = -1; b.vox = b.voz = 0; }); NS.resetSim(sim, m.tick); c.phase = 'countdown'; }
       else if (m.phase === 'running') { c.phase = 'running'; sim.tick = m.tick; sim.hist.clear(); c.runTick = m.tick; }
       else c.phase = m.phase;
     } else if (m.t === 'snap') {

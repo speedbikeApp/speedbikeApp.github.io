@@ -1,6 +1,6 @@
 // Multiplayer mode availability (pure). Standard + Death Match always; one featured mode that rotates every hour.
 export const FIXED_MODES = ['standard', 'deathmatch'];
-export const FEATURED_CYCLE = ['hyper', '3d'];
+export const FEATURED_CYCLE = ['hyper', '3d', 'multimap'];
 export const ROTATION_MS = 3600000;
 
 export const featuredMode = (now = Date.now()) => FEATURED_CYCLE[Math.floor(now / ROTATION_MS) % FEATURED_CYCLE.length];

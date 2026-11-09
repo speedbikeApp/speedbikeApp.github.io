@@ -65,7 +65,7 @@ export function createMapPool(store, log = () => {}) {
     poolFor(modeId) {
       const base = MODES[modeId];
       if (!base) return null;
-      const ids = Object.keys(defs).filter((id) => defs[id].modes.includes(modeId));
+      const ids = Object.keys(defs).filter((id) => modeId === 'multimap' || defs[id].modes.includes(modeId)); // multimap: every map
       return ids.length ? { map: [].concat(base.map, ids), maps: Object.fromEntries(ids.map((id) => [id, defs[id]])) } : null;
     },
   };

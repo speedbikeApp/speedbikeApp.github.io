@@ -43,7 +43,8 @@ export function resetSim(sim, tick = sim.tick) { sim.tick = tick; sim.pending.le
 // Per-bike scalar history (jump / boost timers, height, speed ...) so a rewind restores the ability state of that tick too
 // (plus the nested ability timers cd / active / used of bikes with a loadout).
 const HIST = MAX_RESIM + 40;
-function scalars(b) { const o = {}; for (const k in b) { const v = b[k]; if (typeof v === 'number' || typeof v === 'boolean') o[k] = v; } return o; }
+// predDead is not history: restoring a stale `true` left alive bikes with an empty trail (exception every frame)
+function scalars(b) { const o = {}; for (const k in b) { if (k === 'predDead') continue; const v = b[k]; if (typeof v === 'number' || typeof v === 'boolean') o[k] = v; } return o; }
 function record(sim) {
   for (const b of sim.state.bikes) {
     let h = sim.hist.get(b.id); if (!h) sim.hist.set(b.id, h = []);
@@ -196,7 +197,10 @@ export function applyEvent(sim, ev, nowTick = sim.tick) {
     else if (ev.kind === 'jump') applyJump(b, ev.dj);
     else applyAbilityEv(b, ev.ability, ev.dj);
   }
+  const keepTrail = own ? null : b.trail.slice();
   const died = advanceBike(sim, b, ev.tick, nowTick, own ? sim.pending : null);
+  // a remote bike replayed without its NEXT events (still on the way) may crash only here: a guess, like stepSim's (keeps its trail)
+  if (died && !own) { b.trail = keepTrail; b.predDead = true; return { applied: true, died: false }; }
   return { applied: true, died };
 }
 
@@ -250,7 +254,7 @@ export function applySnap(sim, snap, nowTick = sim.tick, opts = {}) {
     const b = bikeOf(sim, sb.id);
     if (!b || !sb.alive) continue;
     if (typeof sb.lives === 'number') b.lives = sb.lives;
-    if (!b.alive && b.predDead) { b.alive = true; b.predDead = false; } // guessed crash, server says alive: correct it like a drifted bike (keeps its trail)
+    if (!b.alive && b.predDead) { b.alive = true; b.predDead = false; if (!b.trail.length) b.trail.push(newSegment(b)); } // guessed crash, server says alive: correct it like a drifted bike (keeps its trail)
     const revive = !b.alive;
     if (b.alive && sb.ab && b.abilities && b.abilities.length && !(sb.id === sim.state.playerId && sim.pending.length)) syncAbilities(b, sb.ab, n);
     // Our own bike crashed locally while an input of ours is still in flight: the server may not know that input yet (it will replay it

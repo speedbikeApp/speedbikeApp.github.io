@@ -338,7 +338,10 @@ export class Room {
     this.sent = { phase: m.phase, round: m.round };
     const msg = { t: 'round', tick: this.tick, phase: m.phase, round: m.round, scores: { ...m.scores }, lastResult: m.lastResult, roundTime: r3(m.clock()), cd: r3(m.cd) };
     if (m.mode.kind === 'deathmatch') msg.lives = { ...m.lives };
-    if (m.phase === 'countdown') msg.bikes = this.state.bikes.map((b) => this.#snapBike(b)); // fresh spawns
+    if (m.phase === 'countdown') {
+      msg.bikes = this.state.bikes.map((b) => this.#snapBike(b)); // fresh spawns (random per round)
+      if (m.mode.multimap) Object.assign(msg, { mapId: this.state.map.id }, MAPS[this.state.map.id] ? {} : { map: this.state.map }); // new map each round
+    }
     this.broadcast(msg);
   }
 

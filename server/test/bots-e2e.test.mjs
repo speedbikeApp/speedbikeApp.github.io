@@ -56,12 +56,14 @@ assert.deepEqual(lb.abilities, ['stealth']);
 // activate Turbo as soon as the round runs: the server confirms with an ev that BOTH clients get; a second press is refused (cooldown)
 await a.next((m) => m.t === 'round' && m.phase === 'running');
 const press = () => a.send({ t: 'in', kind: 'ability', ability: 'turbo', ctick: a.msgs.filter((m) => typeof m.tick === 'number').at(-1).tick });
-press();
-const eva = await a.next((m) => m.t === 'ev' && m.kind === 'ability'); const evb = await b.next((m) => m.t === 'ev' && m.kind === 'ability');
+const isAb = (m) => m.t === 'ev' && m.kind === 'ability';
+for (let k = 0; k < 200 && !a.msgs.some(isAb); k++) { press(); await sleep(10); } // random spawns: h1 may start falling off a step (no turbo in the air)
+const eva = await a.next(isAb); const evb = await b.next(isAb);
 assert.equal(eva.id, ia.id); assert.equal(eva.ability, 'turbo'); assert.deepEqual([evb.id, evb.ability, evb.tick], [eva.id, 'turbo', eva.tick]);
 press(); a.send({ t: 'in', kind: 'ability', ability: 'stealth' }); // stealth is not in h1's loadout
 await sleep(300);
-assert.equal(a.msgs.filter((m) => m.t === 'ev' && m.kind === 'ability').length, 1, 'cooldown + not-equipped activations refused');
+const rEnd = a.msgs.find((m) => m.t === 'round' && m.phase === 'roundEnd' && m.tick >= eva.tick)?.tick ?? Infinity; // timeScale 40: the next round (fresh cooldowns) can start within the wait
+assert.equal(a.msgs.filter((m) => isAb(m) && m.tick >= eva.tick && m.tick < rEnd).length, 1, 'cooldown + not-equipped activations refused');
 const snap = a.msgs.find((m) => m.t === 'snap' && m.tick > eva.tick && m.bikes[ia.id].ab?.cd?.turbo > 0); // after the press (the event carries the input tick; a later round reset clears it)
 assert.ok(snap && snap.bikes[ia.id].ab.cd.turbo > 0, 'snapshots carry the cooldown');
 // bots drive (events from bot bikes reach the humans)

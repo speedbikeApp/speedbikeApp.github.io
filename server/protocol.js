@@ -4,7 +4,7 @@ import { isAbilityId } from '../js/abilities.js';
 export const MAX_MSG = 1024;        // bytes, every message ...
 export const MAX_HELLO = 4096;      // ... except hello (a Firebase ID token alone is ~1 KB)
 export const MAX_ADMIN = 32768;     // ... and admin (map / item editors send whole documents); the socket's maxPayload matches
-export const MODES_ALL = ['standard', 'hyper', '3d', 'deathmatch'];
+export const MODES_ALL = ['standard', 'hyper', '3d', 'deathmatch', 'multimap'];
 export const INPUT_KINDS = ['turn', 'boost', 'jump', 'ability', 'swap'];
 
 // Loadout (ability ids the client says it can use): unknown ids / duplicates are dropped, at most CFG.abilities.maxSlots kept. Always an array.

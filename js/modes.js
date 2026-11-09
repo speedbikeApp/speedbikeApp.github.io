@@ -1,5 +1,5 @@
 // Game modes + match state machine. Pure logic (no DOM / three) so it is testable.
-// Round modes (standard / hyper / 3d): countdown -> running -> roundEnd -> (countdown | matchEnd).
+// Round modes (standard / hyper / 3d / multimap): countdown -> running -> roundEnd -> (countdown | matchEnd).
 // Death Match: countdown -> running (one continuous match, lives + respawns) -> matchEnd.
 // The caller (main.js) runs physics only while phase === 'running' and feeds step() events to match.onTick().
 import { CFG } from './config.js';
@@ -30,6 +30,7 @@ export const MODES = {
   standard: roundMode('standard', 'STANDARD', () => CFG.baseSpeed, ['arena', 'crater', 'stairs']),
   hyper: roundMode('hyper', 'HYPER', () => CFG.hyper.speed),
   '3d': roundMode('3d', '3D', () => CFG.baseSpeed, ['tiers', 'stairs']),
+  multimap: Object.assign(roundMode('multimap', 'MULTIMAP', () => CFG.baseSpeed, Object.keys(MAPS)), { multimap: true }), // a different map every round
   deathmatch: {
     id: 'deathmatch', label: 'DEATH MATCH', kind: 'deathmatch', map: ['arena', 'crater', 'stairs'], countUp: true,
     get speed() { return CFG.baseSpeed; },
@@ -41,7 +42,7 @@ export const MODES = {
 export const modeMaps = (id) => [...(id === 'standard' || id === 'deathmatch' ? Object.keys(MAPS) : [].concat(MODES[id].map)), ...customFor(id)];
 // The mode to play for a saved choice ('random' or unknown for this mode -> the mode's random pool, built-in + custom). Prototype keeps the live `speed` getter.
 export const modeWithMap = (id, sel) => {
-  const custom = customFor(id), pool = modeMaps(id).includes(sel) ? [sel] : custom.length ? [].concat(MODES[id].map, custom) : null;
+  const custom = customFor(id), pool = id !== 'multimap' && modeMaps(id).includes(sel) ? [sel] : custom.length ? [].concat(MODES[id].map, custom) : null; // multimap ignores the map choice
   return pool ? Object.create(MODES[id], { map: { value: pool } }) : MODES[id];
 };
 
@@ -100,10 +101,14 @@ export function createMatch(state, mode = MODES.standard, rng = Math.random, hoo
     // Bonus SBCoins on top of the placement coins (Death Match: per kill).
     bonusCoins(id) { return m.mode.kind === 'deathmatch' ? (m.kills[id] || 0) * CFG.deathMatch.coinsPerKill : 0; },
 
-    startMatch() {
-      const pool = [].concat(m.mode.map); // online clients get the server's pick as start.mapId (+ start.map for custom maps)
+    // online clients get the server's pick as start.mapId / round.mapId (+ .map for custom maps). avoid = map id not to repeat (multimap)
+    pickMap(avoid) {
+      const all = [].concat(m.mode.map), rest = all.filter((id) => id !== avoid), pool = rest.length ? rest : all;
       const id = pool[pool.length > 1 ? Math.floor(m.rng() * pool.length) : 0];
       state.map = (hooks.maps && hooks.maps[id]) || MAPS[id] || MAPS.arena; // hooks.maps = server's custom maps {id: def}
+    },
+    startMatch() {
+      m.pickMap();
       m.scores = {}; for (const b of state.bikes) m.scores[b.id] = 0;
       m.round = 0; m.placements = null; m.ranks = null; m.winner = null; m.lastResult = null;
       if (m.mode.kind === 'deathmatch') { // scores = kills
@@ -113,8 +118,9 @@ export function createMatch(state, mode = MODES.standard, rng = Math.random, hoo
       m.startRound();
     },
     startRound() {
+      if (m.mode.multimap && m.round > 0) m.pickMap(state.map.id);
       m.round++;
-      const pts = spawnPoints(state.bikes.length, state.map);
+      const pts = spawnPoints(state.bikes.length, state.map, m.rng); // random spawn per round (online: sent in the `round` message)
       state.bikes.forEach((b, i) => resetBike(b, pts[i], m.mode.speed));
       state.time = 0; m.elapsed = 0; m.runTime = 0;
       m.phase = 'countdown'; m.cd = CFG.match.countdown; m.timeLeft = m.mode.roundTime; m.lastResult = null;

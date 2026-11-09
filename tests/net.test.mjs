@@ -311,4 +311,15 @@ class FakeWS {
   NS.applyEvent(C2, { id: 1, kind: 'turn', tick: t0 + 1, x: x0 + CFG.baseSpeed * DT, z: 0, y: 0, dx: 0, dz: 1 }, C2.tick); // it turned away in time on the server
   assert.ok(r2.alive && !r2.predDead, 'the event revives it'); assert.ok(r2.dz === 1 && r2.trail.length >= 2, 'on its real path, trail kept');
 }
+{ // a remote event replayed without its NEXT events may crash the bike only here: a guess (trail kept, no crash effect)
+  const C = mkSim(0), r = C.state.bikes[1];
+  r.x = 0; r.z = -40; r.dx = 0; r.dz = 1; r.trail[0].x1 = 0; r.trail[0].z1 = -40; r.trail[0].x2 = 0; r.trail[0].z2 = -40;
+  r.trail.unshift({ x1: 5, z1: -50, x2: 5, z2: 50, y0: 0, h: CFG.trailHeight, owner: 1, ct: -1 }); // an older piece of its own trail (the replay only sees its own trail + the map)
+  const t0 = C.tick;
+  for (let i = 0; i < 60; i++) NS.stepSim(C);
+  assert.ok(r.alive);
+  const res = NS.applyEvent(C, { id: 1, kind: 'turn', tick: t0 + 1, x: 0, z: -40 + CFG.baseSpeed * DT, y: 0, dx: 1, dz: 0 }, C.tick); // late turn into the wall
+  assert.ok(res.applied && !res.died, 'no crash effect for a replay guess');
+  assert.ok(!r.alive && r.predDead && r.trail.length >= 1, 'stopped as a guess, trail kept '); assert.equal(r.trail[0].x1, 5);
+}
 console.log('net tests passed');

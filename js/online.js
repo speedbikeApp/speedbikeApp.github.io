@@ -57,7 +57,7 @@ export function watchAuth() {
   });
 }
 
-export const MODE_LABEL = { standard: 'STANDARD', deathmatch: 'DEATH MATCH', hyper: 'HYPER', '3d': '3D' };
+export const MODE_LABEL = { standard: 'STANDARD', deathmatch: 'DEATH MATCH', hyper: 'HYPER', '3d': '3D', multimap: 'MULTIMAP' };
 
 // ---------------------------------------------------------------- online match
 const DT = 1 / CFG.tickHz;
@@ -98,8 +98,7 @@ export function begin(msg, st, bikes0, exitCb) {
   restoreOverrides(); applyOverrides(msg.cfgOverrides);
   mode = MODES[msg.mode] || MODES.standard;
   const players = (msg.players || []).slice().sort((a, b) => a.id - b.id);
-  const cm = msg.map && !MAPS[msg.mapId] && validateMap(msg.map); // custom map: the server sends the whole definition (id = mapId)
-  state.map = cm && cm.ok ? { id: msg.mapId, ...cm.map } : MAPS[msg.mapId] || MAPS.arena;
+  state.map = mapOfMsg(msg);
   // colours: everyone gets their lobby colour; we use our own glow colour unless it clashes with another bike
   const mine = glowHex(getSave().equipped.parts.glow);
   const others = players.filter((p) => p.id !== youId).map(colorOf);
@@ -140,9 +139,10 @@ function announceLoadout() {
   net.send({ t: 'loadout', abilities: ids });
 }
 
-function placeBikes() {
+// sb = the server's fresh spawns (`round` countdown message, random per round); without them the fixed layout until it arrives
+function placeBikes(sb) {
   const pts = spawnPoints(state.bikes.length, state.map);
-  state.bikes.forEach((b, i) => { resetBike(b, pts[i], mode.speed); b.trail[0].ct = -1; b.vox = b.voz = 0; });
+  state.bikes.forEach((b, i) => { resetBike(b, (sb && sb.find((o) => o.id === b.id)) || pts[i], mode.speed); b.trail[0].ct = -1; b.vox = b.voz = 0; });
 }
 
 /** Leave the online view and restore the singleplayer world. quiet = no onExit callback. */
@@ -173,6 +173,11 @@ function smooth(b, cap) {
   if (e >= 0.02) { if (b.vox || b.voz) dbg.smoothed++; else dbg.snapped++; }
   return e;
 }
+// start / round message -> map. Custom maps: the server sends the whole definition (id = mapId)
+function mapOfMsg(msg) {
+  const cm = msg.map && !MAPS[msg.mapId] && validateMap(msg.map);
+  return cm && cm.ok ? { id: msg.mapId, ...cm.map } : MAPS[msg.mapId] || MAPS.arena;
+}
 const on = (type, fn) => net.on(type, (m) => { if (active && sim) fn(m); });
 
 on('round', (m) => {
@@ -181,7 +186,8 @@ on('round', (m) => {
   if (m.lives) match.lives = m.lives;
   if (mode.kind === 'deathmatch') match.kills = match.scores;
   if (m.phase === 'countdown') {
-    placeBikes(); resetSim(sim, m.tick); resetCamera(); resetEffects(); clearQueue();
+    if (m.mapId && m.mapId !== state.map.id) state.map = mapOfMsg(m); // multimap: new map each round
+    placeBikes(m.bikes); resetSim(sim, m.tick); resetCamera(); resetEffects(); clearQueue();
     match.respawnIn = {}; match.lastResult = null;
     match.phase = 'countdown'; cdBase = { cd: m.cd, tick: m.tick }; tb = { v: m.roundTime, tick: m.tick };
     match.timeLeft = mode.roundTime; match.elapsed = 0; match.runTime = 0;

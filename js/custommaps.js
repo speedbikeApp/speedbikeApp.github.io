@@ -32,4 +32,4 @@ export async function refreshCustomMaps(fetchFn = globalThis.fetch, url) {
 }
 export function initCustomMaps() { loadCachedMaps(); refreshCustomMaps(); }
 /** Ids of the custom maps playable in `modeId`, sorted by name. */
-export const customFor = (modeId) => Object.values(CUSTOM).filter((d) => d.modes.includes(modeId)).sort((a, b) => a.name.localeCompare(b.name)).map((d) => d.id);
+export const customFor = (modeId) => Object.values(CUSTOM).filter((d) => modeId === 'multimap' || d.modes.includes(modeId)) /* multimap: every map */.sort((a, b) => a.name.localeCompare(b.name)).map((d) => d.id);

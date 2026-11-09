@@ -32,16 +32,23 @@ export function resetBike(b, p, speed = CFG.baseSpeed) {
   b.trail.length = 0; b.trail.push(newSegment(b));
 }
 
-// Fixed evenly spaced spawns facing the center. Order S, W, N, E; n=2 -> S,N; n=3 -> S,W,E. Default map: on the axes at
+// Evenly spaced spawns facing the center. Order S, W, N, E; n=2 -> S,N; n=3 -> S,W,E (fixed when no rng). Default map: on the axes at
 // spawnRadius * half; other maps list their own (map.spawns).
-export function spawnPoints(n, map = MAPS.arena) {
+export function spawnPoints(n, map = MAPS.arena, rng = null) {
   const R = CFG.arena.half * CFG.spawnRadius;
   const all = map.spawns || [
     { x: 0, z: R, dx: 0, dz: -1 }, { x: -R, z: 0, dx: 1, dz: 0 },
     { x: 0, z: -R, dx: 0, dz: 1 }, { x: R, z: 0, dx: -1, dz: 0 },
   ];
   const pick = { 1: [0], 2: [0, 2], 3: [0, 1, 3], 4: [0, 1, 2, 3] }[n];
-  return pick.map((i) => all[i]);
+  if (!rng) return pick.map((i) => all[i]);
+  // random per round: the 4-spawn layout turned by a random quarter (keeps 2 players opposite), other layouts any n of them; shuffled owners
+  const k = Math.floor(rng() * all.length);
+  return shuffle(all.length === 4 ? pick.map((i) => (i + k) % 4) : shuffle(all.map((_, i) => i), rng).slice(0, n), rng).map((i) => all[i]);
+}
+function shuffle(a, rng) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
 }
 
 export function createState() {
