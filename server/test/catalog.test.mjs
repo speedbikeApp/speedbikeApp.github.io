@@ -84,5 +84,17 @@ const sd = await boss.op('dset', { drops: nd }); assert.equal(sd.ok, true); asse
 assert.deepEqual(JSON.parse((await get()).body).drops, sd.drops); assert.deepEqual((await catStore.getDrops()), sd.drops);
 assert.deepEqual((await boss.op('dreset')).drops, DEFAULT_DROPS); assert.deepEqual(JSON.parse((await get()).body).drops, DEFAULT_DROPS);
 
+// LEVELS ops: admin only, validated, served in GET /catalog, reset restores defaults
+import { DEFAULT_LEVELS } from '../../js/leveldef.js';
+for (const op of ['lget', 'lset', 'lreset']) { const r = await alice.op(op, { levels: DEFAULT_LEVELS }); assert.deepEqual([r.ok, r.code], [false, 'forbidden'], op); }
+assert.deepEqual((await boss.op('lget')).levels, DEFAULT_LEVELS); assert.deepEqual(JSON.parse((await get()).body).levels, DEFAULT_LEVELS);
+for (const f of [(l) => { l.xpPerLevel = 5; }, (l) => { l.winsPerLevel = 0; }, (l) => { l.onlineMult = 0.5; }, (l) => { l.maxLevel = 1.5; }, (l) => { delete l.coinsMax; }, (l) => { l.gamesPerLevel = '6'; }]) {
+  const l = { ...DEFAULT_LEVELS }; f(l); assert.equal((await boss.op('lset', { levels: l })).code, 'bad_levels');
+}
+assert.equal((await boss.op('lset', {})).code, 'bad_levels');
+const sl = await boss.op('lset', { levels: { ...DEFAULT_LEVELS, xpPerLevel: 5000, onlineMult: 2, junk: 1 } });
+assert.equal(sl.ok, true); assert.equal(sl.levels.junk, undefined); assert.deepEqual(JSON.parse((await get()).body).levels, sl.levels); assert.deepEqual(await catStore.getLevels(), sl.levels);
+assert.deepEqual((await boss.op('lreset')).levels, DEFAULT_LEVELS); assert.deepEqual(JSON.parse((await get()).body).levels, DEFAULT_LEVELS);
+
 boss.close(); alice.close(); await app.close(); clearTimeout(guard);
 console.log('catalog server tests passed');

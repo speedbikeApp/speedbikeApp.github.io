@@ -245,10 +245,10 @@
   .fi { width: 10px; height: 12px; flex: none; color: #3aa0ff; filter: drop-shadow(0 0 3px #3aa0ff); vertical-align: middle; margin: 0 2px; }
   .hrow .fi { width: 9px; height: 11px; margin: 0; }
   .ai { color: #fc3; text-shadow: 0 0 4px #fc3; margin: 0 2px; font-size: 1em; }
-  #mFriends { position: fixed; left: calc(var(--edge) + var(--sl)); bottom: calc(var(--edge) + var(--sb)); min-width: 0; min-height: 40px; padding: 6px 14px; font-size: 14px; letter-spacing: 2px; display: flex; align-items: center; gap: 8px; z-index: 2; }
+  #mFriends { min-width: 0; min-height: 40px; padding: 6px 14px; font-size: 14px; letter-spacing: 2px; display: flex; align-items: center; gap: 8px; }
   #mFriends .fi { width: 14px; height: 16px; }
   /* ---- admin ---- */
-  #mAdmin { position: fixed; top: calc(var(--edge) + var(--st)); right: calc(var(--edge) + var(--sr)); min-width: 0; min-height: 36px; padding: 6px 14px; font-size: 13px; letter-spacing: 2px; z-index: 2; color: #fc3; border-color: #fc3; }
+  #mAdmin { min-width: 0; min-height: 40px; padding: 6px 14px; font-size: 13px; letter-spacing: 2px; color: #fc3; border-color: #fc3; }
   #mAdmin[hidden] { display: none; }
   #scrAdmin { width: min(780px, 96vw); gap: 8px; }
   #adTabs { width: 100%; } #adTabs .mbtn { padding: 6px 8px; font-size: 13px; letter-spacing: 2px; min-height: 38px; }
@@ -265,9 +265,9 @@
   .fbadge { min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; background: #f33; color: #fff; font-size: 11px; font-weight: 800; letter-spacing: 0; text-align: center; box-shadow: 0 0 8px #f33; }
   .fbadge[hidden] { display: none; }
   /* ---- party ---- */
-  #mDock { position: fixed; left: calc(var(--edge) + var(--sl)); right: calc(var(--edge) + var(--sr)); bottom: calc(var(--edge) + var(--sb)); display: flex; flex-direction: row; flex-wrap: wrap-reverse; align-items: center; gap: 8px; z-index: 2; pointer-events: none; }
+  #mDock { position: fixed; left: calc(var(--edge) + var(--sl)); right: calc(var(--edge) + var(--sr)); top: calc(var(--edge) + var(--st)); display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; z-index: 2; pointer-events: none; }
   #mDock > * { pointer-events: auto; }
-  #mDock #mFriends { position: static; }
+  #mParty { order: 3; }
   #mParty { position: relative; display: flex; align-items: center; gap: 6px; min-height: 40px; box-sizing: border-box; padding: 3px 6px; max-width: 100%; min-width: 0; font-size: 13px; letter-spacing: 1px; }
   #mParty[hidden], #pMenu[hidden], #pInv[hidden] { display: none; }
   .crown { width: 14px; height: 10px; flex: none; color: #fc3; filter: drop-shadow(0 0 3px #fc3); }
@@ -277,16 +277,15 @@
   .pm span.n { overflow: hidden; text-overflow: ellipsis; } .pm.off { color: #789; border-style: dashed; } .pm.me { border-color: var(--neon); }
   .pm.lead { border-color: #fc3; } button.pm { cursor: pointer; touch-action: manipulation; } button.pm:hover, button.pm.open { background: rgba(0,255,255,.2); border-color: var(--neon); }
   #pLeave { min-width: 0; min-height: 32px; padding: 3px 10px; font-size: 12px; letter-spacing: 1px; flex: none; border: 1px solid #f55; color: #f88; background: rgba(40,0,0,.4); }
-  #pMenu { position: absolute; left: 0; bottom: calc(100% + 6px); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; z-index: 3; font-size: 12px; letter-spacing: 1px; white-space: nowrap; }
+  #pMenu { position: absolute; right: 0; top: calc(100% + 6px); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; z-index: 3; font-size: 12px; letter-spacing: 1px; white-space: nowrap; }
   #pMenu .q { color: #fc3; width: 100%; } #pMenu .mbtn { min-width: 0; min-height: 32px; padding: 3px 10px; font-size: 12px; letter-spacing: 1px; }
-  #pInv { position: fixed; top: 12px; right: 12px; width: min(300px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 6px; z-index: 3; pointer-events: none; }
+  #pInv { position: fixed; top: calc(var(--edge) + var(--st) + 100px); right: calc(var(--edge) + var(--sr)); width: min(300px, calc(100vw - 24px)); display: flex; flex-direction: column; gap: 6px; z-index: 3; pointer-events: none; }
   #pInv > * { pointer-events: auto; }
   .pInvRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12px; letter-spacing: 1px; border-color: #fc3; box-shadow: 0 0 10px #fc3; background: rgba(20,14,0,.85); }
   .pInvRow .t { flex: 1 1 100%; color: #fff; } .pInvRow .t b { color: #fc3; } .pInvRow .t small { color: #fc3; margin-left: 6px; }
   .pInvRow .mbtn { min-width: 0; min-height: 32px; padding: 3px 12px; font-size: 12px; letter-spacing: 1px; } .pInvRow .note { font-size: 10px; opacity: .7; flex: 1 1 100%; }
   @media (max-height: 460px), (max-width: 520px) {
-    #mDock { left: calc(12px + var(--sl)); right: calc(12px + var(--sr)); bottom: calc(12px + var(--sb)); gap: 6px; } #mParty { min-height: 34px; padding: 2px 4px 2px 8px; gap: 4px; } .pm { font-size: 12px; padding: 3px 6px; max-width: 88px; } #pLeave { min-height: 28px; padding: 2px 8px; font-size: 11px; }
-    #mDock #mFriends { left: auto; bottom: auto; }
+    #mDock { left: calc(12px + var(--sl)); right: calc(12px + var(--sr)); top: calc(12px + var(--st)); gap: 6px; } #pInv { top: calc(12px + var(--st) + 84px); right: calc(12px + var(--sr)); } #mAdmin { min-height: 34px; padding: 3px 10px; font-size: 12px; } #mParty { min-height: 34px; padding: 2px 4px 2px 8px; gap: 4px; } .pm { font-size: 12px; padding: 3px 6px; max-width: 88px; } #pLeave { min-height: 28px; padding: 2px 8px; font-size: 11px; }
   }
   #scrFriends { width: min(560px, 94vw); gap: 8px; }
   #frStatus { font-size: 11px; letter-spacing: 2px; margin-top: -6px; } #frStatus.ok { color: #7f7; } #frStatus.bad { color: #f88; } #frStatus.wait { color: #fc3; }
@@ -309,7 +308,7 @@
   #frMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; text-align: center; }
   @media (max-height: 460px) {
     #scrFriends { gap: 4px; padding: 6px 16px; } .frPane { max-height: calc(94dvh - 170px); } .frRow { min-height: 30px; font-size: 13px; } #frTabs .mbtn { min-height: 30px; font-size: 12px; }
-    #mFriends { min-height: 34px; padding: 3px 10px; font-size: 12px; left: calc(12px + var(--sl)); bottom: calc(12px + var(--sb)); }
+    #mFriends { min-height: 34px; padding: 3px 10px; font-size: 12px; }
   }
   #scrQueue, #scrLobby { min-width: min(420px, 92vw); }
   .bigtxt { font-size: 18px; letter-spacing: 3px; color: #fff; text-shadow: 0 0 10px #0ff; text-align: center; }
@@ -342,8 +341,26 @@
   #tutBox { position: fixed; top: calc(70px * var(--hud)); left: 50%; transform: translateX(-50%); z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 28px; text-align: center; pointer-events: none; border-color: #fc3; box-shadow: 0 0 18px #fc3; background: rgba(20,14,0,.8); }
   #tutBox[hidden] { display: none; } body.menu #tutBox { top: 8px; }
   #tutTitle { font-size: 34px; letter-spacing: 5px; color: #fff; text-shadow: 0 0 14px #fc3; } #tutSub { font-size: 16px; letter-spacing: 3px; color: #fc3; } #tutStep { font-size: 11px; letter-spacing: 3px; opacity: .7; }
+  /* ---- level / profile ---- */
+  #mProfile { position: fixed; left: calc(var(--edge) + var(--sl)); bottom: calc(var(--edge) + var(--sb)); z-index: 2; display: flex; align-items: center; gap: 14px; padding: 6px 14px 6px 6px; font: inherit; color: #fff; text-align: left; cursor: pointer; background: rgba(0,12,20,.55); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+  #mProfile:hover, #mProfile:focus-visible { background: rgba(0,255,255,.15); outline: none; } #mProfile[hidden] { display: none; }
+  .pfDia { --g: var(--neon); position: relative; flex: none; width: 52px; height: 52px; margin: 16px; transform: rotate(45deg); border: 3px solid var(--g); box-shadow: 0 0 12px var(--g), inset 0 0 10px var(--g); background: rgba(0,10,16,.8); overflow: hidden; color: var(--g); }
+  .pfDia svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-45deg) scale(1.3); opacity: .8; }
+  .pfTxt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  #pfName { font-size: 24px; font-weight: 800; letter-spacing: 2px; color: var(--neon); text-shadow: 0 0 8px var(--neon); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #pfLvl, .prLvl { font-size: 24px; font-weight: 800; letter-spacing: 2px; color: #ff3a2e; text-shadow: 0 0 8px #f22; white-space: nowrap; }
+  #pfXp { font-size: 10px; letter-spacing: 2px; opacity: .8; }
+  #pfPick { font-style: normal; font-size: 10px; letter-spacing: 2px; color: #fc3; animation: kblink 1.4s infinite; white-space: nowrap; } #pfPick[hidden] { display: none; }
+  .xpbar { display: block; height: 6px; width: 100%; box-sizing: border-box; border: 1px solid #f44; } .xpbar i { display: block; height: 100%; background: #f44; box-shadow: 0 0 6px #f44; }
+  .xpbar.big { height: 10px; width: min(360px, 80vw); }
+  .prName { font-size: 28px; font-weight: 800; letter-spacing: 3px; color: var(--neon); text-shadow: 0 0 10px var(--neon); } .prLvl { font-size: 34px; }
+  #pkList { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; max-height: 56vh; overflow-y: auto; }
+  .pkCard { min-width: 0; width: 110px; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; letter-spacing: 1px; } .pkCard .ic { width: 40px; height: 40px; } .pkCard small { margin: 0; font-size: 10px; }
+  .lvup { color: #ff3a2e; text-shadow: 0 0 8px #f22; font-weight: 800; } .lvup small { display: block; color: #fff; font-size: 13px; }
+  .t-legendary { --c: #ffa31a; }
+  @media (max-height: 460px), (max-width: 520px) { #mProfile { left: calc(12px + var(--sl)); bottom: calc(12px + var(--sb)); gap: 6px; padding: 2px 10px 2px 2px; } .pfDia { width: 34px; height: 34px; margin: 10px; } #pfName, #pfLvl { font-size: 16px; max-width: 150px; } #pfXp { font-size: 9px; } .prName { font-size: 22px; } .prLvl { font-size: 26px; } }
   #tutSkip { position: fixed; z-index: 31; left: calc(12px + var(--sl)); bottom: calc((var(--edge) + 6px) * var(--hud) + var(--sb) + 92px * var(--hudb) + 8px); min-width: 0; min-height: 34px; padding: 4px 12px; font-size: 12px; letter-spacing: 2px; }
-  body.menu #tutSkip { bottom: 60px; } #tutSkip[hidden] { display: none; }
+  body.menu #tutSkip { bottom: 12px; } #tutSkip[hidden] { display: none; }
   body.drill #timer, body.drill #hudTL, body.drill #minimap { display: none; }
   @keyframes tutPulse { 50% { box-shadow: 0 0 26px #fc3; border-color: #fc3; opacity: 1; } }
   body[data-tut=boost] #boostBtn, body[data-tut=jump] #jumpBtn, body[data-tut=ability] #abilityBtn, body[data-tut=swap] .abArrow { animation: tutPulse .8s infinite; opacity: 1; }
@@ -424,10 +441,14 @@
       <button id="mStats" class="mbtn frame" type="button">STATS</button>
     </div>
     <button id="mAccount" class="mbtn frame" type="button">ACCOUNT</button>
-    <button id="mAdmin" class="mbtn frame" type="button" hidden>ADMIN</button>
     <div id="coinLine"><span class="coins">SBCOINS <b id="mCoins">0</b></span> &nbsp; <span id="mName"></span></div>
     <div id="mAcct"></div>
+    <button id="mProfile" class="frame" type="button" aria-label="Profile">
+      <span class="pfDia"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="15" r="7" fill="currentColor"/><path d="M5 40c0-10 6-15 15-15s15 5 15 15z" fill="currentColor"/></svg></span>
+      <span class="pfTxt"><b id="pfName"></b><span id="pfLvl"></span><span id="pfBar" class="xpbar"><i></i></span><small id="pfXp"></small><em id="pfPick" hidden>FREE UNLIMITED PICK!</em></span>
+    </button>
     <div id="mDock">
+      <button id="mAdmin" class="mbtn frame" type="button" hidden>ADMIN</button>
       <button id="mFriends" class="mbtn frame" type="button"><svg class="fi" viewBox="0 0 12 14" aria-hidden="true"><circle cx="6" cy="4" r="3" fill="currentColor"/><path d="M0.5 14c0-3.6 2.4-5.6 5.5-5.6s5.5 2 5.5 5.6z" fill="currentColor"/></svg>FRIENDS<b id="mFrBadge" class="fbadge" hidden></b></button>
       <div id="mParty" class="frame" hidden>
         <div id="pRow"></div>
@@ -549,6 +570,24 @@
     </div>
     <div id="gMsg"></div>
     <button id="gBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrProfile" class="screen frame">
+    <h2>PROFILE</h2>
+    <div id="prName" class="prName"></div>
+    <div id="prLvl" class="prLvl"></div>
+    <div id="prBar" class="xpbar big"><i></i></div>
+    <div id="prXp" class="lbl"></div>
+    <div id="prNext" class="lbl"></div>
+    <div id="prMsg" class="adMsg"></div>
+    <button id="prPrestige" class="mbtn frame primary" type="button" hidden>PRESTIGE</button>
+    <button id="prPick" class="mbtn frame pulse" type="button" hidden>CHOOSE UNLIMITED</button>
+    <button id="prBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrPick" class="screen frame">
+    <h2>CHOOSE YOUR UNLIMITED</h2>
+    <div id="pkInfo" class="lbl"></div>
+    <div id="pkList"></div>
+    <button id="pkBack" class="mbtn frame" type="button">LATER</button>
   </div>
   <div id="scrStats" class="screen frame">
     <h2>STATS</h2>

@@ -2,6 +2,7 @@
 // initCatalog() applies the cached copy synchronously and refreshes in the background; it never blocks or throws (the server may be asleep).
 import { applyCatalog } from './parts.js';
 import { setDropTable } from './dropdef.js';
+import { setLevelTable } from './leveldef.js';
 import { reclamp } from './save.js';
 import { serverUrl } from './net.js';
 
@@ -12,7 +13,8 @@ const valid = (c) => !!c && typeof c === 'object' && Array.isArray(c.items) && (
 /** Apply a catalog object (also re-validates the save). Returns false if it was malformed. */
 export function useCatalog(c) {
   if (!valid(c)) return false;
-  applyCatalog(c); reclamp(); if (c.drops) setDropTable(c.drops); // ignores invalid tables
+  if (c.levels) setLevelTable(c.levels); // (before reclamp: it clamps level / xp to the table) ignores invalid tables
+  applyCatalog(c); reclamp(); if (c.drops) setDropTable(c.drops);
   return true;
 }
 export function loadCachedCatalog() {
@@ -23,7 +25,7 @@ export async function refreshCatalog(fetchFn = globalThis.fetch, url) {
     const r = await fetchFn(url || catalogUrl(globalThis.location ? globalThis.location.search : ''));
     const c = await r.json();
     if (!r.ok || !useCatalog(c)) return false;
-    try { globalThis.localStorage.setItem(CATALOG_KEY, JSON.stringify({ items: c.items, overrides: c.overrides || {}, drops: c.drops })); } catch { /* storage unavailable */ }
+    try { globalThis.localStorage.setItem(CATALOG_KEY, JSON.stringify({ items: c.items, overrides: c.overrides || {}, drops: c.drops, levels: c.levels })); } catch { /* storage unavailable */ }
     return true;
   } catch { return false; }
 }

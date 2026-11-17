@@ -1,7 +1,7 @@
 // ADMIN > DROPS tab: edit the loot-box drop table (tier weights, rewards, earning rules). The server is the only authority (server/admin-items.js: dget / dset / dreset);
 // the same validateDrops (js/dropdef.js) runs here first so mistakes show up before sending. User text only via values / textContent. DOM only.
 import { registerAdminTab, ADMIN_ERR } from './admin-core.js';
-import { TIERS, WEIGHT_RANGE, POOLS, MAX_REWARDS, validateDrops } from './dropdef.js';
+import { TIERS, ALL_TIERS, WEIGHT_RANGE, POOLS, MAX_REWARDS, validateDrops } from './dropdef.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 const btn = (label, cls, fn) => { const b = el('button', 'mbtn frame' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; };
@@ -9,7 +9,7 @@ const field = (label, node) => { const l = el('label', 'adLine'); l.append(el('s
 const num = (v, min, max, step = 1) => { const i = el('input'); i.type = 'number'; i.min = min; i.max = max; i.step = step; i.value = v; return i; };
 const select = (opts, val) => { const s = el('select'); for (const [v, t] of opts) { const o = el('option', '', t); o.value = v; s.appendChild(o); } s.value = val; return s; };
 const POOL_LABEL = { normal: 'NORMAL (<= NORMAL MAX)', rare: 'RARE (>= RARE MIN)', any: 'ANY' };
-const RULES = [['unlimitedOdds', '"1 IN N" UNLIMITED', 2, 1e7], ['loseStreak', 'LOSSES IN A ROW = 1 DROP', 1, 100], ['winDrops', 'DROPS PER WIN', 0, 10], ['bonusWinDrops', 'DROPS PER BONUS WIN', 0, 10], ['normalMax', 'NORMAL MAX PRICE', 0, 1e6], ['rareMin', 'RARE MIN PRICE', 0, 1e6]];
+const RULES = [['unlimitedOdds', '"1 IN N" UNLIMITED', 2, 1e7], ['legendaryOdds', 'LEGENDARY "1 IN N" UNLIMITED', 2, 1e7], ['loseStreak', 'LOSSES IN A ROW = 1 DROP', 1, 100], ['winDrops', 'DROPS PER WIN', 0, 10], ['bonusWinDrops', 'DROPS PER BONUS WIN', 0, 10], ['normalMax', 'NORMAL MAX PRICE', 0, 1e6], ['rareMin', 'RARE MIN PRICE', 0, 1e6]];
 
 function mountDrops(root, { call }) {
   const msg = el('div', 'adMsg'), body = el('div');
@@ -24,7 +24,7 @@ function mountDrops(root, { call }) {
       const w = TIERS.map((k) => Number(tierIn[k].w.value)), sum = w.reduce((a, b) => a + b, 0), n = Number(ruleIn.unlimitedOdds.value);
       chance.textContent = 'CHANCE (AFTER THE 1/N UNLIMITED ROLL): ' + TIERS.map((k, i) => `${k.toUpperCase()} ${sum > 0 ? ((w[i] / sum) * (n > 1 ? 1 - 1 / n : 1) * 100).toFixed(2) : '?'}%`).join(' | ');
     };
-    for (const k of TIERS) {
+    for (const k of ALL_TIERS) {
       const [lo, hi] = WEIGHT_RANGE[k], w = num(t.tiers[k].weight, lo, hi), rows = [], list = el('div');
       w.addEventListener('input', showChance);
       tierIn[k] = { w, rows };
@@ -42,7 +42,7 @@ function mountDrops(root, { call }) {
       };
       const add = btn('ADD REWARD', '', () => { rows.push({ kind: 'coins', amount: 100 }); drawRows(); });
       rows.push(...t.tiers[k].rewards.map((r) => ({ ...r }))); drawRows();
-      body.append(el('b', '', k.toUpperCase()), field(`WEIGHT (${lo}-${hi})`, w), list, add);
+      body.append(el('b', '', k === 'legendary' ? 'LEGENDARY (LEVEL REWARDS ONLY)' : k.toUpperCase()), ...(k === 'legendary' ? [] : [field(`WEIGHT (${lo}-${hi})`, w)]), list, add);
     }
     for (const [key, label, lo, hi] of RULES) { ruleIn[key] = num(t[key], lo, hi); body.appendChild(field(label, ruleIn[key])); }
     ruleIn.unlimitedOdds.addEventListener('input', showChance);
@@ -50,7 +50,7 @@ function mountDrops(root, { call }) {
     body.append(chance); showChance();
     read = () => {
       const o = { tiers: {}, extraChance: Number(extra.value) / 100 };
-      for (const k of TIERS) o.tiers[k] = { weight: Number(tierIn[k].w.value), rewards: tierIn[k].rows.map((r) => r.get()) };
+      for (const k of ALL_TIERS) o.tiers[k] = { weight: Number(tierIn[k].w.value), rewards: tierIn[k].rows.map((r) => r.get()) };
       for (const [key] of RULES) o[key] = Number(ruleIn[key].value);
       return o;
     };

@@ -1,6 +1,7 @@
 // Garage catalog storage (server-only). Interface (async): all() -> {items:[custom item], overrides:{builtinId:{name?,price?,ach?}}}, put(id, doc), del(id), flush().
 // Custom items have ids 'c_...' (js/parts.js isCustomId); any other id is an override of a built-in part.
 // Drop table (loot boxes): getDrops() -> table|null (null = defaults), putDrops(t). Firestore `config/drops` (one doc), JSON key `__drops`. Same Admin-SDK-only rule.
+// Level table (leveling system): getLevels() -> table|null (null = defaults), putLevels(t). Firestore `config/levels`, JSON key `__levels`.
 // Featured-mode override (admin GAMES tab): getFeatured() -> mode id | null (= hourly rotation), putFeatured(id|null). Firestore `config/featured` {mode}, JSON key `__featured`.
 // Firestore: `items/{id}` = the item / override document. Admin SDK only: firestore.rules has no rule for it, so clients are denied (they read GET /catalog).
 import fs from 'node:fs';
@@ -24,6 +25,8 @@ export function createJsonCatalogStore(file) {
     async del(id) { delete d[id]; save(); },
     async getDrops() { return d.__drops ? structuredClone(d.__drops) : null; },
     async putDrops(t) { d.__drops = structuredClone(t); save(); },
+    async getLevels() { return d.__levels ? structuredClone(d.__levels) : null; },
+    async putLevels(t) { d.__levels = structuredClone(t); save(); },
     async getFeatured() { return d.__featured ?? null; },
     async putFeatured(m) { d.__featured = m; save(); },
     flush: () => chain,
@@ -39,6 +42,8 @@ export function createFirestoreCatalogStore(db) {
     async del(id) { await col.doc(id).delete(); },
     async getDrops() { const x = await db.doc('config/drops').get(); return x.exists ? x.data() : null; },
     async putDrops(t) { await db.doc('config/drops').set(t); },
+    async getLevels() { const x = await db.doc('config/levels').get(); return x.exists ? x.data() : null; },
+    async putLevels(t) { await db.doc('config/levels').set(t); },
     async getFeatured() { const x = await db.doc('config/featured').get(); return x.exists ? x.data().mode ?? null : null; },
     async putFeatured(m) { await db.doc('config/featured').set({ mode: m }); },
     flush: async () => {},

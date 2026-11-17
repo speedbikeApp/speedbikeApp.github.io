@@ -94,7 +94,7 @@ export function initHud(info, handlers) {
   }
   $('matchResult').addEventListener('click', (e) => {
     const c = e.target.closest('.dcard'), b = e.target.closest('button:not(.dcard)');
-    const drop = c && ((onlineResult ? onlineResult.reward : reward)?.drops || [])[+c.dataset.i];
+    const drop = c && allDrops(onlineResult ? onlineResult.reward : reward)[+c.dataset.i];
     if (drop && !drop.open) drop.open = drop.pop = true; // syncOverlays re-renders next frame; html is stable after, so the flip plays once
     if (b) (b.dataset.act === 'menu' ? handlers.onMenu : handlers.onPlayAgain)();
   });
@@ -233,7 +233,7 @@ function dropBack(x) {
 }
 /** Leaving the result screen: drops not tapped open yet are opened as toasts (their contents were already added at match end). */
 export function openPendingDrops() {
-  for (const r of [reward, onlineResult && onlineResult.reward]) for (const x of (r && r.drops) || []) {
+  for (const r of [reward, onlineResult && onlineResult.reward]) for (const x of allDrops(r)) {
     if (x.open) continue;
     x.open = true;
     const el = document.createElement('div');
@@ -244,9 +244,18 @@ export function openPendingDrops() {
     setTimeout(() => el.remove(), 4800);
   }
 }
-const dropsHtml = (r) => r && r.drops && r.drops.length
-  ? `<div class="line">YOU GOT ${r.drops.length > 1 ? r.drops.length + ' DROPS' : 'A DROP'} - TAP TO OPEN</div><div class="drops">${r.drops.map((x, i) =>
-    `<button type="button" class="dcard t-${x.tier}${x.open ? ' open' : ''}${x.pop ? ' pop' : ''}" data-i="${i}">${x.open ? dropBack(x) : '?'}</button>`).join('')}</div>` : '';
+// Match drops, then the level-up drops (same tap-to-open cards; index = position in this list).
+const allDrops = (r) => [...((r && r.drops) || []), ...((r && r.level && r.level.levelsUp) || []).map((u) => u.drop).filter(Boolean)];
+const levelHtml = (r) => {
+  const L = r && r.level;
+  if (!L) return '';
+  const bar = `<div class="xpbar big"><i style="width:${Math.round((L.info.xp / L.info.need) * 100)}%"></i></div>`;
+  const ups = L.levelsUp.map((u) => `<div class="line lvup">LEVEL UP! ${u.level}<small>+${u.coins} SBCOINS${u.drop ? ' + ' + u.drop.tier.toUpperCase() + ' DROP' : ''}</small></div>`).join('');
+  return `<div class="line" style="font-size:14px">+${L.gained} XP &nbsp; LEVEL ${L.info.level}${L.info.canPrestige ? ' (MAX)' : ''}</div>${bar}${ups}`;
+};
+const dropsHtml = (r) => levelHtml(r) + (allDrops(r).length
+  ? `<div class="line">YOU GOT ${allDrops(r).length > 1 ? allDrops(r).length + ' DROPS' : 'A DROP'} - TAP TO OPEN</div><div class="drops">${allDrops(r).map((x, i) =>
+    `<button type="button" class="dcard t-${x.tier}${x.open ? ' open' : ''}${x.pop ? ' pop' : ''}" data-i="${i}">${x.open ? dropBack(x) : '?'}</button>`).join('')}</div>` : '');
 
 // Online results: placements with rank badges, then our rank change (badge before -> after, win pip +/-, PROMOTED / DEMOTED banner).
 function onlineResultHtml(match) {

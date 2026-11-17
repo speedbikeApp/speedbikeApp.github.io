@@ -18,14 +18,15 @@ import { initMultiUi, onScreen as multiScreen, multiBack } from './multi-ui.js';
 import { initFriendsUi, onScreen as friendsScreen } from './friends-ui.js';
 import { initAdminUi, onScreen as adminScreen } from './admin-ui.js';
 import { initPartyUi } from './party-ui.js';
+import { initProfileUi, refreshProfile, onScreen as profileScreen } from './profile-ui.js';
 import { ACTIONS, ACTION_LABEL, groups, codeLabel, rebind, defaultKeys, setBindings, getBindings, captureNextKey, GAMEPAD_LAYOUT } from './input.js';
 
 const $ = (id) => document.getElementById(id);
 let current = null;      // visible screen id or null
 let settingsFrom = null; // 'main' | 'pause'
 
-const SCREENS = ['scrMain', 'scrPlay', 'scrMode', 'scrMapSel', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrAdmin', 'scrSettings', 'scrControls'];
-const FULL_MENU = ['scrMain', 'scrPlay', 'scrMode', 'scrMapSel', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrAccount', 'scrAdmin']; // screens shown over the empty arena (HUD hidden)
+const SCREENS = ['scrMain', 'scrPlay', 'scrMode', 'scrMapSel', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrProfile', 'scrPick', 'scrAccount', 'scrAdmin', 'scrSettings', 'scrControls'];
+const FULL_MENU = ['scrMain', 'scrPlay', 'scrMode', 'scrMapSel', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrProfile', 'scrPick', 'scrAccount', 'scrAdmin']; // screens shown over the empty arena (HUD hidden)
 export function showScreen(name, backdrop = 'home') {
   tutorial.syncColor(); name = tutorial.gateScreen(name, tutorial.stage()); // tutorial stages lock the menu paths
   current = name;
@@ -52,6 +53,7 @@ export function showScreen(name, backdrop = 'home') {
   if (name === 'scrSettings') syncSettingsUi();
   if (name !== 'scrControls') cancelCapture();
   if (name === 'scrControls') renderControls('');
+  profileScreen(name); refreshProfile();
   tutorial.refresh(name);
 }
 export const currentScreen = () => current;
@@ -197,11 +199,12 @@ export function initMenu(h) {
   initFriendsUi({ show: showScreen, openAccount: () => showScreen('scrAccount') });
   initAdminUi({ show: showScreen });
   initPartyUi();
+  initProfileUi({ show: showScreen });
   on('mAbilities', () => showScreen('scrAbilities'));
   on('mGarage', () => showScreen('scrGarage'));
   on('mStats', () => showScreen('scrStats'));
   on('mAccount', () => showScreen('scrAccount'));
-  initAccountUi({ newAccount: () => h.onTutorial(true), back: () => showScreen('scrMain'), open: () => showScreen('scrAccount'), refresh: () => { if (['scrMain', 'scrAbilities', 'scrGarage', 'scrStats'].includes(current)) showScreen(current); } });
+  initAccountUi({ newAccount: () => h.onTutorial(true), back: () => showScreen('scrMain'), open: () => showScreen('scrAccount'), refresh: () => { if (['scrMain', 'scrAbilities', 'scrGarage', 'scrStats', 'scrProfile'].includes(current)) showScreen(current); } });
   // Esc: close the delete confirmation first, else back to the main menu (capture phase: runs before the pause handler)
   addEventListener('keydown', (e) => { if (e.code === 'Escape' && current === 'scrAccount') { e.preventDefault(); if (!accountEsc()) showScreen('scrMain'); } });
   on('gBack', () => { saveSoon(); showScreen('scrMain'); });
@@ -266,7 +269,8 @@ export function menuBack() {
   if (current === 'scrMapSel') { showScreen('scrMode'); return true; }
   if (current === 'scrMode' || current === 'scrMulti') { showScreen('scrPlay'); return true; }
   if (current === 'scrQueue' || current === 'scrLobby') return multiBack(current);
-  if (current === 'scrPlay' || current === 'scrFriends' || current === 'scrAdmin' || current === 'scrAbilities' || current === 'scrGarage' || current === 'scrStats') { showScreen('scrMain'); return true; }
+  if (current === 'scrPlay' || current === 'scrFriends' || current === 'scrAdmin' || current === 'scrAbilities' || current === 'scrGarage' || current === 'scrStats' || current === 'scrProfile') { showScreen('scrMain'); return true; }
+  if (current === 'scrPick') { showScreen('scrProfile'); return true; }
   return false;
 }
 export const inSettings = () => current === 'scrSettings' || current === 'scrControls';

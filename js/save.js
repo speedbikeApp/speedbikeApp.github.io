@@ -7,6 +7,7 @@ import { getAchievement, newlyEarned } from './achievements.js';
 import { defaultKeys, validateKeys } from './input.js';
 import { MAPS } from './maps.js';
 import { CUSTOM_ID_RE } from './mapdef.js';
+import { getLevelTable } from './leveldef.js';
 
 export const KEY = 'speedbike.save.v1';
 export const VERSION = 2; // 2: consumable abilities (unlocks.abilityCount / abilityInf)
@@ -26,6 +27,7 @@ export const defaults = () => ({
   profile: { username: DEFAULT_NAME },
   tutorial: 'new', // per device, not part of the synced progress
   coins: 0,
+  level: 1, xp: 0, prestige: 0, prestigePicks: 0, // leveling (js/levels.js); prestigePicks = pending free unlimited picks
   updatedAt: 0, // ms of the last progress change (cloud merge: newer save wins coins)
   cloudUid: '', // account uid this save's progress belongs to ('' = guest / never synced)
   stats: { matches: 0, wins: 0, winStreak: 0, bestStreak: 0, kills: 0, distance: 0, boosts: 0, jumps: 0,
@@ -72,6 +74,9 @@ function clamp(d) {
   d.profile.username = sanitizeName(d.profile.username);
   if (!TUTORIAL_STAGES.includes(d.tutorial)) d.tutorial = 'new';
   if (d.tutorial === 'new' && d.stats.matches > 0) d.tutorial = 'done'; // players from before the tutorial never get it forced
+  const lv = getLevelTable();
+  d.level = Math.min(lv.maxLevel, Math.max(1, Math.floor(d.level))); d.xp = Math.min(lv.xpPerLevel - 1, Math.max(0, Math.floor(d.xp)));
+  d.prestige = Math.max(0, Math.floor(d.prestige)); d.prestigePicks = Math.max(0, Math.floor(d.prestigePicks));
   d.coins = Math.max(0, Math.floor(d.coins)); d.updatedAt = Math.max(0, Math.floor(d.updatedAt));
   // abilities: only known ids; free ones are always unlocked; equipped must be unlocked, unique, <= maxSlots
   const un = new Set(d.unlocks.abilities.filter(isAbilityId));
@@ -126,8 +131,8 @@ export function parseSave(text) {
 let data = null, timer = null, lastP = '', onProgress = null;
 
 // Everything that is progress (synced to the account); settings / profile stay per device.
-export const progressOf = (d) => ({ coins: d.coins, updatedAt: d.updatedAt, stats: d.stats, unlocks: d.unlocks, equipped: d.equipped });
-const progressKey = (d) => JSON.stringify([d.coins, d.stats, d.unlocks, d.equipped]);
+export const progressOf = (d) => ({ coins: d.coins, level: d.level, xp: d.xp, prestige: d.prestige, prestigePicks: d.prestigePicks, updatedAt: d.updatedAt, stats: d.stats, unlocks: d.unlocks, equipped: d.equipped });
+const progressKey = (d) => JSON.stringify([d.coins, d.level, d.xp, d.prestige, d.prestigePicks, d.stats, d.unlocks, d.equipped]);
 /** fn() is called after a flush that changed progress (cloud sync hook). */
 export function setProgressListener(fn) { onProgress = fn; }
 
@@ -150,7 +155,7 @@ export function flushSave() {
 /** Replace the progress fields with `p` (sanitized like a loaded save) and tag the save as belonging to account `uid`. */
 export function applyProgress(p, uid) {
   const d = getSave(), n = parseSave(JSON.stringify({ ...d, ...p, cloudUid: uid || '' }));
-  for (const k of ['coins', 'updatedAt', 'stats', 'unlocks', 'equipped', 'cloudUid']) d[k] = n[k];
+  for (const k of ['coins', 'level', 'xp', 'prestige', 'prestigePicks', 'updatedAt', 'stats', 'unlocks', 'equipped', 'cloudUid']) d[k] = n[k];
   lastP = progressKey(d); flushSave();
   return d;
 }

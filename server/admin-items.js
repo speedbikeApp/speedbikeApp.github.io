@@ -3,12 +3,13 @@
 //   itemList {} -> {items:[custom], overrides:{id:{name?,price?,ach?}}}
 //   itemSave {id?, item}  no id: create custom {cat, name, price, ach?, base, color?} -> {item}; id 'c_..': update (cat fixed; hidden:bool allowed); built-in id: override {name?, price?, ach?:id|null}
 //   itemDelete {id}       custom: hide it (owners keep it; never really deleted); built-in: remove its override
-// DROPS: dget / dset / dreset (see below).
-// GET /catalog -> {ok, items:[custom], overrides, drops} for everybody (js/catalog.js). The catalog is cached in memory (this process is the only writer).
+// DROPS: dget / dset / dreset (see below). LEVELS: lget {} / lset {levels} / lreset {} -> {levels} (js/leveldef.js).
+// GET /catalog -> {ok, items:[custom], overrides, drops, levels} for everybody (js/catalog.js). The catalog is cached in memory (this process is the only writer).
 import crypto from 'node:crypto';
 import { BUILTIN_PARTS, CATS, isCustomId } from '../js/parts.js';
 import { isAchievementId } from '../js/achievements.js';
 import { DEFAULT_DROPS, validateDrops } from '../js/dropdef.js';
+import { DEFAULT_LEVELS, validateLevels } from '../js/leveldef.js';
 import { adminError as E } from './admin.js';
 import { originAllowed } from './login.js';
 
@@ -43,13 +44,15 @@ export function cleanOverride(it) {
 }
 
 export function createCatalog(store) {
-  let cache = null, drops;
+  let cache = null, drops, levels;
   const get = async () => cache || (cache = await store.all());
   return {
     get,
     // drop table: only validated tables are served; missing / invalid stored doc = defaults
     async getDrops() { if (!drops) drops = validateDrops(await store.getDrops()) || structuredClone(DEFAULT_DROPS); return drops; },
     async putDrops(t) { await store.putDrops(t); drops = t; },
+    async getLevels() { if (!levels) { const v = validateLevels(await store.getLevels()); levels = v.ok ? v.levels : { ...DEFAULT_LEVELS }; } return levels; },
+    async putLevels(t) { await store.putLevels(t); levels = t; },
     getFeatured: () => store.getFeatured(),
     putFeatured: (m) => store.putFeatured(m),
     async putItem(it) { const c = await get(); await store.put(it.id, it); const i = c.items.findIndex((x) => x.id === it.id); if (i >= 0) c.items[i] = it; else c.items.push(it); },
@@ -65,6 +68,12 @@ export function registerItemOps({ admin, catalog, log = () => {} }) {
     await catalog.putDrops(t); log(`[admin] ${ctx.uid} drops set`); return { drops: t };
   });
   admin.register('dreset', async (a, ctx) => { const t = structuredClone(DEFAULT_DROPS); await catalog.putDrops(t); log(`[admin] ${ctx.uid} drops reset`); return { drops: t }; });
+  admin.register('lget', async () => ({ levels: await catalog.getLevels() }));
+  admin.register('lset', async (a, ctx) => {
+    const v = validateLevels(a.levels); if (!v.ok) throw E('bad_levels');
+    await catalog.putLevels(v.levels); log(`[admin] ${ctx.uid} levels set`); return { levels: v.levels };
+  });
+  admin.register('lreset', async (a, ctx) => { const t = { ...DEFAULT_LEVELS }; await catalog.putLevels(t); log(`[admin] ${ctx.uid} levels reset`); return { levels: t }; });
   admin.register('itemList', async () => catalog.get());
   admin.register('itemSave', async (a, ctx) => {
     const c = await catalog.get(), id = a.id, raw = a.item;
@@ -104,7 +113,7 @@ export function createCatalogHandler({ catalog, allowedOrigins = [], production 
     const origin = req.headers.origin, h = { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', Vary: 'Origin' };
     if (origin && originAllowed(origin, allowedOrigins, production)) h['Access-Control-Allow-Origin'] = origin;
     if (req.method !== 'GET') { res.writeHead(405, h); return res.end('{"ok":false}'); }
-    try { const c = await catalog.get(), drops = await catalog.getDrops(); res.writeHead(200, h); res.end(JSON.stringify({ ok: true, items: c.items, overrides: c.overrides, drops })); }
+    try { const c = await catalog.get(), drops = await catalog.getDrops(), levels = await catalog.getLevels(); res.writeHead(200, h); res.end(JSON.stringify({ ok: true, items: c.items, overrides: c.overrides, drops, levels })); }
     catch (e) { log('[catalog] failed:', e.message); res.writeHead(503, { ...h, 'Cache-Control': 'no-store' }); res.end('{"ok":false,"code":"unavailable"}'); }
   };
 }

@@ -35,7 +35,7 @@ const boss = client('uBoss', 'Boss'), alice = client('uAlice', 'Alice'), bob = c
 await boss.hello(); await alice.hello(); await bob.hello(); await cy.hello();
 
 // ---- non-admin refused everything
-for (const [op, a] of [['gget', {}], ['gstart', { queue: 'standard' }], ['gstop', { id: 1 }], ['gfeatured', { mode: '3d' }], ['pitems', { uid: 'uBob', part: { cat: 'body', id: 'armored', own: true } }]]) {
+for (const [op, a] of [['gget', {}], ['gstart', { queue: 'standard' }], ['gstop', { id: 1 }], ['gfeatured', { mode: '3d' }], ['pitems', { uid: 'uBob', part: { cat: 'body', id: 'armored', own: true } }], ['plevel', { uid: 'uBob', level: 5 }], ['pprestige', { uid: 'uBob', picks: 1 }]]) {
   const r = await alice.op(op, a); assert.deepEqual([r.ok, r.code], [false, 'forbidden'], op);
 }
 assert.equal(await adminStore.getProgress('uBob'), null);
@@ -111,5 +111,18 @@ for (const a of [{ id: 'turbo', count: 5 }, { id: 'nope', count: 5 }, { id: 'ste
 assert.equal((await it({})).code, 'bad_item'); assert.equal((await w2.op('pitems', { uid: 'nobody0', part: {} })).ok, false);
 // an online player is told to resync (force)
 const rs = bobC.next('resync'); await it({ part: { cat: 'tire', id: 'wide', own: true } }); assert.equal((await rs).force, true);
+
+// ---- plevel / pprestige: set level + xp, grant the prestige pick page (cloud progress, forced resync)
+const rs2 = bobC.next((m) => m.t === 'resync' && m.force);
+assert.equal((await w2.op('plevel', { uid: 'uBob', level: 42, xp: 1234 })).ok, true); await rs2;
+p = await pg('uBob'); assert.deepEqual([p.level, p.xp, p.prestige, p.prestigePicks], [42, 1234, 0, 0]);
+assert.equal((await w2.op('plevel', { uid: 'uBob', level: 7 })).ok, true); p = await pg('uBob'); assert.deepEqual([p.level, p.xp], [7, 0], 'xp defaults to 0');
+for (const a of [{ level: 0 }, { level: 251 }, { level: 1.5 }, { level: '5' }, { level: 5, xp: 10000 }, { level: 5, xp: -1 }, {}]) assert.equal((await w2.op('plevel', { uid: 'uBob', ...a })).code, 'bad_value', JSON.stringify(a));
+assert.equal((await w2.op('plevel', { uid: 'nobody0', level: 5 })).ok, false);
+const rs3 = bobC.next((m) => m.t === 'resync' && m.force);
+assert.equal((await w2.op('pprestige', { uid: 'uBob', picks: 2 })).ok, true); await rs3;
+assert.equal((await pg('uBob')).prestigePicks, 2); assert.equal((await pg('uBob')).level, 7, 'level untouched');
+for (const picks of [-1, 11, 1.5, '1', undefined]) assert.equal((await w2.op('pprestige', { uid: 'uBob', picks })).code, 'bad_value', String(picks));
+assert.equal((await w2.op('pprestige', { uid: 'uBob', picks: 0 })).ok, true); assert.equal((await pg('uBob')).prestigePicks, 0);
 
 clearTimeout(guard); await app.close(); process.exit(0);

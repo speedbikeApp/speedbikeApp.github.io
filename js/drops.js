@@ -1,5 +1,5 @@
 // Drops (loot boxes): how many a match earns, what each one holds, and applying it to the save. Logic takes a save-like `d` and an rng
-// (default Math.random) so tests can seed it. A drop is {tier, id?, inf?, n?, coins?}: tier = common|rare|epic|unlimited, id = ability,
+// (default Math.random) so tests can seed it. A drop is {tier, id?, inf?, n?, coins?}: tier = common|rare|epic|legendary|unlimited, id = ability,
 // inf = unlimited granted, n = charges granted, coins = coins granted (also the half-price value of what did not fit / was already owned).
 import { ABILITIES, ABILITY_IDS } from './abilities.js';
 import { getSave, flushSave, STACK_MAX, INFINITE_MULT } from './save.js';
@@ -18,16 +18,19 @@ export function dropsEarned({ won, bonus, streak }, t = getDropTable(), rng = Ma
   return { count, streak: s };
 }
 
-/** Decide one drop without changing anything. */
-export function rollDrop(d, t = getDropTable(), rng = Math.random) {
+/** Decide one drop without changing anything. `forced` (rare|epic|legendary) skips the random tier pick; only legendary also rolls the UNLIMITED chance (legendaryOdds). */
+export function rollDrop(d, t = getDropTable(), rng = Math.random, forced = null) {
   const all = paid(), inf = d.unlocks.abilityInf;
-  if (rng() < 1 / t.unlimitedOdds) {
+  if ((!forced || forced === 'legendary') && rng() < 1 / (forced ? t.legendaryOdds : t.unlimitedOdds)) {
     const left = all.filter((id) => !inf.includes(id));
     if (left.length) return { tier: 'unlimited', id: pick(left, rng), inf: true };
     return { tier: 'unlimited', coins: half(ABILITIES[pick(all, rng)].price * INFINITE_MULT) }; // owns every unlimited already
   }
-  let r = rng() * (t.tiers.common.weight + t.tiers.rare.weight + t.tiers.epic.weight), tier = 'epic';
-  for (const k of ['common', 'rare']) { if (r < t.tiers[k].weight) { tier = k; break; } r -= t.tiers[k].weight; }
+  let tier = forced;
+  if (!tier) {
+    let r = rng() * (t.tiers.common.weight + t.tiers.rare.weight + t.tiers.epic.weight); tier = 'epic';
+    for (const k of ['common', 'rare']) { if (r < t.tiers[k].weight) { tier = k; break; } r -= t.tiers[k].weight; }
+  }
   const rw = pick(t.tiers[tier].rewards, rng);
   if (rw.kind === 'coins') return { tier, coins: rw.amount };
   const pool = all.filter((id) => rw.pool === 'normal' ? ABILITIES[id].price <= t.normalMax : rw.pool === 'rare' ? ABILITIES[id].price >= t.rareMin : true);

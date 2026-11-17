@@ -10,6 +10,7 @@ import { useAbility, cycleAbility, setLoadout, activeDef, ABILITIES } from './ab
 import { createMatch, MODES, modeWithMap } from './modes.js';
 import { MAPS } from './maps.js';
 import { awardDrops } from './drops.js';
+import { awardXp } from './levels.js';
 import { getSave, addSessionStats, recordMatch, recordRound, flushSave, abilityCharges, spendAbility, spendPassives } from './save.js';
 import { glowHex, DEFAULT_PARTS, resolveAiColors } from './parts.js';
 import { initMenu, showScreen, applySettings, closeSettings, inSettings, currentScreen, menuBack } from './menu.js';
@@ -263,6 +264,7 @@ function trackMatch() {
     const flawless = match.mode.kind === 'deathmatch' && rank === 1 && match.lives[state.playerId] === CFG.deathMatch.lives;
     const r = recordMatch(rank, match.bonusCoins(state.playerId), { mode: match.mode.id, flawless });
     r.drops = awardDrops({ won: rank === 1, bonus: getSave().settings.aiDifficulty === 2 }); r.total = getSave().coins; // HARD bots = bonus win drops
+    r.level = awardXp({ won: rank === 1, online: false }); // (the tutorial drill never reaches match end)
     setMatchReward(r); showUnlocks(r.unlocked);
     if (tutMatch) { tutorial.matchFinished(tutMatch); tutMatch = null; }
   }

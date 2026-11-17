@@ -3,6 +3,7 @@
 //       pget {uid} -> {player}
 //   pban {uid, minutes | permanent:true, reason?}   punban {uid}   padmin {uid, on}
 //   pitems {uid, part:{cat,id,own:bool}} | {uid, ability:{id, count?:0..99 (also ends unlimited), inf?:bool}}   give / take garage parts + power-ups (pget returns the current ones)
+//   plevel {uid, level, xp?}   pprestige {uid, picks: 0..10}  set the level / xp, grant the prestige pick page (pget returns level, xp, prestige, prestigePicks)
 //   prename {uid, username}   ppassword {uid, password}   pedit {uid, coins?, stats?:{key:number}}   pdelete {uid, confirm:<their username>}
 import { normalizeQuery, isUid } from './protocol.js';
 import { NAME_RE, normalizeLoginName, MAX_PASSWORD } from './login.js';
@@ -11,6 +12,9 @@ import { adminError as E, banActive, banView } from './admin.js';
 import { BUILTIN_PARTS, CATS, isCustomId } from '../js/parts.js';
 import { ABILITY_IDS, ABILITIES } from '../js/abilities.js';
 import { STACK_MAX } from '../js/save.js';
+import { validateLevels } from '../js/leveldef.js';
+
+export const MAX_PICKS = 10;
 
 export const STAT_KEYS = ['matches', 'wins', 'winStreak', 'bestStreak', 'kills', 'distance', 'boosts', 'jumps', 'bestRoundBoosts', 'bestRoundJumps', 'dmFlawless', 'wins3d', 'winsHyper']; // js/save.js stats
 export const MAX_VALUE = 1e9, MAX_BAN_MIN = 60 * 24 * 365 * 10;
@@ -50,7 +54,7 @@ export function registerPlayerOps(deps) {
       ...t, online: !!sessionOf(t.uid), admin: isAdm || admin.isBootstrap(t.username), adminLocked: admin.isBootstrap(t.username),
       ban: banActive(ban, now()) ? { ...banView(ban), by: ban.by || '' } : null,
       rank: rank ? { tier: rank.tier, div: rank.div, wins: rank.wins, matches: rank.matches, totalWins: rank.totalWins } : null,
-      progress: { synced: !!prog, coins: Number(prog?.coins) || 0, updatedAt: Number(prog?.updatedAt) || 0, stats, achievements: prog?.unlocks?.achievements?.length || 0,
+      progress: { synced: !!prog, coins: Number(prog?.coins) || 0, level: Number(prog?.level) || 1, xp: Number(prog?.xp) || 0, prestige: Number(prog?.prestige) || 0, prestigePicks: Number(prog?.prestigePicks) || 0, updatedAt: Number(prog?.updatedAt) || 0, stats, achievements: prog?.unlocks?.achievements?.length || 0,
         parts: prog?.unlocks?.parts || {}, abilityCount: prog?.unlocks?.abilityCount || {}, abilityInf: prog?.unlocks?.abilityInf || [] },
     } };
   });
@@ -149,6 +153,26 @@ export function registerPlayerOps(deps) {
     act(ctx, 'items', t, JSON.stringify({ part: a.part, ability: a.ability }));
     send(t.uid, { t: 'resync', force: true });
     return { parts: nu.parts, abilityCount: nu.abilityCount, abilityInf: nu.abilityInf };
+  });
+
+  // Same pattern as pedit: edit the cloud progress, make it the newer save, force the online player to take it.
+  const setProgress = async (t, ctx, what, edit) => {
+    const p = (await adminStore.getProgress(t.uid)) || {}, next = { ...p };
+    edit(next); next.updatedAt = Math.max(now(), (Number(p.updatedAt) || 0) + 1);
+    await adminStore.setProgress(t.uid, next); act(ctx, what.name, t, JSON.stringify(what.args));
+    send(t.uid, { t: 'resync', force: true });
+    return { level: Number(next.level) || 1, xp: Number(next.xp) || 0, prestige: Number(next.prestige) || 0, prestigePicks: Number(next.prestigePicks) || 0 };
+  };
+  admin.register('plevel', async (a, ctx) => {
+    const t = await target(a), lv = await catalog.getLevels();
+    const level = a.level, xp = a.xp === undefined ? 0 : a.xp;
+    if (!Number.isInteger(level) || level < 1 || level > lv.maxLevel || !Number.isInteger(xp) || xp < 0 || xp >= lv.xpPerLevel) throw E('bad_value');
+    return setProgress(t, ctx, { name: 'level', args: { level, xp } }, (n) => { n.level = level; n.xp = xp; });
+  });
+  admin.register('pprestige', async (a, ctx) => {
+    const t = await target(a), picks = a.picks;
+    if (!Number.isInteger(picks) || picks < 0 || picks > MAX_PICKS) throw E('bad_value');
+    return setProgress(t, ctx, { name: 'prestige-picks', args: { picks } }, (n) => { n.prestigePicks = picks; });
   });
 
   admin.register('pdelete', async (a, ctx) => {

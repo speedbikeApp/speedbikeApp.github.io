@@ -8,6 +8,7 @@ import { rankLabel, defaultRank } from './ranks.js';
 import './admin-garage.js';
 import './admin-maps.js';
 import './admin-drops.js';
+import './admin-levels.js';
 import './admin-games.js';
 import { mountItems } from './admin-items.js';
 
@@ -74,6 +75,12 @@ function mountPlayers(root) {
       if (args.coins === undefined && !Object.keys(args.stats).length) return toast(msg, 'NOTHING CHANGED');
       if ((await run('pedit', args, 'SAVED - THE PLAYER IS UPDATED IF ONLINE')).ok) reload();
     }));
+
+    const lv = sec('LEVEL'), ll = line(lv), lvl = input('', { type: 'number', min: 1, step: 1, value: String(p.progress.level) }), lxp = input('', { type: 'number', min: 0, step: 1, value: String(p.progress.xp) });
+    ll.append(el('span', '', 'LEVEL '), lvl, el('span', '', ' XP '), lxp, btn('SET', 'primary', async () => { if ((await run('plevel', { uid, level: Number(lvl.value), xp: Number(lxp.value) }, 'SAVED - THE PLAYER IS UPDATED IF ONLINE')).ok) reload(); }));
+    const pl2 = line(lv), picks = input('', { type: 'number', min: 0, max: 10, step: 1, value: String(p.progress.prestigePicks) });
+    pl2.append(el('span', '', `PRESTIGE ${p.progress.prestige} - PENDING UNLIMITED PICKS `), picks, btn('SET PICKS', 'primary', async () => { if ((await run('pprestige', { uid, picks: Number(picks.value) }, 'SAVED - THE PLAYER IS UPDATED IF ONLINE')).ok) reload(); }),
+      btn('GRANT PRESTIGE PICK', '', async () => { if ((await run('pprestige', { uid, picks: Math.min(10, p.progress.prestigePicks + 1) }, 'PICK GRANTED')).ok) reload(); }));
 
     mountItems(sec('GIVE ITEMS'), p, adminCall, (t, k) => toast(msg, t, k));
 

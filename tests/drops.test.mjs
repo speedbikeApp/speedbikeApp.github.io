@@ -59,4 +59,19 @@ const fresh = () => { store.clear(); S.loadSave(); return S.getSave(); };
   const total = d.coins + Object.values(d.unlocks.abilityCount).length;
   assert.ok(total > 0); assert.equal(S.loadSave().stats.dropLose, 0); assert.equal(S.getSave().coins, d.coins);
 }
+{ // legendary tier: never in the random pick, forced roll, own unlimited odds; old tables without it still validate
+  const { validateDrops, ALL_TIERS } = await import('../js/dropdef.js');
+  assert.ok(ALL_TIERS.includes('legendary')); assert.equal(T.tiers.legendary.weight, 0);
+  const d = fresh(), t = { ...T, unlimitedOdds: 1e7 }, rng = seeded(3);
+  for (let i = 0; i < 3000; i++) assert.notEqual(rollDrop(d, t, rng).tier, 'legendary');
+  assert.deepEqual(rollDrop(d, T, seq(0.99, 0), 'legendary'), { tier: 'legendary', coins: 5000 });
+  const y = rollDrop(d, T, seq(0.99, 0.99), 'legendary'); assert.deepEqual([y.tier, y.n], ['legendary', 25]);
+  const u = rollDrop(d, T, seq(0.01, 0), 'legendary'); assert.deepEqual([u.tier, u.inf], ['unlimited', true]); // 1 in 20
+  assert.equal(rollDrop(d, T, seq(0.01, 0), 'epic').tier, 'epic', 'forced rare / epic skip the unlimited roll');
+  assert.deepEqual(rollDrop(d, T, seq(0, 0), 'epic'), { tier: 'epic', coins: 1500 });
+  const old = structuredClone(T); delete old.tiers.legendary; delete old.legendaryOdds;
+  assert.deepEqual(validateDrops(old), T);
+  const bad = structuredClone(T); bad.tiers.legendary.weight = 5; assert.equal(validateDrops(bad), null);
+  bad.tiers.legendary.weight = 0; bad.legendaryOdds = 1; assert.equal(validateDrops(bad), null);
+}
 console.log('drops tests passed');
