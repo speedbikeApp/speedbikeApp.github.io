@@ -205,6 +205,21 @@
   .achRow small { font-size: 10px; opacity: .8; font-family: sans-serif; letter-spacing: 0; } .achRow .tag { float: right; font-size: 10px; opacity: .85; }
   .achRow .bar { height: 6px; border: 1px solid var(--neon); } .achRow .bar i { display: block; height: 100%; background: var(--neon); box-shadow: 0 0 6px var(--neon); }
   .achRow.done { border-color: #fc3; } .achRow.done .bar i { background: #fc3; box-shadow: 0 0 6px #fc3; } .achRow.done .tag { color: #fc3; }
+  /* ---- quests screen ---- */
+  #scrQuests { width: min(860px, 96vw); position: relative; } #scrQuests #qTabs { width: 100%; } #qTabs .mbtn { padding: 6px 8px; font-size: 13px; min-height: 36px; }
+  #qTabs .mbtn.sel { border-color: #fff; } #qTabs .mbtn.dim { opacity: .45; cursor: default; }
+  #qBody { width: 100%; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+  #qBody.event { flex-direction: row; align-items: stretch; gap: 10px; } .qSec, .qSide { display: flex; flex-direction: column; gap: 5px; min-width: 0; } .qSide { flex: 1; }
+  .qFrame { flex: 1; min-width: 0; height: 320px; border: 2px solid var(--neon); background: #000; box-shadow: 0 0 10px var(--neon); }
+  .qRow { padding: 5px 8px; font-size: 12px; letter-spacing: 1px; text-align: left; display: flex; flex-direction: column; gap: 3px; }
+  .qRow small { font-size: 11px; opacity: .85; font-family: sans-serif; letter-spacing: 0; } .qHead { display: flex; justify-content: space-between; gap: 8px; } .qHead .tag { font-size: 11px; opacity: .85; white-space: nowrap; }
+  .qRow .bar { height: 6px; border: 1px solid var(--neon); } .qRow .bar i { display: block; height: 100%; background: var(--neon); box-shadow: 0 0 6px var(--neon); }
+  .qRow.done { border-color: #fc3; } .qRow.done .bar i { background: #fc3; box-shadow: 0 0 6px #fc3; } .qRow.done .tag { color: #fc3; }
+  .qRw { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; color: #fc3; min-height: 22px; } .qClaim { min-height: 26px !important; padding: 2px 14px !important; font-size: 12px !important; flex: none; }
+  #mQuests .fbadge { margin-left: 6px; } #mQuests { display: flex; align-items: center; justify-content: center; }
+  #qPop { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.75); z-index: 5; } #qPop[hidden] { display: none; }
+  @media (max-height: 460px) { .qFrame { height: 210px; } .qRow { padding: 3px 8px; gap: 2px; } .qRow small { font-size: 10px; } #qBody { gap: 4px; } }
+  @media (max-width: 700px) { #qBody.event { flex-direction: column; } .qFrame { flex: none; height: 150px; } }
   #toasts { position: fixed; top: calc(100px * var(--hud)); left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
   .toast { padding: 6px 18px; font-size: 15px; font-weight: 800; letter-spacing: 3px; color: #fff; text-align: center; border-color: #fc3; box-shadow: 0 0 14px #fc3; background: rgba(20,14,0,.8); animation: toastIn .3s ease-out, toastOut .5s ease-in 4.2s forwards; }
   .toast small { display: block; font-size: 10px; font-weight: 500; letter-spacing: 1px; color: #fc3; margin-top: 2px; }
@@ -440,7 +455,10 @@
       <button id="mGarage" class="mbtn frame" type="button">GARAGE</button>
       <button id="mStats" class="mbtn frame" type="button">STATS</button>
     </div>
-    <button id="mAccount" class="mbtn frame" type="button">ACCOUNT</button>
+    <div class="mrow" style="width:100%">
+      <button id="mQuests" class="mbtn frame" type="button">QUESTS<b id="mQBadge" class="fbadge" hidden></b></button>
+      <button id="mAccount" class="mbtn frame" type="button">ACCOUNT</button>
+    </div>
     <div id="coinLine"><span class="coins">SBCOINS <b id="mCoins">0</b></span> &nbsp; <span id="mName"></span></div>
     <div id="mAcct"></div>
     <button id="mProfile" class="frame" type="button" aria-label="Profile">
@@ -595,6 +613,17 @@
     <div id="stSum" class="lbl"></div>
     <div id="stAch"></div>
     <button id="stBack" class="mbtn frame" type="button">BACK</button>
+  </div>
+  <div id="scrQuests" class="screen frame">
+    <h2 id="qTitle">QUESTS</h2>
+    <div id="qTabs" class="mrow">
+      <button class="mbtn frame sel" type="button" data-tab="quests">QUESTS</button>
+      <button class="mbtn frame" type="button" data-tab="season">SEASON</button>
+      <button id="qEvTab" class="mbtn frame" type="button" data-tab="event">EVENT</button>
+    </div>
+    <div id="qBody"></div>
+    <button id="qBack" class="mbtn frame" type="button">BACK</button>
+    <div id="qPop" hidden><div class="panel frame"><h2>YOU WON</h2><div class="drops"></div><button id="qOk" class="mbtn frame primary" type="button">OK</button></div></div>
   </div>
   <div id="scrAccount" class="screen frame">
     <h2>ACCOUNT</h2>

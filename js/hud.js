@@ -225,7 +225,7 @@ function roundResultHtml(match) {
 }
 
 // Drop cards: closed until tapped (drop.open), then tier colour + reward. Names are escaped (admin-editable catalog).
-function dropBack(x) {
+export function dropBack(x) {
   const name = x.id ? esc(ABILITIES[x.id].name.toUpperCase()) : '';
   const main = x.inf ? `<span class="star">✪</span> ${name}<br>UNLIMITED` : x.n ? `${name}<br>x${x.n}` : x.id ? name : '';
   const coins = x.coins ? `<span class="coins">+${x.coins}</span>${x.id || x.tier === 'unlimited' ? ' <small>(VALUE)</small>' : ''}` : '';
@@ -253,7 +253,8 @@ const levelHtml = (r) => {
   const ups = L.levelsUp.map((u) => `<div class="line lvup">LEVEL UP! ${u.level}<small>+${u.coins} SBCOINS${u.drop ? ' + ' + u.drop.tier.toUpperCase() + ' DROP' : ''}</small></div>`).join('');
   return `<div class="line" style="font-size:14px">+${L.gained} XP &nbsp; LEVEL ${L.info.level}${L.info.canPrestige ? ' (MAX)' : ''}</div>${bar}${ups}`;
 };
-const dropsHtml = (r) => levelHtml(r) + (allDrops(r).length
+const questLines = (r) => ((r && r.quests) || []).map((q) => `<div class="line" style="font-size:12px;color:#fc3">QUEST COMPLETE: ${esc(q.quest.title.toUpperCase())}</div>`).join('');
+const dropsHtml = (r) => levelHtml(r) + questLines(r) + (allDrops(r).length
   ? `<div class="line">YOU GOT ${allDrops(r).length > 1 ? allDrops(r).length + ' DROPS' : 'A DROP'} - TAP TO OPEN</div><div class="drops">${allDrops(r).map((x, i) =>
     `<button type="button" class="dcard t-${x.tier}${x.open ? ' open' : ''}${x.pop ? ' pop' : ''}" data-i="${i}">${x.open ? dropBack(x) : '?'}</button>`).join('')}</div>` : '');
 

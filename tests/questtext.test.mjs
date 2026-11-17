@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { rewardText, hms, dh, daysLeft, unclaimedCount } from '../js/questtext.js';
+assert.equal(rewardText('coins:500'), '+500 SBCOINS');
+assert.equal(rewardText('xp:2000,rare_drop:1'), '+2000 XP + RARE DROP');
+assert.equal(rewardText('epic_drop:2'), '2x EPIC DROP');
+assert.match(rewardText('powerup(protector):5'), /^5x [A-Z ]+$/);
+assert.equal(rewardText('junk'), '');
+assert.equal(hms(3723000), '01:02:03'); assert.equal(hms(-5), '00:00:00');
+assert.equal(dh(90 * 3600000), '3d 18h'); assert.equal(dh(5 * 3600000), '5h');
+assert.equal(daysLeft(86400001), 2);
+const v = (d, c) => ({ done: d, claimed: c });
+assert.equal(unclaimedCount({ daily: [v(1, 0), v(1, 1)], weekly: [v(0, 0)], season: [v(1, 0)], event: { quests: [v(1, 0)] } }), 3);
+assert.equal(unclaimedCount({ daily: [], weekly: [], season: [], event: null }), 0);
+console.log('questtext ok');

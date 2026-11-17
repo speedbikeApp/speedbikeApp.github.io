@@ -4,6 +4,7 @@
 import * as auth from './auth.js';
 import { getSave, progressOf, applyProgress, flushSave, setProgressListener, parseSave } from './save.js';
 import { CATS } from './parts.js';
+import { mergeQuests } from './questdef.js';
 
 export const PUSH_DELAY_MS = 3000;
 const union = (a, b) => [...new Set([...a, ...b])];
@@ -19,6 +20,7 @@ export function mergeProgress(local, cloud) {
   for (const c of CATS) parts[c] = union(local.unlocks.parts[c], cloud.unlocks.parts[c]);
   return {
     coins: newer.coins, level: newer.level, xp: newer.xp, prestige: newer.prestige, prestigePicks: newer.prestigePicks, updatedAt: Math.max(local.updatedAt, cloud.updatedAt), stats,
+    quests: mergeQuests(local.quests, cloud.quests, newer === local), // per period: max progress + claimed union; a newer period replaces the old one
     // ability charges are spendable like coins: they follow the newer save; infinite flags are permanent (union)
     unlocks: { abilities: union(local.unlocks.abilities, cloud.unlocks.abilities), abilityCount: { ...newer.unlocks.abilityCount },
       abilityInf: union(local.unlocks.abilityInf || [], cloud.unlocks.abilityInf || []), parts, achievements: union(local.unlocks.achievements, cloud.unlocks.achievements) },

@@ -96,5 +96,32 @@ const sl = await boss.op('lset', { levels: { ...DEFAULT_LEVELS, xpPerLevel: 5000
 assert.equal(sl.ok, true); assert.equal(sl.levels.junk, undefined); assert.deepEqual(JSON.parse((await get()).body).levels, sl.levels); assert.deepEqual(await catStore.getLevels(), sl.levels);
 assert.deepEqual((await boss.op('lreset')).levels, DEFAULT_LEVELS); assert.deepEqual(JSON.parse((await get()).body).levels, DEFAULT_LEVELS);
 
+// QUESTS + EVENTS ops: admin only, validated, served in GET /catalog (the event only while it runs), reset restores defaults
+import { DEFAULT_QUESTS } from '../../js/questdef.js';
+const qv = { id: 'e_play', title: 'ON MY WAY TO THE TOP', body: 'play a multiplayer game!', requirement: 'multiplayer_game_completed:1', reward: 'common_drop:1' };
+const evOf = (id, start, end, extra = {}) => ({ id, title: 'EV ' + id, start, end, html: '<p>x</p>', quests: [qv], ...extra });
+for (const [op, a] of [['qget', {}], ['qset', { quests: DEFAULT_QUESTS }], ['qreset', {}], ['eget', {}], ['eset', { event: evOf('x', 1, 2) }], ['edel', { id: 'x' }]]) { const r = await alice.op(op, a); assert.deepEqual([r.ok, r.code], [false, 'forbidden'], op); }
+assert.deepEqual((await boss.op('qget')).quests, DEFAULT_QUESTS); let qcat = JSON.parse((await get()).body); assert.deepEqual(qcat.quests, DEFAULT_QUESTS); assert.equal(qcat.event, null);
+for (const f of [(q) => { q.season.pop(); }, (q) => { q.daily[0].requirement = 'wat:1'; }, (q) => { q.weekly[0].reward = 'coins:0'; }, (q) => { q.dailyCount = 0; }, (q) => { q.daily[1].id = q.daily[0].id; }]) {
+  const q = structuredClone(DEFAULT_QUESTS); f(q); assert.equal((await boss.op('qset', { quests: q })).code, 'bad_quests');
+}
+assert.equal((await boss.op('qset', {})).code, 'bad_quests');
+const nq = structuredClone(DEFAULT_QUESTS); nq.daily[0].title = 'CHANGED'; nq.junk = 1;
+const sq = await boss.op('qset', { quests: nq }); assert.equal(sq.ok, true); assert.equal(sq.quests.junk, undefined); assert.equal(sq.quests.daily[0].title, 'CHANGED');
+assert.deepEqual(JSON.parse((await get()).body).quests, sq.quests); assert.deepEqual(await catStore.getQuests(), sq.quests);
+assert.deepEqual((await boss.op('qreset')).quests, DEFAULT_QUESTS); assert.deepEqual(JSON.parse((await get()).body).quests, DEFAULT_QUESTS);
+const now = Date.now(), H = 3600e3;
+assert.deepEqual((await boss.op('eget')).events, []);
+for (const e of [{}, evOf('bad id', 1, 2), evOf('x', 5, 5), evOf('x', 1, 2, { html: 'x'.repeat(20001) }), evOf('x', 1, 2, { quests: [{ ...qv, requirement: 'nope:1' }] })]) assert.equal((await boss.op('eset', { event: e })).code, 'bad_event');
+await boss.op('eset', { event: evOf('past', now - 9 * H, now - 8 * H) }); await boss.op('eset', { event: evOf('future', now + 8 * H, now + 9 * H) });
+assert.equal(JSON.parse((await get()).body).event, null, 'nothing running');
+const se = await boss.op('eset', { event: evOf('live', now - H, now + H, { junk: 1 }) });
+assert.equal(se.ok, true); assert.equal(se.event.junk, undefined); assert.deepEqual(se.events.map((e) => e.id), ['past', 'live', 'future'], 'sorted by start');
+qcat = JSON.parse((await get()).body); assert.equal(qcat.event.id, 'live'); assert.deepEqual(qcat.event.quests, [qv]); assert.equal(qcat.event.html, '<p>x</p>');
+assert.equal((await boss.op('eset', { event: evOf('live', now - H, now + H, { title: 'RENAMED' }) })).events.length, 3, 'same id replaces');
+assert.equal(JSON.parse((await get()).body).event.title, 'RENAMED'); assert.equal((await catStore.getEvents()).length, 3);
+assert.equal((await boss.op('edel', { id: 'nope' })).code, 'not_found');
+assert.deepEqual((await boss.op('edel', { id: 'live' })).events.map((e) => e.id), ['past', 'future']); assert.equal(JSON.parse((await get()).body).event, null);
+
 boss.close(); alice.close(); await app.close(); clearTimeout(guard);
 console.log('catalog server tests passed');

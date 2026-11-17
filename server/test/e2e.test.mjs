@@ -3,6 +3,7 @@
 // Latency option: E2E_RTT_MS=150 (+ E2E_JITTER_MS) delays every message each way by RTT/2 (+-jitter, order kept) like a real WAN link.
 // Delays are real milliseconds, so latency runs use TIME_SCALE 1 (see e2e-lag.test.mjs); the bots then send a realistic `ctick`.
 import assert from 'node:assert/strict';
+import { FEATURED_CYCLE } from '../../js/rotation.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -68,7 +69,7 @@ assert.equal(health.loop.intervalMs, 16, 'coarse scheduler'); assert.ok(Array.is
 
 // ---- match 1: four clients play a standard match to the end ----
 const obs = client('obs'); const w = await obs.hello();
-assert.equal(w.t, 'welcome'); assert.equal(w.rank.tier, 'He'); assert.ok(['hyper', '3d'].includes(w.featured)); assert.ok(w.nextRotation > w.serverNow);
+assert.equal(w.t, 'welcome'); assert.equal(w.rank.tier, 'He'); assert.ok(FEATURED_CYCLE.includes(w.featured)); assert.ok(w.nextRotation > w.serverNow);
 const cs = ['a', 'b', 'c', 'd'].map((u) => client(u));
 for (const c of cs) { const wel = await c.hello(); assert.equal(wel.rank.wins, 1); c.send({ t: 'queue', mode: 'standard' }); }
 await Promise.all(cs.map((c) => c.wait('start')));

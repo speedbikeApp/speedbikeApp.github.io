@@ -3,6 +3,7 @@
 import { applyCatalog } from './parts.js';
 import { setDropTable } from './dropdef.js';
 import { setLevelTable } from './leveldef.js';
+import { setQuestConfig, setEvent } from './questdef.js';
 import { reclamp } from './save.js';
 import { serverUrl } from './net.js';
 
@@ -15,6 +16,8 @@ export function useCatalog(c) {
   if (!valid(c)) return false;
   if (c.levels) setLevelTable(c.levels); // (before reclamp: it clamps level / xp to the table) ignores invalid tables
   applyCatalog(c); reclamp(); if (c.drops) setDropTable(c.drops);
+  if (c.quests) setQuestConfig(c.quests);
+  if ('event' in c) setEvent(c.event); // null = no event running
   return true;
 }
 export function loadCachedCatalog() {
@@ -25,7 +28,7 @@ export async function refreshCatalog(fetchFn = globalThis.fetch, url) {
     const r = await fetchFn(url || catalogUrl(globalThis.location ? globalThis.location.search : ''));
     const c = await r.json();
     if (!r.ok || !useCatalog(c)) return false;
-    try { globalThis.localStorage.setItem(CATALOG_KEY, JSON.stringify({ items: c.items, overrides: c.overrides || {}, drops: c.drops, levels: c.levels })); } catch { /* storage unavailable */ }
+    try { globalThis.localStorage.setItem(CATALOG_KEY, JSON.stringify({ items: c.items, overrides: c.overrides || {}, drops: c.drops, levels: c.levels, quests: c.quests, event: c.event ?? null })); } catch { /* storage unavailable */ }
     return true;
   } catch { return false; }
 }

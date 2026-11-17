@@ -2,6 +2,8 @@
 // Custom items have ids 'c_...' (js/parts.js isCustomId); any other id is an override of a built-in part.
 // Drop table (loot boxes): getDrops() -> table|null (null = defaults), putDrops(t). Firestore `config/drops` (one doc), JSON key `__drops`. Same Admin-SDK-only rule.
 // Level table (leveling system): getLevels() -> table|null (null = defaults), putLevels(t). Firestore `config/levels`, JSON key `__levels`.
+// Quests (js/questdef.js): getQuests() -> config|null (null = defaults), putQuests(c). Firestore `config/quests`, JSON key `__quests`.
+// Events: getEvents() -> [event] (stored as a list), putEvents(list). Firestore `config/events` {list}, JSON key `__events`.
 // Featured-mode override (admin GAMES tab): getFeatured() -> mode id | null (= hourly rotation), putFeatured(id|null). Firestore `config/featured` {mode}, JSON key `__featured`.
 // Firestore: `items/{id}` = the item / override document. Admin SDK only: firestore.rules has no rule for it, so clients are denied (they read GET /catalog).
 import fs from 'node:fs';
@@ -27,6 +29,10 @@ export function createJsonCatalogStore(file) {
     async putDrops(t) { d.__drops = structuredClone(t); save(); },
     async getLevels() { return d.__levels ? structuredClone(d.__levels) : null; },
     async putLevels(t) { d.__levels = structuredClone(t); save(); },
+    async getQuests() { return d.__quests ? structuredClone(d.__quests) : null; },
+    async putQuests(c) { d.__quests = structuredClone(c); save(); },
+    async getEvents() { return d.__events ? structuredClone(d.__events) : []; },
+    async putEvents(l) { d.__events = structuredClone(l); save(); },
     async getFeatured() { return d.__featured ?? null; },
     async putFeatured(m) { d.__featured = m; save(); },
     flush: () => chain,
@@ -44,6 +50,10 @@ export function createFirestoreCatalogStore(db) {
     async putDrops(t) { await db.doc('config/drops').set(t); },
     async getLevels() { const x = await db.doc('config/levels').get(); return x.exists ? x.data() : null; },
     async putLevels(t) { await db.doc('config/levels').set(t); },
+    async getQuests() { const x = await db.doc('config/quests').get(); return x.exists ? x.data() : null; },
+    async putQuests(c) { await db.doc('config/quests').set(c); },
+    async getEvents() { const x = await db.doc('config/events').get(); return x.exists ? x.data().list || [] : []; },
+    async putEvents(l) { await db.doc('config/events').set({ list: l }); },
     async getFeatured() { const x = await db.doc('config/featured').get(); return x.exists ? x.data().mode ?? null : null; },
     async putFeatured(m) { await db.doc('config/featured').set({ mode: m }); },
     flush: async () => {},

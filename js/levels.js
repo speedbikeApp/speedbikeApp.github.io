@@ -4,6 +4,7 @@
 //   awardXp({ won, online }, rng) -> { gained, levelsUp: [{ level, coins, drop|null }], info }   applies xp + level-up coins / drops to the save and flushes.
 //       Level-up reward for level L: coins min(coinsPerLevel * L, coinsMax) + ONE drop: L % 100 -> legendary, else L % 10 -> epic, else L % 5 -> rare.
 //       At max level xp stops at need - 1 (the bar stays full, no overflow levels).
+//   addXp(n, rng) -> same shape as awardXp for a plain xp amount (quest rewards)
 //   prestige() -> { ok, reason? }   reason 'notMax'. level = 1, xp = 0, prestige++, prestigePicks++
 //   prestigeChoices(d) -> ability ids eligible for the free unlimited pick (paid, not yet unlimited, not the most expensive one)
 //   pickPrestigeUnlimited(id) -> { ok, reason? }   reason 'noPick' | 'notAllowed'. Grants unlimited for free, prestigePicks--
@@ -37,6 +38,23 @@ export function awardXp({ won, online }, rng = Math.random) {
     levelsUp.push({ level: d.level, coins, drop });
   }
   if (d.level >= t.maxLevel) d.xp = t.xpPerLevel - 1; // bar stays full
+  flushSave();
+  return { gained, levelsUp, info: levelInfo(d) };
+}
+
+/** Same level-up rules as awardXp for an arbitrary xp amount (quest rewards); returns the same shape. */
+export function addXp(n, rng = Math.random) {
+  const d = getSave(), t = getLevelTable(), gained = Math.max(0, Math.floor(n)), levelsUp = [];
+  d.xp += gained;
+  while (d.xp >= t.xpPerLevel && d.level < t.maxLevel) {
+    d.xp -= t.xpPerLevel; d.level++;
+    const coins = Math.min(t.coinsPerLevel * d.level, t.coinsMax), tier = milestone(d.level);
+    d.coins += coins;
+    const drop = tier ? rollDrop(d, getDropTable(), rng, tier) : null;
+    if (drop) applyDrop(d, drop);
+    levelsUp.push({ level: d.level, coins, drop });
+  }
+  if (d.level >= t.maxLevel) d.xp = t.xpPerLevel - 1;
   flushSave();
   return { gained, levelsUp, info: levelInfo(d) };
 }

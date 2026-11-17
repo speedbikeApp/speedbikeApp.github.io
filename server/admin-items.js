@@ -4,16 +4,18 @@
 //   itemSave {id?, item}  no id: create custom {cat, name, price, ach?, base, color?} -> {item}; id 'c_..': update (cat fixed; hidden:bool allowed); built-in id: override {name?, price?, ach?:id|null}
 //   itemDelete {id}       custom: hide it (owners keep it; never really deleted); built-in: remove its override
 // DROPS: dget / dset / dreset (see below). LEVELS: lget {} / lset {levels} / lreset {} -> {levels} (js/leveldef.js).
-// GET /catalog -> {ok, items:[custom], overrides, drops, levels} for everybody (js/catalog.js). The catalog is cached in memory (this process is the only writer).
+// QUESTS: qget {} / qset {quests} / qreset {} -> {quests} (js/questdef.js validateQuestConfig). EVENTS: eget {} -> {events}; eset {event} (create / replace by id) -> {event, events}; edel {id} -> {events}.
+// GET /catalog -> {ok, items:[custom], overrides, drops, levels, quests, event (the one running now or null)} for everybody (js/catalog.js). The catalog is cached in memory (this process is the only writer).
 import crypto from 'node:crypto';
 import { BUILTIN_PARTS, CATS, isCustomId } from '../js/parts.js';
 import { isAchievementId } from '../js/achievements.js';
 import { DEFAULT_DROPS, validateDrops } from '../js/dropdef.js';
 import { DEFAULT_LEVELS, validateLevels } from '../js/leveldef.js';
+import { DEFAULT_QUESTS, validateQuestConfig, validateEvent, eventActive } from '../js/questdef.js';
 import { adminError as E } from './admin.js';
 import { originAllowed } from './login.js';
 
-export const MAX_ITEMS = 200, MAX_PRICE = 1000000, NAME_OK = /^[A-Za-z0-9 _.'-]{1,20}$/;
+export const MAX_EVENTS = 50, MAX_ITEMS = 200, MAX_PRICE = 1000000, NAME_OK = /^[A-Za-z0-9 _.'-]{1,20}$/;
 const isInt = (v) => Number.isInteger(v);
 const builtin = (id) => CATS.find((c) => BUILTIN_PARTS[c].some((p) => p.id === id));
 const ach = (v) => { if (typeof v !== 'string' || !isAchievementId(v)) throw E('bad_ach'); return v; };
@@ -44,7 +46,7 @@ export function cleanOverride(it) {
 }
 
 export function createCatalog(store) {
-  let cache = null, drops, levels;
+  let cache = null, drops, levels, quests, events;
   const get = async () => cache || (cache = await store.all());
   return {
     get,
@@ -53,6 +55,12 @@ export function createCatalog(store) {
     async putDrops(t) { await store.putDrops(t); drops = t; },
     async getLevels() { if (!levels) { const v = validateLevels(await store.getLevels()); levels = v.ok ? v.levels : { ...DEFAULT_LEVELS }; } return levels; },
     async putLevels(t) { await store.putLevels(t); levels = t; },
+    async getQuests() { if (!quests) { const v = validateQuestConfig(await store.getQuests()); quests = v.ok ? v.config : structuredClone(DEFAULT_QUESTS); } return quests; },
+    async putQuests(c) { await store.putQuests(c); quests = c; },
+    async getEvents() { if (!events) events = (await store.getEvents()).map((e) => validateEvent(e)).filter((v) => v.ok).map((v) => v.event); return events; },
+    async putEvents(l) { await store.putEvents(l); events = l; },
+    /** The event running at `now` (latest start wins when two overlap) or null. */
+    async activeEvent(now = Date.now()) { return (await this.getEvents()).filter((e) => eventActive(e, now)).sort((a, b) => b.start - a.start)[0] || null; },
     getFeatured: () => store.getFeatured(),
     putFeatured: (m) => store.putFeatured(m),
     async putItem(it) { const c = await get(); await store.put(it.id, it); const i = c.items.findIndex((x) => x.id === it.id); if (i >= 0) c.items[i] = it; else c.items.push(it); },
@@ -74,6 +82,25 @@ export function registerItemOps({ admin, catalog, log = () => {} }) {
     await catalog.putLevels(v.levels); log(`[admin] ${ctx.uid} levels set`); return { levels: v.levels };
   });
   admin.register('lreset', async (a, ctx) => { const t = { ...DEFAULT_LEVELS }; await catalog.putLevels(t); log(`[admin] ${ctx.uid} levels reset`); return { levels: t }; });
+  admin.register('qget', async () => ({ quests: await catalog.getQuests() }));
+  admin.register('qset', async (a, ctx) => {
+    const v = validateQuestConfig(a.quests); if (!v.ok) throw E('bad_quests');
+    await catalog.putQuests(v.config); log(`[admin] ${ctx.uid} quests set`); return { quests: v.config };
+  });
+  admin.register('qreset', async (a, ctx) => { const c = structuredClone(DEFAULT_QUESTS); await catalog.putQuests(c); log(`[admin] ${ctx.uid} quests reset`); return { quests: c }; });
+  admin.register('eget', async () => ({ events: await catalog.getEvents() }));
+  admin.register('eset', async (a, ctx) => {
+    const v = validateEvent(a.event); if (!v.ok) throw E('bad_event');
+    const list = (await catalog.getEvents()).filter((e) => e.id !== v.event.id);
+    if (list.length >= MAX_EVENTS) throw E('too_many');
+    list.push(v.event); list.sort((x, y) => x.start - y.start);
+    await catalog.putEvents(list); log(`[admin] ${ctx.uid} event set ${v.event.id}`); return { event: v.event, events: list };
+  });
+  admin.register('edel', async (a, ctx) => {
+    const all = await catalog.getEvents(), list = all.filter((e) => e.id !== a.id);
+    if (list.length === all.length) throw E('not_found');
+    await catalog.putEvents(list); log(`[admin] ${ctx.uid} event delete ${a.id}`); return { events: list };
+  });
   admin.register('itemList', async () => catalog.get());
   admin.register('itemSave', async (a, ctx) => {
     const c = await catalog.get(), id = a.id, raw = a.item;
@@ -113,7 +140,7 @@ export function createCatalogHandler({ catalog, allowedOrigins = [], production 
     const origin = req.headers.origin, h = { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60', Vary: 'Origin' };
     if (origin && originAllowed(origin, allowedOrigins, production)) h['Access-Control-Allow-Origin'] = origin;
     if (req.method !== 'GET') { res.writeHead(405, h); return res.end('{"ok":false}'); }
-    try { const c = await catalog.get(), drops = await catalog.getDrops(), levels = await catalog.getLevels(); res.writeHead(200, h); res.end(JSON.stringify({ ok: true, items: c.items, overrides: c.overrides, drops, levels })); }
+    try { const c = await catalog.get(), drops = await catalog.getDrops(), levels = await catalog.getLevels(), quests = await catalog.getQuests(), event = await catalog.activeEvent(); res.writeHead(200, h); res.end(JSON.stringify({ ok: true, items: c.items, overrides: c.overrides, drops, levels, quests, event })); }
     catch (e) { log('[catalog] failed:', e.message); res.writeHead(503, { ...h, 'Cache-Control': 'no-store' }); res.end('{"ok":false,"code":"unavailable"}'); }
   };
 }

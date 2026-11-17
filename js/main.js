@@ -20,6 +20,7 @@ import { initCatalog } from './catalog.js';
 import { initCustomMaps, CUSTOM } from './custommaps.js';
 import { initUpdate } from './update.js';
 import * as tutorial from './tutorial.js';
+import * as qt from './questtrack.js';
 
 const DT = 1 / CFG.tickHz;
 const state = createState();
@@ -49,6 +50,7 @@ let roundCnt = { boosts: 0, jumps: 0 }; // player's boosts / jumps this round (D
 
 // Add the player's tallies to the save (call at round end, match end, quit, restart, page hide).
 function commitSession() {
+  qt.flushDistance();
   if (session.kills || session.distance || session.boosts || session.jumps) showUnlocks(addSessionStats(session));
   session = { kills: 0, distance: 0, boosts: 0, jumps: 0 };
 }
@@ -86,7 +88,7 @@ function startGame(id, drill = false) {
   setBikeStyle(state.bikes[state.playerId], eq);
   aiDefs.forEach((a, i) => { const b = state.bikes[i + 1]; b.color = a.color; b.name = a.name; setBikeInfo(b.id, a.name, a.color); setBikeStyle(b, DEFAULT_PARTS); });
   roundCnt = { boosts: 0, jumps: 0 };
-  screen = 'game'; rewarded = false; setMatchReward(null);
+  screen = 'game'; rewarded = false; setMatchReward(null); qt.begin();
   document.body.classList.remove('menu');
   clearPause(); clearQueue();
   state.tick = 0;
@@ -210,15 +212,15 @@ function tick() {
     const now = performance.now();
     const act = popAction(now);
     const drill = tutorial.isDrilling();
-    const tally = (k) => { if (!drill) { session[k]++; roundCnt[k]++; } };
+    const tally = (k) => { if (!drill) { session[k]++; roundCnt[k]++; qt.used(k === 'boosts' ? 'boost_used' : 'jump_used'); } };
     if (act === 'boost') { if (startBoost(me)) { audio.boost(); tally('boosts'); tutorial.drillEvent('boost'); } } else if (act === 'jump') { if (startJump(me)) { audio.jump(); tally('jumps'); tutorial.drillEvent('jump'); } }
-    else if (act === 'ability') { const def = activeDef(me); if (def && (drill || abilityCharges(def.id) >= 1) && useAbility(me, state)) { if (!drill) { spendAbility(def.id); if (abilityCharges(def.id) < 1) cycleAbility(me, 1, (id) => abilityCharges(id) >= 1); } audio.boost(); tutorial.drillEvent('ability'); } } // drill: borrowed power-ups, no charges
+    else if (act === 'ability') { const def = activeDef(me); if (def && (drill || abilityCharges(def.id) >= 1) && useAbility(me, state)) { if (!drill) { qt.used('powerup_used'); spendAbility(def.id); if (abilityCharges(def.id) < 1) cycleAbility(me, 1, (id) => abilityCharges(id) >= 1); } audio.boost(); tutorial.drillEvent('ability'); } } // drill: borrowed power-ups, no charges
     else if (act === 'swap' || act === 'swapBack') { if (cycleAbility(me, act === 'swap' ? 1 : -1)) tutorial.drillEvent('swap'); }
     if (isAirborne(me) && !me.airTurn) popTurn(now, true); // mid-air: buffered turns are dropped
     else { const t = popTurn(now, canTurn(me)); if (t) { turnBike(me, t); audio.turn(); flashTurn(t); tutorial.drillEvent(t < 0 ? 'left' : 'right'); } }
   }
   else { const t = popTurn(performance.now()); if (t) spectateNext(state, t, me.id); } // out: left / right switch the spectated bike
-  if (me.alive && !tutorial.isDrilling()) session.distance += me.speed * DT;
+  if (me.alive && !tutorial.isDrilling()) { session.distance += me.speed * DT; qt.addDistance(me.speed * DT); }
   updateAIs(state, ais, state.tick++);
   const events = step(state, DT);
   for (const e of events) {
@@ -226,6 +228,7 @@ function tick() {
     burst(b.x, b.z, b.color, b.y + 0.8);
     audio.crash(b.id === state.playerId);
     if (e.killer === state.playerId && e.victim !== state.playerId) session.kills++;
+    if (!tutorial.isDrilling()) { if (e.victim === state.playerId) qt.death(match.runTime); else if (e.killer === state.playerId) qt.kill(match.runTime); }
   }
   if (tutorial.isDrilling()) { match.runTime += DT; if (tutorial.drillDone() && !drillWait) drillWait = 1.5; drillAfter(events); return; }
   match.onTick(events, DT);
@@ -254,6 +257,8 @@ function trackMatch() {
   if (ph !== lastPhase) {
     if (screen === 'game' && (ph === 'roundEnd' || ph === 'matchEnd')) {
       commitSession();
+      const lr = match.lastResult;
+      if (ph === 'roundEnd' && lr && lr.ended && lr.awards.includes(state.playerId)) qt.roundWon();
       if (ph === 'roundEnd' || match.mode.kind === 'deathmatch') { showUnlocks(recordRound(roundCnt)); roundCnt = { boosts: 0, jumps: 0 }; }
     }
     lastPhase = ph;
@@ -265,6 +270,7 @@ function trackMatch() {
     const r = recordMatch(rank, match.bonusCoins(state.playerId), { mode: match.mode.id, flawless });
     r.drops = awardDrops({ won: rank === 1, bonus: getSave().settings.aiDifficulty === 2 }); r.total = getSave().coins; // HARD bots = bonus win drops
     r.level = awardXp({ won: rank === 1, online: false }); // (the tutorial drill never reaches match end)
+    qt.levelUp(r.level.levelsUp.length); r.quests = qt.matchEnd({ online: false, rank, deathmatch: match.mode.kind === 'deathmatch' });
     setMatchReward(r); showUnlocks(r.unlocked);
     if (tutMatch) { tutorial.matchFinished(tutMatch); tutMatch = null; }
   }

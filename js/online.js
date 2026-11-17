@@ -23,6 +23,7 @@ import { social } from './social.js';
 import { party } from './party.js';
 import { setAdmin, createCaller } from './admin-core.js';
 import { resyncCloud } from './cloudsave.js';
+import * as qt from './questtrack.js';
 
 // ---------------------------------------------------------------- presence (menus)
 export const net = createNet({ url: () => serverUrl(globalThis.location ? globalThis.location.search : ''), getHello: () => buildHello(auth) });
@@ -125,7 +126,7 @@ export function begin(msg, st, bikes0, exitCb) {
   announceLoadout();
   document.body.classList.add('online');
   net.lock(true);
-  active = true;
+  active = true; qt.begin();
 }
 
 /** Our loadout for this match: equipped actives that still have charges + the passives whose charge is spent now (one per match).
@@ -149,7 +150,7 @@ function placeBikes(sb) {
 /** Leave the online view and restore the singleplayer world. quiet = no onExit callback. */
 export function stop() {
   if (!active) return;
-  active = false;
+  active = false; qt.flushDistance();
   restoreOverrides(); openPendingDrops();
   if (state && spBikes) { state.bikes = spBikes; state.playerId = 0; state.map = MAPS.arena; for (const b of state.bikes) { b.alive = false; b.trail.length = 0; } }
   resetHudPlayers(); setOnlineResult(null); resetEffects(); resetCamera();
@@ -195,6 +196,7 @@ on('round', (m) => {
   } else if (m.phase === 'running') {
     match.phase = 'running'; sim.tick = m.tick; sim.hist.clear(); runStart = m.tick; tb = { v: m.roundTime, tick: m.tick };
   } else if (m.phase === 'roundEnd' || m.phase === 'matchEnd') {
+    const lr = m.lastResult; if (match.phase === 'running' && lr && lr.ended && lr.awards.includes(youId)) qt.roundWon();
     if (match.phase !== 'matchEnd') match.phase = 'roundEnd'; // matchEnd panel waits for the `end` message (ranks)
   }
 });
@@ -221,7 +223,7 @@ on('ev', (m) => {
   else if (was && r.respawned) was.vox = was.voz = 0;
   if (r.respawned) delete match.respawnIn[m.id];
   if (m.kind === 'ability' && m.id === youId && r.applied) { // the server confirmed the activation: now it costs a charge (turbo: free)
-    spendAbility(m.ability);
+    spendAbility(m.ability); qt.used('powerup_used');
     const me = bikeById(youId); if (me && abilityCharges(m.ability) < 1 && activeDef(me)?.id === m.ability) cycleAbility(me, 1, (id) => abilityCharges(id) >= 1); // last charge: show one that still has charges
   }
   if (r.died && wasAlive) fx(was);
@@ -232,6 +234,10 @@ on('crash', (m) => {
   if (match.phase === 'running') advance(performance.now());
   const b = bikeById(m.victim);
   if (applyCrash(sim, m) && b) fx(b);
+  if (match.phase === 'running' && m.cause !== 'leave') { // the server's crash message is the one authority for kills / deaths (the local sim only guesses)
+    const s = (m.tick - runStart) / CFG.tickHz;
+    if (m.victim === youId) qt.death(s); else if (m.killer === youId) qt.kill(s);
+  }
   if (typeof m.lives === 'number') {
     match.lives[m.victim] = m.lives;
     if (m.lives > 0) match.respawnIn[m.victim] = CFG.deathMatch.respawnDelay; else delete match.respawnIn[m.victim];
@@ -253,6 +259,7 @@ on('end', (m) => {
     const earned = CFG.rewards.onlineMult * (coinsForPlacement(me.place) + kills * CFG.deathMatch.coinsPerKill);
     reward = { earned, total: addCoins(earned) };
     reward.drops = awardDrops({ won: me.place === 1, bonus: true }); reward.level = awardXp({ won: me.place === 1, online: true }); reward.total = getSave().coins;
+    qt.levelUp(reward.level.levelsUp.length); reward.quests = qt.matchEnd({ online: true, rank: me.place, deathmatch: MODES[m.mode]?.kind === 'deathmatch' });
   }
   setOnlineResult({ meId: youId, rows, mode: m.mode, reward, stopped: m.reason === 'stopped' });
   net.lock(false);
@@ -264,6 +271,7 @@ function localInputs(me, nowMs) {
   const act = popAction(nowMs);
   if ((act === 'boost' || act === 'jump') && predictInput(sim, me.id, { kind: act })) {
     net.send({ t: 'in', kind: act, ctick: sim.tick });
+    qt.used(act === 'boost' ? 'boost_used' : 'jump_used');
     if (act === 'boost') audio.boost(); else audio.jump();
   } else if (act === 'swap' || act === 'swapBack') cycleAbility(me, act === 'swap' ? 1 : -1); // which ability the hexagon fires is local; the activation names the ability
   else if (act === 'ability') {
@@ -291,7 +299,7 @@ function advance(nowMs) {
     if (n > CFG.net.maxCatchup) { sim.tick = target - CFG.net.maxCatchup; n = CFG.net.maxCatchup; } // tab was hidden / long stall: snaps resync
     const me = state.bikes.find((b) => b.id === youId);
     while (n-- > 0) {
-      if (me && me.alive) localInputs(me, nowMs);
+      if (me && me.alive) { localInputs(me, nowMs); qt.addDistance(me.speed * DT); }
       else if (me) { const side = popTurn(nowMs); if (side) spectateNext(state, side, me.id); } // out: left / right switch the spectated bike
       for (const e of stepSim(sim)) { const b = bikeById(e.victim); if (b) fx(b); }
     }
