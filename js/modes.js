@@ -167,7 +167,7 @@ export function createMatch(state, mode = MODES.standard, rng = Math.random, hoo
 
     // ---- Death Match ----
     // Crash: lose a life; the kill goes to the trail owner (none for your own trail, walls, falling). With lives left the
-    // bike respawns after respawnDelay, otherwise it is out. The match ends when <= 1 bike still has lives.
+    // bike respawns after respawnDelay, otherwise it is out. The match ends when <= 1 bike still has lives, or every human is out.
     tickDeathMatch(events, dt) {
       const D = CFG.deathMatch;
       m.elapsed += dt;
@@ -189,9 +189,10 @@ export function createMatch(state, mode = MODES.standard, rng = Math.random, hoo
       }
     },
     finishDeathMatch() {
-      const ids = state.bikes.map((b) => b.id);
-      if (ids.filter((id) => m.lives[id] > 0).length > 1) return false;
-      const key = (id) => (m.lives[id] > 0 ? Infinity : m.outAt[id]);
+      const ids = state.bikes.map((b) => b.id), hs = m.humans().filter((id) => id in m.lives);
+      const humansOut = hs.length > 0 && hs.every((id) => !(m.lives[id] > 0)); // the last human out ends it (nobody watches bots finish)
+      if (!humansOut && ids.filter((id) => m.lives[id] > 0).length > 1) return false;
+      const key = (id) => (m.lives[id] > 0 ? 1e9 + m.lives[id] : m.outAt[id]); // still in: more lives left ranks higher
       const order = ids.slice().sort((a, b) => (key(b) - key(a)) || (m.kills[b] || 0) - (m.kills[a] || 0) || a - b);
       const ranks = {};
       order.forEach((id, i) => { ranks[id] = i > 0 && key(id) === key(order[i - 1]) ? ranks[order[i - 1]] : i + 1; });

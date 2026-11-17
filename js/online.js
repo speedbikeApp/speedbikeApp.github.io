@@ -13,7 +13,7 @@ import { canTurn, isAirborne } from './physics.js';
 import { popTurn, popAction, clearQueue } from './input.js';
 import { burst, resetCamera, resetEffects, setBikeStyle, spectateNext } from './render.js';
 import * as audio from './audio.js';
-import { setHudPlayers, resetHudPlayers, setOnlineResult, flashTurn, showAnnounce, setAbilityHud } from './hud.js';
+import { setHudPlayers, resetHudPlayers, setOnlineResult, openPendingDrops, flashTurn, showAnnounce, setAbilityHud } from './hud.js';
 import { ABILITIES, setLoadout, cycleAbility, activeDef } from './abilities.js';
 import { DEFAULT_PARTS, glowHex, colorDist, CLASH_DIST } from './parts.js';
 import { awardDrops } from './drops.js';
@@ -149,7 +149,7 @@ function placeBikes(sb) {
 export function stop() {
   if (!active) return;
   active = false;
-  restoreOverrides();
+  restoreOverrides(); openPendingDrops();
   if (state && spBikes) { state.bikes = spBikes; state.playerId = 0; state.map = MAPS.arena; for (const b of state.bikes) { b.alive = false; b.trail.length = 0; } }
   resetHudPlayers(); setOnlineResult(null); resetEffects(); resetCamera();
   document.body.classList.remove('online');

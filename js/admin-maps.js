@@ -40,7 +40,11 @@ const CSS = `body.mapEditing > *:not(canvas):not(#mapEd) { display: none !import
 #mapEd .win .mbtn.sel { background: rgba(0,255,255,.4); color: #fff; border-color: #fff; }
 #mapEd .win b { display: block; margin: 8px 0 2px; color: var(--neon, #0ff); font-size: 11px; letter-spacing: 2px; }
 #mapEdBar { position: absolute; left: 0; right: 0; bottom: 0; padding: 6px 12px; background: rgba(0,10,16,.8); cursor: default; display: flex; gap: 14px; flex-wrap: wrap; }
-#mapEdBar .bad { color: #f88; } #mapEdBar .ok { color: #7f7; } #mapEdBar .hint { color: #8ab; }`;
+#mapEdBar .bad { color: #f88; } #mapEdBar .ok { color: #7f7; } #mapEdBar .hint { color: #8ab; }
+#mapEdPad { position: absolute; right: 16px; bottom: 56px; display: none; grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(3, 52px); gap: 4px; cursor: default; }
+#mapEdPad button { background: rgba(0,40,50,.7); color: #0ff; border: 1px solid #0ff; font: 700 16px inherit; touch-action: none; padding: 0; }
+#mapEdPad button.on { background: rgba(0,255,255,.45); color: #fff; }
+@media (pointer: coarse) { #mapEdPad { display: grid; } }`;
 
 /** Open the editor on `def` (working copy, mutated in place). onClose(savedId|null) after it closes. */
 function openEditor({ def, id, call, onClose }) {
@@ -55,6 +59,14 @@ function openEditor({ def, id, call, onClose }) {
     h.addEventListener('pointermove', (e) => { if (o) { w.style.left = Math.max(0, e.clientX - o[0]) + 'px'; w.style.top = Math.max(0, e.clientY - o[1]) + 'px'; } });
     h.addEventListener('pointerup', () => { o = null; }); return w; };
   const tools = win('TOOLS', '12px', '12px'), setw = win('SETTINGS', 'calc(100vw - 260px)', '12px'), bar = el('div'); bar.id = 'mapEdBar'; root.append(bar);
+  // touch D-pad (phones have no WASD): holding a button holds that key for frame(); drag on the view still looks around
+  const pad = el('div'); pad.id = 'mapEdPad'; root.append(pad);
+  for (const [txt, code, col, row] of [['▲', 'KeyW', 2, 1], ['◀', 'KeyA', 1, 2], ['▶', 'KeyD', 3, 2], ['▼', 'KeyS', 2, 3], ['UP', 'Space', 3, 1], ['DN', 'ShiftLeft', 3, 3]]) {
+    const b = el('button'); b.type = 'button'; b.textContent = txt; b.style.gridArea = `${row} / ${col}`; pad.append(b);
+    const on = (e) => { e.preventDefault(); b.setPointerCapture(e.pointerId); keys.add(code); b.classList.add('on'); };
+    const off = () => { keys.delete(code); b.classList.remove('on'); };
+    b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('lostpointercapture', off);
+  }
   const status = el('span'), hint = el('span', 'hint', 'WASD MOVE | SPACE UP | SHIFT DOWN | HOLD LEFT MOUSE: LOOK | RIGHT CLICK: SELECT, HOLD + DRAG: MOVE | DEL: DELETE | ESC: CLOSE');
   bar.append(status, hint);
   const say = (t, k) => { status.textContent = t; status.className = k || ''; };

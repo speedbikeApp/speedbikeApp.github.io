@@ -34,6 +34,16 @@ const T = MAPS.tiers;
   assert.equal(m.phase, 'running', 'a bot crashing does not end it');
 }
 
+// ---------------------------------------------------------------- Death Match: the player out of lives ends it at once
+{
+  const s = createState(); for (let i = 0; i < 4; i++) s.bikes.push(createBike(i, 0, 0, 0, 0, -1));
+  const m = createMatch(s, MODES.deathmatch, makeRng(2)); m.startMatch(); m.phase = 'running';
+  m.lives[2] = CFG.deathMatch.lives + 1; // bot 2 has more lives left than bots 1 / 3
+  for (let k = 0; k < CFG.deathMatch.lives; k++) { s.bikes[0].alive = false; m.onTick([{ victim: 0, killer: 1 }], DT); }
+  assert.equal(m.phase, 'matchEnd', 'player out of lives: match over, no watching bots finish');
+  assert.equal(m.ranks[0], 4); assert.equal(m.winner, 2, 'most lives left wins');
+}
+
 // ---------------------------------------------------------------- random spawns per round
 {
   const s = createState(); for (let i = 0; i < 2; i++) s.bikes.push(createBike(i, 0, 0, 0, 0, -1));

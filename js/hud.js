@@ -231,6 +231,19 @@ function dropBack(x) {
   const coins = x.coins ? `<span class="coins">+${x.coins}</span>${x.id || x.tier === 'unlimited' ? ' <small>(VALUE)</small>' : ''}` : '';
   return `<small>${x.tier === 'unlimited' ? '<span class="star">✪</span>' : x.tier.toUpperCase()}</small>${main}${main && coins ? '<br>' : ''}${coins}`;
 }
+/** Leaving the result screen: drops not tapped open yet are opened as toasts (their contents were already added at match end). */
+export function openPendingDrops() {
+  for (const r of [reward, onlineResult && onlineResult.reward]) for (const x of (r && r.drops) || []) {
+    if (x.open) continue;
+    x.open = true;
+    const el = document.createElement('div');
+    el.className = `toast frame dtoast t-${x.tier}`;
+    el.innerHTML = `DROP OPENED<small>${dropBack(x).replace(/<br>/g, ' ')}</small>`;
+    $('toasts').appendChild(el);
+    while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
+    setTimeout(() => el.remove(), 4800);
+  }
+}
 const dropsHtml = (r) => r && r.drops && r.drops.length
   ? `<div class="line">YOU GOT ${r.drops.length > 1 ? r.drops.length + ' DROPS' : 'A DROP'} - TAP TO OPEN</div><div class="drops">${r.drops.map((x, i) =>
     `<button type="button" class="dcard t-${x.tier}${x.open ? ' open' : ''}${x.pop ? ' pop' : ''}" data-i="${i}">${x.open ? dropBack(x) : '?'}</button>`).join('')}</div>` : '';
@@ -283,6 +296,7 @@ export function syncOverlays(match) {
   const me = match.phase === 'matchEnd';
   setHtml('matchResult', me ? matchResultHtml(match) : '');
   show($('matchResult'), me);
+  document.body.classList.toggle('matchEnd', me); // hides the game buttons (power-up hexagon etc.) under the result panel
 }
 
 // Top-down minimap: platforms (shaded by height), trails as lines, bikes as dots. A stealthed bike's dot is hidden from the

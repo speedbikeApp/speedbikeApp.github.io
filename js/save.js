@@ -225,7 +225,7 @@ export function addCoins(n) { const d = getSave(); d.coins += Math.max(0, Math.f
 
 // ---- abilities (consumable) ----
 // Free abilities (turbo) are unlimited. Others: charges 0..STACK_MAX in unlocks.abilityCount; at STACK_MAX the player can
-// buy INFINITE for INFINITE_MULT x price (flag in unlocks.abilityInf). unlocks.abilities = ever owned (stays equippable at 0 charges).
+// buy INFINITE (infinitePrice; flag in unlocks.abilityInf). unlocks.abilities = ever owned (stays equippable at 0 charges).
 const isFree = (id) => isAbilityId(id) && ABILITIES[id].price === 0;
 export const isInfinite = (id) => isFree(id) || (isAbilityId(id) && getSave().unlocks.abilityInf.includes(id));
 /** Charges left: Infinity for free / infinite abilities, 0 for unknown. */
@@ -234,7 +234,9 @@ export function abilityCharges(id) {
   if (isInfinite(id)) return Infinity;
   return getSave().unlocks.abilityCount[id] || 0;
 }
-export const infinitePrice = (id) => (isAbilityId(id) ? ABILITIES[id].price * INFINITE_MULT : 0);
+// Unlimited can be bought any time: 100x the charge price at 99 charges, +1 charge price per charge missing (so buying it early
+// never costs more in total than buying the 99 charges first). Each charge bought lowers it by one price.
+export const infinitePrice = (id) => (isAbilityId(id) ? ABILITIES[id].price * (INFINITE_MULT + STACK_MAX - Math.min(STACK_MAX, getSave().unlocks.abilityCount[id] || 0)) : 0);
 /** Spend one charge. true if the ability could be used (unlimited = no change). */
 export function spendAbility(id) {
   const n = abilityCharges(id);
@@ -268,12 +270,11 @@ export function buyAbility(id) {
   clamp(d); flushSave();
   return { ok: true };
 }
-// Buy unlimited uses (only while holding exactly STACK_MAX charges). Returns {ok, reason?}: unknown | owned | need99 | coins.
+// Buy unlimited uses (any time, see infinitePrice). Returns {ok, reason?}: unknown | owned | coins.
 export function buyInfinite(id) {
   const d = getSave();
   if (!isAbilityId(id)) return { ok: false, reason: 'unknown' };
   if (isInfinite(id)) return { ok: false, reason: 'owned' };
-  if ((d.unlocks.abilityCount[id] || 0) < STACK_MAX) return { ok: false, reason: 'need99' };
   const price = infinitePrice(id);
   if (d.coins < price) return { ok: false, reason: 'coins' };
   d.coins -= price; d.unlocks.abilityInf.push(id);

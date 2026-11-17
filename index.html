@@ -15,9 +15,11 @@
   html, body { margin: 0; height: 100%; height: 100dvh; overflow: hidden; background: #000; touch-action: none; user-select: none; -webkit-user-select: none; font-family: 'Orbitron', monospace; color: #0ff; }
   canvas:not(#minimap) { display: block; position: fixed; inset: 0; }
   /* --hud (0.62..1) is set from JS on resize (min(w/1000, h/560)); --hudb keeps buttons >= ~56px, --hudp is the gentler panel scale */
-  :root { --neon: #0ff; --hud: 1; --hudb: max(var(--hud), .68); --hudp: max(var(--hud), .7); }
+  :root { --neon: #0ff; --hud: 1; --hudb: max(var(--hud), .68); --hudp: max(var(--hud), .7);
+    /* screen-edge margin: phone notches / rounded corners (viewport-fit=cover) + a wider border */
+    --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px); --edge: 18px; }
   .frame { border: 2px solid var(--neon); box-shadow: 0 0 10px var(--neon), inset 0 0 8px rgba(0,255,255,.25); background: rgba(0,20,30,.55); }
-  #hudTL { position: fixed; top: calc(10px * var(--hud)); left: calc(10px * var(--hud)); transform: scale(var(--hud)); transform-origin: top left; padding: 5px 7px; display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
+  #hudTL { position: fixed; top: calc(var(--edge) * var(--hud) + var(--st)); left: calc(var(--edge) * var(--hud) + var(--sl)); transform: scale(var(--hud)); transform-origin: top left; padding: 5px 7px; display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
   #hudTL .row { display: flex; align-items: center; gap: 8px; font-size: 14px; letter-spacing: 1px; }
   .hrow { display: flex; align-items: center; gap: 5px; font-size: 11px; letter-spacing: .5px; line-height: 1; padding: 2px 3px; border: 1px solid transparent; }
   .hrow.me { border-color: var(--neon); background: rgba(0,255,255,.10); font-size: 12px; }
@@ -30,17 +32,17 @@
   .hrow .hp i.on { background: var(--c); box-shadow: 0 0 5px var(--c); }
   .hrow .hv { min-width: 16px; text-align: right; }
   #shieldTag { display: none; font-size: 11px; letter-spacing: 2px; color: #bff; text-shadow: 0 0 8px #0ff; }
-  #top { position: fixed; top: calc(10px * var(--hud)); left: 50%; transform: translateX(-50%) scale(var(--hud)); transform-origin: top center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  #top { position: fixed; top: calc(var(--edge) * var(--hud) + var(--st)); left: 50%; transform: translateX(-50%) scale(var(--hud)); transform-origin: top center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
   #ping { display: none; font-size: 11px; letter-spacing: 2px; color: #fff; opacity: .4; margin-top: -4px; pointer-events: none; text-shadow: 0 0 4px #000; }
   #ping.warn { color: #ffd34d; opacity: .6; } #ping.bad { color: #ff6a4d; opacity: .75; }
   body.online #ping.on { display: block; }
   #timer { font-size: 28px; padding: 4px 16px; pointer-events: none; min-width: 7ch; text-align: center; }
   button.neon { font: inherit; color: var(--neon); cursor: pointer; padding: 4px 18px; letter-spacing: 2px; font-size: 14px; }
   button.neon:active { background: rgba(0,255,255,.25); }
-  #minimap { position: fixed; top: calc(10px * var(--hud)); right: calc(10px * var(--hud)); width: calc(140px * var(--hud)); height: calc(140px * var(--hud)); pointer-events: none; }
-  .abtn { position: fixed; bottom: calc(16px * var(--hud)); transform: scale(var(--hudb)); width: 92px; height: 92px; padding: 0; font: inherit; color: var(--neon); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; touch-action: none; -webkit-tap-highlight-color: transparent; z-index: 2;
+  #minimap { position: fixed; top: calc(var(--edge) * var(--hud) + var(--st)); right: calc(var(--edge) * var(--hud) + var(--sr)); width: calc(140px * var(--hud)); height: calc(140px * var(--hud)); pointer-events: none; }
+  .abtn { position: fixed; bottom: calc((var(--edge) + 6px) * var(--hud) + var(--sb)); transform: scale(var(--hudb)); width: 92px; height: 92px; padding: 0; font: inherit; color: var(--neon); cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; touch-action: none; -webkit-tap-highlight-color: transparent; z-index: 2;
     background: linear-gradient(to top, rgba(0,255,255,.5) calc(var(--f, 100) * 1%), rgba(0,20,30,.55) 0); }
-  #boostBtn { left: calc(16px * var(--hud)); transform-origin: bottom left; } #jumpBtn { right: calc(16px * var(--hud)); transform-origin: bottom right; }
+  #boostBtn { left: calc((var(--edge) + 6px) * var(--hud) + var(--sl)); transform-origin: bottom left; } #jumpBtn { right: calc((var(--edge) + 6px) * var(--hud) + var(--sr)); transform-origin: bottom right; }
   .abtn b { font-size: 16px; font-weight: 800; letter-spacing: 1px; } .abtn small { font-size: 11px; letter-spacing: 2px; margin-bottom: 4px; }
   .ic { width: 32px; height: 32px; flex: none; filter: drop-shadow(0 0 4px currentColor); }
   .abtn .ic { width: 38px; height: 38px; }
@@ -49,7 +51,7 @@
   #abInf { font-size: 11px; color: #fc3; letter-spacing: 1px; margin-bottom: 4px; }
   .abtn.active { border-color: #fff; box-shadow: 0 0 18px #fff, inset 0 0 10px rgba(255,255,255,.5); }
   /* ---- ability hexagon (bottom centre) + turn chevrons ---- */
-  #abBar { position: fixed; bottom: calc(16px * var(--hud)); left: 50%; transform: translateX(-50%) scale(var(--hudb)); transform-origin: bottom center; display: flex; align-items: center; gap: 8px; pointer-events: none; z-index: 2; }
+  #abBar { position: fixed; bottom: calc((var(--edge) + 6px) * var(--hud) + var(--sb)); left: 50%; transform: translateX(-50%) scale(var(--hudb)); transform-origin: bottom center; display: flex; align-items: center; gap: 8px; pointer-events: none; z-index: 2; }
   #abWrap { width: 94px; height: 82px; filter: drop-shadow(0 0 7px #0ff); }
   #abilityBtn { pointer-events: auto; position: relative; width: 100%; height: 100%; padding: 0; border: 0; font: inherit; color: var(--neon); cursor: pointer; background: #0ff; touch-action: none; -webkit-tap-highlight-color: transparent;
     clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; }
@@ -65,7 +67,7 @@
   #abilityBtn.empty { filter: grayscale(1) brightness(.6); }
   #abilityBtn.none { background: #357; cursor: default; } #abilityBtn.none::before { background: rgba(0,20,30,.88); }
   .chev { position: fixed; top: 50%; width: calc(44px * var(--hud)); height: calc(110px * var(--hud)); margin-top: calc(-55px * var(--hud)); background: rgba(0,255,255,.2); transition: background .25s, filter .25s; pointer-events: none; z-index: 1; }
-  #chevL { left: calc(10px * var(--hud)); } #chevR { right: calc(10px * var(--hud)); }
+  #chevL { left: calc(var(--edge) * var(--hud) + var(--sl)); } #chevR { right: calc(var(--edge) * var(--hud) + var(--sr)); }
   #chevL { clip-path: polygon(100% 0, 0 50%, 100% 100%, 70% 50%); } #chevR { clip-path: polygon(0 0, 100% 50%, 0 100%, 30% 50%); }
   .chev.lit { background: #0ff; filter: drop-shadow(0 0 6px #0ff); transition: none; }
   /* power-up arrows: the drawn arrow (::before, clip-path) stays 30x48, the button around it is a larger invisible tap target that
@@ -85,6 +87,7 @@
   .star { font-family: 'Segoe UI Symbol', 'Noto Sans Symbols 2', 'Apple Symbols', sans-serif; font-size: 1.25em; color: #fc3; line-height: 1; } /* Orbitron has no ✪ glyph */
   #abMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; }
   /* ---- menus ---- */
+  body.matchEnd #boostBtn, body.matchEnd #jumpBtn, body.matchEnd #abBar, body.matchEnd .chev { display: none; }
   body.menu #hudTL, body.menu #top, body.menu #status, body.menu #boostBtn, body.menu #jumpBtn, body.menu #abBar, body.menu .chev, body.menu #minimap { display: none; }
   #menu { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; touch-action: pan-y; }
   #menu:has(#scrMapSel.on) { align-items: flex-end; padding-bottom: 3vh; box-sizing: border-box; } /* map preview stays visible above the panel */
@@ -242,10 +245,10 @@
   .fi { width: 10px; height: 12px; flex: none; color: #3aa0ff; filter: drop-shadow(0 0 3px #3aa0ff); vertical-align: middle; margin: 0 2px; }
   .hrow .fi { width: 9px; height: 11px; margin: 0; }
   .ai { color: #fc3; text-shadow: 0 0 4px #fc3; margin: 0 2px; font-size: 1em; }
-  #mFriends { position: fixed; left: 14px; bottom: 14px; min-width: 0; min-height: 40px; padding: 6px 14px; font-size: 14px; letter-spacing: 2px; display: flex; align-items: center; gap: 8px; z-index: 2; }
+  #mFriends { position: fixed; left: calc(var(--edge) + var(--sl)); bottom: calc(var(--edge) + var(--sb)); min-width: 0; min-height: 40px; padding: 6px 14px; font-size: 14px; letter-spacing: 2px; display: flex; align-items: center; gap: 8px; z-index: 2; }
   #mFriends .fi { width: 14px; height: 16px; }
   /* ---- admin ---- */
-  #mAdmin { position: fixed; top: 14px; right: 14px; min-width: 0; min-height: 36px; padding: 6px 14px; font-size: 13px; letter-spacing: 2px; z-index: 2; color: #fc3; border-color: #fc3; }
+  #mAdmin { position: fixed; top: calc(var(--edge) + var(--st)); right: calc(var(--edge) + var(--sr)); min-width: 0; min-height: 36px; padding: 6px 14px; font-size: 13px; letter-spacing: 2px; z-index: 2; color: #fc3; border-color: #fc3; }
   #mAdmin[hidden] { display: none; }
   #scrAdmin { width: min(780px, 96vw); gap: 8px; }
   #adTabs { width: 100%; } #adTabs .mbtn { padding: 6px 8px; font-size: 13px; letter-spacing: 2px; min-height: 38px; }
@@ -262,7 +265,7 @@
   .fbadge { min-width: 18px; height: 18px; line-height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; background: #f33; color: #fff; font-size: 11px; font-weight: 800; letter-spacing: 0; text-align: center; box-shadow: 0 0 8px #f33; }
   .fbadge[hidden] { display: none; }
   /* ---- party ---- */
-  #mDock { position: fixed; left: 14px; right: 14px; bottom: 14px; display: flex; flex-direction: row; flex-wrap: wrap-reverse; align-items: center; gap: 8px; z-index: 2; pointer-events: none; }
+  #mDock { position: fixed; left: calc(var(--edge) + var(--sl)); right: calc(var(--edge) + var(--sr)); bottom: calc(var(--edge) + var(--sb)); display: flex; flex-direction: row; flex-wrap: wrap-reverse; align-items: center; gap: 8px; z-index: 2; pointer-events: none; }
   #mDock > * { pointer-events: auto; }
   #mDock #mFriends { position: static; }
   #mParty { position: relative; display: flex; align-items: center; gap: 6px; min-height: 40px; box-sizing: border-box; padding: 3px 6px; max-width: 100%; min-width: 0; font-size: 13px; letter-spacing: 1px; }
@@ -282,7 +285,7 @@
   .pInvRow .t { flex: 1 1 100%; color: #fff; } .pInvRow .t b { color: #fc3; } .pInvRow .t small { color: #fc3; margin-left: 6px; }
   .pInvRow .mbtn { min-width: 0; min-height: 32px; padding: 3px 12px; font-size: 12px; letter-spacing: 1px; } .pInvRow .note { font-size: 10px; opacity: .7; flex: 1 1 100%; }
   @media (max-height: 460px), (max-width: 520px) {
-    #mDock { left: 8px; right: 8px; bottom: 8px; gap: 6px; } #mParty { min-height: 34px; padding: 2px 4px 2px 8px; gap: 4px; } .pm { font-size: 12px; padding: 3px 6px; max-width: 88px; } #pLeave { min-height: 28px; padding: 2px 8px; font-size: 11px; }
+    #mDock { left: calc(12px + var(--sl)); right: calc(12px + var(--sr)); bottom: calc(12px + var(--sb)); gap: 6px; } #mParty { min-height: 34px; padding: 2px 4px 2px 8px; gap: 4px; } .pm { font-size: 12px; padding: 3px 6px; max-width: 88px; } #pLeave { min-height: 28px; padding: 2px 8px; font-size: 11px; }
     #mDock #mFriends { left: auto; bottom: auto; }
   }
   #scrFriends { width: min(560px, 94vw); gap: 8px; }
@@ -306,7 +309,7 @@
   #frMsg { min-height: 14px; font-size: 11px; letter-spacing: 2px; color: #fc3; text-align: center; }
   @media (max-height: 460px) {
     #scrFriends { gap: 4px; padding: 6px 16px; } .frPane { max-height: calc(94dvh - 170px); } .frRow { min-height: 30px; font-size: 13px; } #frTabs .mbtn { min-height: 30px; font-size: 12px; }
-    #mFriends { min-height: 34px; padding: 3px 10px; font-size: 12px; left: 8px; bottom: 8px; }
+    #mFriends { min-height: 34px; padding: 3px 10px; font-size: 12px; left: calc(12px + var(--sl)); bottom: calc(12px + var(--sb)); }
   }
   #scrQueue, #scrLobby { min-width: min(420px, 92vw); }
   .bigtxt { font-size: 18px; letter-spacing: 3px; color: #fff; text-shadow: 0 0 10px #0ff; text-align: center; }
@@ -339,7 +342,7 @@
   #tutBox { position: fixed; top: calc(70px * var(--hud)); left: 50%; transform: translateX(-50%); z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 28px; text-align: center; pointer-events: none; border-color: #fc3; box-shadow: 0 0 18px #fc3; background: rgba(20,14,0,.8); }
   #tutBox[hidden] { display: none; } body.menu #tutBox { top: 8px; }
   #tutTitle { font-size: 34px; letter-spacing: 5px; color: #fff; text-shadow: 0 0 14px #fc3; } #tutSub { font-size: 16px; letter-spacing: 3px; color: #fc3; } #tutStep { font-size: 11px; letter-spacing: 3px; opacity: .7; }
-  #tutSkip { position: fixed; z-index: 31; left: 8px; bottom: calc(16px * var(--hud) + 92px * var(--hudb) + 8px); min-width: 0; min-height: 34px; padding: 4px 12px; font-size: 12px; letter-spacing: 2px; }
+  #tutSkip { position: fixed; z-index: 31; left: calc(12px + var(--sl)); bottom: calc((var(--edge) + 6px) * var(--hud) + var(--sb) + 92px * var(--hudb) + 8px); min-width: 0; min-height: 34px; padding: 4px 12px; font-size: 12px; letter-spacing: 2px; }
   body.menu #tutSkip { bottom: 60px; } #tutSkip[hidden] { display: none; }
   body.drill #timer, body.drill #hudTL, body.drill #minimap { display: none; }
   @keyframes tutPulse { 50% { box-shadow: 0 0 26px #fc3; border-color: #fc3; opacity: 1; } }
@@ -528,7 +531,7 @@
   </div>
   <div id="scrAbilities" class="screen frame">
     <h2>ABILITIES</h2>
-    <div id="abInf"><span class="star">✪</span> = UNLIMITED = Reach 99 to unlock ∞ UNLIMITED for 100× the charge price in SBCOINS</div>
+    <div id="abInf"><span class="star">✪</span> = UNLIMITED = BUY ∞ UNLIMITED ANY TIME - EVERY CHARGE YOU OWN LOWERS ITS PRICE</div>
     <div id="abHead" class="coins"></div>
     <div id="abList"></div>
     <div id="abMsg"></div>

@@ -4,7 +4,7 @@ import { step, turnBike, canTurn, isAirborne, startBoost, startJump } from './ph
 import { initInput, popTurn, popAction, pushAction, clearQueue, setOnPause } from './input.js';
 import { render, renderMapPreview, burst, resetCamera, resetEffects, setBikeStyle, spectateNext } from './render.js';
 import * as audio from './audio.js';
-import { initHud, setTimer, setPing, setScoreboard, setStatus, showPause, showLeave, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks, showAnnounce } from './hud.js';
+import { initHud, openPendingDrops, setTimer, setPing, setScoreboard, setStatus, showPause, showLeave, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks, showAnnounce } from './hud.js';
 import { createAI, updateAIs } from './ai.js';
 import { useAbility, cycleAbility, setLoadout, activeDef, ABILITIES } from './abilities.js';
 import { createMatch, MODES, modeWithMap } from './modes.js';
@@ -125,7 +125,7 @@ function demoTick() {
   match.onTick(events, DT);
 }
 function quitToMenu() {
-  commitSession(); flushSave(); tutorial.endDrill();
+  commitSession(); flushSave(); tutorial.endDrill(); openPendingDrops();
   screen = 'menu'; clearPause();
   for (const b of state.bikes) { b.alive = false; b.trail.length = 0; }
   match.phase = 'idle'; resetEffects(); syncOverlays(match); audio.setEngine(false, 0, 1, false);

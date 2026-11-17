@@ -78,10 +78,10 @@ function renderAbilities(msg) {
     const dim = (p) => (d.coins < p ? ' style="opacity:.55"' : '');
     let buy = '';
     if (!free && n === Infinity) buy = '';
-    else if (!free) { // BUY ✪ always shown, dimmed until 99 charges (click below 99 says NEED 99 CHARGES FIRST)
+    else if (!free) { // BUY ✪ any time; its price drops with every charge owned
       const p = infinitePrice(id);
       buy = (n < STACK_MAX ? `<button class="mbtn frame" type="button" data-id="${id}" data-act="buy"${dim(a.price)}>BUY +1 <span class="coins">${a.price}</span></button>` : '')
-        + `<button class="mbtn frame" type="button" data-id="${id}" data-act="inf"${n < STACK_MAX ? ' style="opacity:.55"' : dim(p)}>BUY <span class="star">✪</span> <span class="coins">${p}</span></button>`;
+        + `<button class="mbtn frame" type="button" data-id="${id}" data-act="inf"${dim(p)}>BUY <span class="star">✪</span> <span class="coins">${p}</span></button>`;
     }
     const eqBtn = owned ? `<button class="mbtn frame${on ? ' sel' : ''}" type="button" data-id="${id}" data-act="eq">${on ? 'EQUIPPED' : 'EQUIP'}</button>` : '';
     const kind = a.type === 'passive' ? 'PASSIVE - 1 PER MATCH' : a.once ? 'ACTIVE - 1 PER USE' : 'ACTIVE';
@@ -140,7 +140,7 @@ function renderStats() {
   }).join('');
   $('stSum').textContent = `ACHIEVEMENTS ${own.size}/${ACHIEVEMENTS.length}`;
 }
-const AB_MSG = { max: 'AT 99 - BUY INFINITE', need99: 'NEED 99 CHARGES FIRST', owned: 'ALREADY UNLIMITED', coins: 'NOT ENOUGH SBCOINS', full: 'ALL SLOTS FULL - UNEQUIP ONE FIRST' };
+const AB_MSG = { max: 'AT 99 - BUY INFINITE', owned: 'ALREADY UNLIMITED', coins: 'NOT ENOUGH SBCOINS', full: 'ALL SLOTS FULL - UNEQUIP ONE FIRST' };
 
 // ---- single-player MAP SELECT: RANDOM + built-in maps; main.js shows the preview (onMapPreview(id|'random'|null)) ----
 const customIds = () => Object.keys(CUSTOM).sort((a, b) => CUSTOM[a].name.localeCompare(CUSTOM[b].name));

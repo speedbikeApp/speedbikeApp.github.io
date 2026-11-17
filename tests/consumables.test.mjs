@@ -23,14 +23,13 @@ assert.ok(d.unlocks.abilities.includes('allJump') && d.unlocks.abilities.include
 S.resetSave();
 const price = CFG.abilities.stealth.price, g = S.getSave();
 g.coins = price * 99 + price * 100 + 5;
+assert.equal(S.infinitePrice('stealth'), price * 199, 'no charges: 100x + 99 missing charges');
 assert.deepEqual(S.buyAbility('turbo'), { ok: false, reason: 'owned' });
-assert.equal(S.buyInfinite('stealth').reason, 'need99');
 for (let i = 1; i <= 99; i++) { assert.ok(S.buyAbility('stealth').ok); assert.equal(S.abilityCharges('stealth'), i); }
 assert.equal(S.buyAbility('stealth').reason, 'max');
-assert.equal(g.coins, price * 100 + 5);
+assert.equal(g.coins, price * 100 + 5); assert.equal(S.infinitePrice('stealth'), price * 100, 'at 99: the original 100x');
 assert.ok(S.buyInfinite('stealth').ok); assert.equal(g.coins, 5);
 assert.equal(S.abilityCharges('stealth'), Infinity); assert.equal(S.buyAbility('stealth').reason, 'owned'); assert.equal(S.buyInfinite('stealth').reason, 'owned');
-assert.equal(S.infinitePrice('stealth'), price * 100);
 assert.ok(S.spendAbility('stealth')); assert.equal(S.abilityCharges('stealth'), Infinity);
 // not enough coins for infinite
 g.unlocks.abilityCount.slowDown = 99; g.coins = 10;
@@ -69,3 +68,7 @@ assert.equal(C.mergeProgress(a, { ...b, updatedAt: 50 }).unlocks.abilityCount.st
 const r = C.resolveProgress(S.parseSave(JSON.stringify(a)), b, 'u');
 assert.equal(r.unlocks.abilityCount.stealth, 2); assert.equal(r.unlocks.abilityCount.protector, undefined); assert.ok(r.unlocks.abilityInf.includes('allBoost'));
 console.log('consumables ok');
+{ // instant buy below 99: pays the higher price, total never more than 99 charges + 100x
+  S.resetSave(); const g2 = S.getSave(); g2.unlocks.abilityCount.allBoost = 9; g2.coins = CFG.abilities.allBoost.price * 190;
+  assert.ok(S.buyInfinite('allBoost').ok); assert.equal(g2.coins, 0); assert.equal(S.abilityCharges('allBoost'), Infinity);
+}
