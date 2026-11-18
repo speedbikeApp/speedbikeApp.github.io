@@ -40,7 +40,9 @@ const CSS = `body.bkEditing > *:not(#bkEd) { display: none !important; }
 #bkEd .bkRow { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
 #bkEd .bkRow.bkN { flex-wrap: nowrap; gap: 2px; }
 #bkEd .mbtn { min-width: 0; min-height: 26px; padding: 1px 7px; font-size: 10px; letter-spacing: 1px; margin: 0; }
-#bkEd .bkList { max-height: 200px; overflow-y: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; border: 1px solid #357; padding: 3px 3px 14px; min-height: 18px; }
+#bkEd .bkTree { width: min(230px, 30vw); flex: none; display: flex; flex-direction: column; gap: 4px; padding: 4px 6px 6px; box-sizing: border-box; min-height: 0; border-right: 2px solid #0ff; box-shadow: 0 0 10px #0ff, inset 0 0 8px rgba(0,255,255,.25); background: rgba(0,16,26,.96); }
+#bkEd .bkList { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; border: 1px solid #357; padding: 3px 3px 24px; overscroll-behavior: contain; }
+#bkEd .bkTree span { color: #8ab; font-size: 9px; } #bkEd .bkList .mbtn { flex: none; justify-content: flex-start; text-align: left; overflow: hidden; white-space: nowrap; }
 #bkEd .bkList .drop { box-shadow: 0 0 8px #7f7; border-color: #7f7; } #bkEd .bkList.drop { border-color: #7f7; }
 #bkEd .bkKeys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; } #bkEd .bkKeys .mbtn.wait { border-color: #ff0; color: #ff0; }
 #bkEd .bkCell { display: flex; align-items: center; } #bkEd .bkCell span { width: 9px; color: #8ab; }
@@ -59,7 +61,7 @@ export function openBikeEditor({ start, call, onClose = () => {} }) {
   let base = start.base, shapes = (validateShapes(cat, start.shapes).shapes || []).slice(), cur = shapes.length ? 0 : -1, keys = loadKeys(), binding = null, mult = 1, color = COLORS[0], loaded = item && item.id, dirty = false, dead = false;
   const st = el('style'); st.textContent = CSS; document.head.append(st);
   const root = el('div'); root.id = 'bkEd'; document.body.append(root); document.body.classList.add('bkEditing');
-  const view = el('div', 'bkView'), wrap = el('div', 'bkSide'), side = el('div', 'bkSc'), bar = el('div', 'bkBar'); wrap.append(side, bar); root.append(view, wrap);
+  const view = el('div', 'bkView'), wrap = el('div', 'bkSide'), side = el('div', 'bkSc'), bar = el('div', 'bkBar'); wrap.append(side, bar); const treeBox = el('div', 'bkTree'); root.append(treeBox, view, wrap);
   const canvas = el('canvas'); view.append(canvas);
   const status = el('div', 'bkSt'); view.append(status);
   const say = (t, k) => { status.textContent = t || ''; status.className = 'bkSt' + (k ? ' ' + k : ''); };
@@ -173,7 +175,7 @@ export function openBikeEditor({ start, call, onClose = () => {} }) {
   const head = el('div', 'bkRow'); head.append(el('b', '', `${CATN[cat]} EDITOR${wheelCat ? ' (WHEEL SPACE, FRONT WHEEL SHOWN)' : ''}`)); side.append(head);
   const baseSel = sel(baseOpts(cat), base); baseSel.addEventListener('change', () => { base = baseSel.value; touch(); rebuild(); });
   const brow = el('div', 'bkRow'); brow.append(el('span', 'bkLab', 'BASE'), baseSel); side.append(brow);
-  side.append(el('b', '', 'OBJECT TREE (DRAG A ROW ONTO ANOTHER TO PUT IT INSIDE)')); const list = el('div', 'bkList'); side.append(list);
+  treeBox.append(el('b', '', 'OBJECT TREE'), el('span', '', 'DRAG A ROW ONTO ANOTHER TO PUT IT INSIDE, ONTO THE EMPTY SPACE TO TAKE IT OUT')); const list = el('div', 'bkList'); treeBox.append(list);
   // row drag with plain pointer events (works with mouse and touch): drop on a row = put inside it, on the empty list area = top level
   let rowDrag = null;
   const rowAt = (e) => { const t = document.elementFromPoint(e.clientX, e.clientY); return !t || !list.contains(t) ? null : t.dataset.i !== undefined ? Number(t.dataset.i) : -1; };
@@ -230,7 +232,7 @@ export function openBikeEditor({ start, call, onClose = () => {} }) {
     list.textContent = ''; if (!shapes.length) list.append(el('span', '', 'NO SHAPES YET - ADD ONE BELOW OR PRESS A HOTKEY'));
     shapes.forEach((s, i) => {
       const b = btn(`${s.type === 'empty' ? '▾ ' : ''}${s.type.toUpperCase()} ${i + 1}${s.mirror ? ' ⇄' : ''}`, i === cur ? 'sel' : '', () => choose(i));
-      b.style.marginLeft = depth(i) * 14 + 'px'; b.dataset.i = i; b.style.touchAction = 'none';
+      b.style.marginLeft = depth(i) * 14 + 'px'; b.style.width = `calc(100% - ${depth(i) * 14}px)`; b.dataset.i = i; b.style.touchAction = 'none';
       b.addEventListener('pointerdown', (e) => { if (e.button === 0) { rowDrag = { i, x: e.clientX, y: e.clientY, moved: false }; try { b.releasePointerCapture(e.pointerId); } catch { /* not captured */ } } });
       list.append(b);
     });
