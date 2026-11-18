@@ -7,7 +7,7 @@ import { registerAdminTab, ADMIN_ERR } from './admin-core.js';
 import { scene, camera, setEditorView, makeBikeMesh } from './render.js';
 import { MAPS, groundAt } from './maps.js';
 import { spawnPoints } from './state.js';
-import { makeHistory, undoKey } from './history.js';
+import { makeHistory, undoKey, ctrlLetter } from './history.js';
 import { validateMap, defaultModes, MODE_IDS, rayBox, rectPlatform, groundHit, pickObject, platformBox, spawnBox, dirOfYaw, yawOfDir, platformCorners, LIM } from './mapdef.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
@@ -15,6 +15,7 @@ const btn = (label, cls, fn) => { const b = el('button', 'mbtn frame' + (cls ? '
 const errText = (r) => r.why || ADMIN_ERR[r.code] || { bad_map: 'INVALID MAP', too_many: 'TOO MANY MAPS (MAX 100)', bad_id: 'BAD MAP', not_found: 'MAP NOT FOUND' }[r.code] || String(r.code || 'ERROR').toUpperCase();
 const r4 = (v) => Math.round(v * 1e4) / 1e4;
 const DEG = 180 / Math.PI;
+let clip = null; // Ctrl+C: {kind, o} = a copy of a platform or spawn point, kept while the page is open (pastes into other maps too)
 
 export function newMap(name, template) {
   if (template && MAPS[template]) { // copy of a built-in map
@@ -68,7 +69,7 @@ function openEditor({ def, id, call, onClose }) {
     const off = () => { keys.delete(code); b.classList.remove('on'); };
     b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('lostpointercapture', off);
   }
-  const status = el('span'), hint = el('span', 'hint', 'WASD MOVE | SPACE UP | SHIFT DOWN | HOLD LEFT MOUSE: LOOK | RIGHT CLICK: SELECT, HOLD + DRAG: MOVE | DEL: DELETE | ESC: CLOSE');
+  const status = el('span'), hint = el('span', 'hint', 'WASD MOVE | SPACE UP | SHIFT DOWN | HOLD LEFT MOUSE: LOOK | RIGHT CLICK: SELECT, HOLD + DRAG: MOVE | DEL: DELETE | CTRL+C / V: COPY / PASTE | CTRL+Z / Y: UNDO / REDO | ESC: CLOSE');
   bar.append(status, hint);
   const say = (t, k) => { status.textContent = t; status.className = k || ''; };
 
@@ -122,6 +123,14 @@ function openEditor({ def, id, call, onClose }) {
     (sel.kind === 'platform' ? m.platforms : m.spawns).splice(sel.index, 1); select(null); changed();
   };
   tools.append(btn('DELETE', 'danger', del));
+  const copy = () => { if (!sel) return; clip = { kind: sel.kind, o: structuredClone((sel.kind === 'platform' ? m.platforms : m.spawns)[sel.index]) }; say('COPIED', 'ok'); };
+  function paste() { // 2 units over (+x, +z) from the last copy, so repeated pastes step out instead of stacking
+    if (!clip) return; const plat = clip.kind === 'platform', list = plat ? m.platforms : m.spawns, max = plat ? LIM.platforms : LIM.maxSpawns;
+    if (list.length >= max) return say(`MAX ${max} ${plat ? 'PLATFORMS' : 'SPAWN POINTS'}`, 'bad');
+    hist.now(); const o = structuredClone(clip.o);
+    if (plat) { o.x0 = r4(o.x0 + 2); o.x1 = r4(o.x1 + 2); o.z0 = r4(o.z0 + 2); o.z1 = r4(o.z1 + 2); } else { o.x = r4(o.x + 2); o.z = r4(o.z + 2); }
+    list.push(o); clip.o = structuredClone(o); changed(); select({ kind: clip.kind, index: list.length - 1 });
+  }
   const hl = el('label', '', 'NEW HEIGHT'), hi = el('input'); hi.type = 'number'; hi.step = 0.25; hi.value = newY; hi.addEventListener('input', () => { const v = Number(hi.value); if (hi.value !== '' && Number.isFinite(v)) newY = v; }); hl.append(hi); tools.append(hl);
   const saveBtn = btn('SAVE', 'primary', save), closeBtn = btn('CLOSE', '', () => close()); tools.append(el('b', '', 'MAP'), saveBtn, closeBtn);
 
@@ -231,6 +240,7 @@ function openEditor({ def, id, call, onClose }) {
     if (typing(e)) { e.stopImmediatePropagation(); return; }
     e.stopImmediatePropagation();
     if (e.type === 'keydown' && undoKey(e, hist)) return; // Ctrl+Z / Ctrl+Y
+    if (e.type === 'keydown' && /^[CV]$/.test(ctrlLetter(e))) { e.preventDefault(); if (ctrlLetter(e) === 'C') copy(); else paste(); return; }
     if (e.type === 'keyup') return void keys.delete(e.code);
     if (e.code === 'Delete' || e.code === 'Backspace') del(); else if (!e.ctrlKey && !e.metaKey) { keys.add(e.code); if (e.code === 'Space') e.preventDefault(); }
   };

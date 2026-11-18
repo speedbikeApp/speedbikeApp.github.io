@@ -11,8 +11,10 @@ export function makeHistory(get, set, busy = () => false) {
   return { note, now, undo: () => step(past, future), redo: () => step(future, past) };
 }
 /** Ctrl+Z = undo, Ctrl+Y / Ctrl+Shift+Z = redo. Returns true when the key was one of them. */
+/** The letter of a Ctrl / Cmd + letter press ('' otherwise). code first (works on any keyboard layout), key when code is empty (some synthetic events). */
+export const ctrlLetter = (e) => (!(e.ctrlKey || e.metaKey) || e.altKey ? '' : /^Key[A-Z]$/.test(e.code || '') ? e.code[3] : String(e.key || '').toUpperCase());
 export function undoKey(e, h) {
-  if (!(e.ctrlKey || e.metaKey) || e.altKey) return false;
-  if (e.code === 'KeyZ' && !e.shiftKey) h.undo(); else if (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey)) h.redo(); else return false;
+  const k = ctrlLetter(e);
+  if (k === 'Z' && !e.shiftKey) h.undo(); else if (k === 'Y' || (k === 'Z' && e.shiftKey)) h.redo(); else return false;
   e.preventDefault(); return true;
 }

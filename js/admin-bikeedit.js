@@ -11,7 +11,7 @@ import { BUILTIN_PARTS, partList } from './parts.js';
 import { ACHIEVEMENTS } from './achievements.js';
 import { useCatalog } from './catalog.js';
 import { makeBikeMesh, shapeGeom, buildShapes, dropShapeUnits } from './bikemodels.js';
-import { makeHistory, undoKey } from './history.js';
+import { makeHistory, undoKey, ctrlLetter } from './history.js';
 import { SHAPE_TYPES, SHAPE_ROLES, MAX_SHAPES, cleanShape, validateShapes } from './shapedef.js';
 
 const ERR = { bad_name: "NAME: 1-20 LETTERS, NUMBERS, SPACE _ . ' -", bad_price: 'PRICE: WHOLE NUMBER 0-1,000,000', bad_ach: 'UNKNOWN ACHIEVEMENT', bad_base: 'BAD BASE MODEL', bad_shapes: 'INVALID SHAPES', too_many: 'TOO MANY CUSTOM ITEMS', not_found: 'ITEM NOT FOUND', forbidden: 'NOT AN ADMIN', offline: 'NOT CONNECTED', timeout: 'NO ANSWER FROM SERVER' };
@@ -24,6 +24,7 @@ const baseOpts = (cat) => [['none', 'NONE (FROM SCRATCH)'], ...BUILTIN_PARTS[cat
 const KEYS_KEY = 'sb.bikeEditKeys', DEF_KEYS = { box: 'Digit1', sphere: 'Digit2', cylinder: 'Digit3', cone: 'Digit4', torus: 'Digit5', capsule: 'Digit6', wedge: 'Digit7', tube: 'Digit8', empty: 'Digit0' };
 const loadKeys = () => { try { return { ...DEF_KEYS, ...JSON.parse(localStorage.getItem(KEYS_KEY) || '{}') }; } catch { return { ...DEF_KEYS }; } };
 const keyName = (c) => (c ? c.replace(/^(Digit|Key|Numpad)/, '') : '-');
+let clip = null; // Ctrl+C: {wheel, list} (list[0] = the copied object, the rest = what is inside it); kept while the page is open, so it pastes into other parts too
 const COLORS = [0xff5a1f, 0x00e5ff, 0xff2a3d, 0x1f8fff, 0xb04dff, 0x7dff2e, 0xffe600, 0xff2fd0, 0xf2f2ff];
 
 const CSS = `body.bkEditing > *:not(#bkEd) { display: none !important; }
@@ -169,7 +170,7 @@ export function openBikeEditor({ start, call, onClose = () => {} }) {
 
   // overlay controls
   const tl = el('div', 'bkTL'), bl = el('div', 'bkBL'); view.append(tl, bl);
-  tl.append(el('span', '', 'LEFT DRAG: ORBIT · CLICK: SELECT · RIGHT DRAG: MOVE · GREEN: RESIZE · WHEEL: ZOOM'), btn('RESET VIEW', '', () => { orb.yaw = wheelCat ? 0.9 : 0.75; orb.pitch = 0.28; orb.dist = wheelCat ? 3.2 : 6.2; }));
+  tl.append(el('span', '', 'LEFT DRAG: ORBIT · CLICK: SELECT · RIGHT DRAG: MOVE · GREEN: RESIZE · WHEEL: ZOOM · CTRL+C / V: COPY / PASTE · CTRL+Z / Y: UNDO / REDO'), btn('RESET VIEW', '', () => { orb.yaw = wheelCat ? 0.9 : 0.75; orb.pitch = 0.28; orb.dist = wheelCat ? 3.2 : 6.2; }));
   const sws = COLORS.map((c) => { const b = el('button', 'bkSw'); b.type = 'button'; b.style.background = '#' + c.toString(16).padStart(6, '0'); b.addEventListener('click', () => { color = c; sws.forEach((s, i) => s.classList.toggle('sel', COLORS[i] === c)); rebuild(); }); bl.append(b); return b; });
   sws[0].classList.add('sel');
 
@@ -252,11 +253,19 @@ export function openBikeEditor({ start, call, onClose = () => {} }) {
     shapes.push(cleanShape(cat, { type, p: into !== undefined ? [0, 0, 0] : wheelCat ? [0, 0.45, 0] : [0, 1, 0], r: [0, 0, 0], s: type === 'empty' ? [1, 1, 1] : [sz, sz, sz], role: 'glow', mirror: false, parent: into }));
     setList(order(), shapes.length - 1); touch(); draw(); rebuild(); list.scrollTop = 1e6;
   }
-  function dup() { // the selected object and everything inside it
-    hist.now(); if (cur < 0) return; const set = [...sub(cur)]; if (shapes.length + set.length > MAX_SHAPES) return say(`MAX ${MAX_SHAPES} SHAPES`, 'bad');
-    const n0 = shapes.length, at = new Map(set.map((o, k) => [o, n0 + k]));
-    for (const o of set) { const s = { ...shapes[o] }; if (o === cur) s.p = [s.p[0], s.p[1], s.p[2] + 0.12]; else s.parent = at.get(s.parent); shapes.push(s); }
+  // object i and everything inside it: list[0] keeps its own parent, the others point inside the list
+  const grab = (i) => { const set = [...sub(i)], at = new Map(set.map((o, k) => [o, k])); return set.map((o) => (o === i ? { ...shapes[o] } : { ...shapes[o], parent: at.get(shapes[o].parent) })); };
+  function insert(list, parent) { // add a grabbed list (nudged forward so it shows) under parent (undefined = top level)
+    hist.now(); if (shapes.length + list.length > MAX_SHAPES) return say(`MAX ${MAX_SHAPES} SHAPES`, 'bad');
+    const n0 = shapes.length;
+    list.forEach((s, k) => { const c = { ...s }; if (k) c.parent = n0 + s.parent; else { c.p = [c.p[0], c.p[1], c.p[2] + 0.12]; if (parent === undefined) delete c.parent; else { c.parent = parent; c.mirror = false; } } shapes.push(c); });
     setList(order(), n0); touch(); draw(); rebuild();
+  }
+  function dup() { if (cur >= 0) insert(grab(cur), shapes[cur].parent); }
+  function copy() { if (cur < 0) return; clip = { wheel: wheelCat, list: grab(cur) }; say(`COPIED ${clip.list.length} OBJECT${clip.list.length > 1 ? 'S' : ''}`, 'ok'); }
+  function paste() { // next to the selected object (same group, like Unity), else at the top level; body and wheel shapes use different spaces, so they do not mix
+    if (!clip) return; if (clip.wheel !== wheelCat) return say(clip.wheel ? 'COPIED FROM A TIRE / RIM: PASTE IT INTO A TIRE OR RIM' : 'COPIED FROM A BODY: PASTE IT INTO A BODY', 'bad');
+    insert(clip.list, cur >= 0 ? shapes[cur].parent : undefined);
   }
   function del() { hist.now(); if (cur < 0) return; const gone = sub(cur), keep = cur; setList(order().filter((i) => !gone.has(i)), -1); cur = Math.min(keep, shapes.length - 1); touch(); draw(); rebuild(); }
   function reparent(i, p) { // keeps the object where it is in the world (Unity style)
@@ -288,6 +297,7 @@ export function openBikeEditor({ start, call, onClose = () => {} }) {
     if (binding) { e.stopImmediatePropagation(); e.preventDefault(); if (e.code === 'Escape') { binding = null; drawKeys(); } else if (e.code !== 'Delete') bindKey(e.code); return; }
     if (e.code === 'Escape') { e.stopImmediatePropagation(); if (typing(e)) e.target.blur(); else close(); }
     else if (!typing(e) && undoKey(e, hist)) e.stopImmediatePropagation(); // Ctrl+Z / Ctrl+Y (inside a text box the browser's own undo runs)
+    else if (!typing(e) && /^[CV]$/.test(ctrlLetter(e))) { e.stopImmediatePropagation(); e.preventDefault(); if (ctrlLetter(e) === 'C') copy(); else paste(); }
     else if (typing(e) || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     else if (e.code === 'Delete') { e.stopImmediatePropagation(); del(); }
     else { const t = SHAPE_TYPES.find((k) => keys[k] === e.code); if (t) { e.stopImmediatePropagation(); e.preventDefault(); add(t); } }
@@ -300,7 +310,7 @@ export function openBikeEditor({ start, call, onClose = () => {} }) {
     free(); R.dispose(); hlMat.dispose(); pxMat.dispose(); hGeo.dispose(); hMat.dispose(); grid.geometry.dispose(); root.remove(); st.remove(); document.body.classList.remove('bkEditing'); onClose();
   }
   say('LEFT DRAG: ORBIT · RIGHT DRAG: MOVE · GREEN SPHERES: RESIZE'); drawKeys(); draw(); rebuild(); size();
-  return { close: () => close(true), state: () => ({ base, shapes, cur }), add, choose, put, reparent, dup, del };
+  return { close: () => close(true), state: () => ({ base, shapes, cur }), add, choose, put, reparent, dup, del, copy, paste };
 }
 
 function mountBikeEditor(root, { call }) {

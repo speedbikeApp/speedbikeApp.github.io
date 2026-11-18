@@ -17,5 +17,6 @@ const calls = []; const k = { undo: () => calls.push('u'), redo: () => calls.pus
 const ev = (code, o = {}) => ({ code, ctrlKey: true, shiftKey: false, altKey: false, metaKey: false, preventDefault() {}, ...o });
 assert.equal(undoKey(ev('KeyZ'), k), true); undoKey(ev('KeyY'), k); undoKey(ev('KeyZ', { shiftKey: true }), k);
 assert.equal(undoKey(ev('KeyZ', { ctrlKey: false }), k), false); assert.equal(undoKey(ev('KeyS'), k), false);
-assert.deepEqual(calls, ['u', 'r', 'r']);
+undoKey(ev('', { key: 'z' }), k); // code missing: falls back to key
+assert.deepEqual(calls, ['u', 'r', 'r', 'u']);
 console.log('history tests passed');
