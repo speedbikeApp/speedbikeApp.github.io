@@ -16,14 +16,12 @@ function row(v) { // one quest cube: title, requirement + progress, bar, reward 
   const bar = el('div', 'bar'), fill = el('i'); fill.style.width = Math.round((v.progress / v.count) * 100) + '%'; bar.append(fill);
   const req = parseRequirement(v.quest.requirement), rw = el('div', 'qRw'); rw.append(el('span', '', rewardText(v.quest.reward)));
   if (v.done && !v.claimed) { const b = el('button', 'mbtn frame primary qClaim', 'CLAIM'); b.type = 'button'; b.dataset.key = v.key; rw.append(b); }
-  r.append(el('b', 'qTtl', v.quest.title.toUpperCase()), el('small', '', v.quest.body || (req ? requirementLabel(req) : '')), el('span', 'tag', v.claimed ? 'CLAIMED' : `${v.progress} / ${v.count}`), bar, rw);
+  r.append(el('b', 'qTtl', v.quest.title.toUpperCase() + (v.kind === 'weekly' ? ' (WEEKLY)' : '')), el('small', '', v.quest.body || (req ? requirementLabel(req) : '')), el('span', 'tag', v.claimed ? 'CLAIMED' : `${v.progress} / ${v.count}`), bar, rw);
   return r;
 }
 const grid = (list) => { const g = el('div', 'qGrid'); g.append(...list.map(row)); return g; };
-const section = (title, timer, list) => {
-  const s = el('div', 'qSec'), h = el('div', 'lbl'), t = el('span', 'qTimer'); h.append(title + ' ', t); if (timer) t.dataset.t = timer;
-  s.append(h, grid(list)); return s;
-};
+const head = (title, timer) => { const h = el('div', 'lbl'), t = el('span', 'qTimer'); h.append(title + ' ', t); t.dataset.t = timer; return h; };
+const section = (heads, list) => { const s = el('div', 'qSec'); s.append(...heads, grid(list)); return s; }; // heads: one timer line per period shown
 const evKey = (v) => (v.event ? v.event.id + (v.event.active ? ':on' : ':soon') : null);
 
 function render() {
@@ -33,8 +31,8 @@ function render() {
   for (const b of $('qTabs').children) b.classList.toggle('sel', b.dataset.tab === tab);
   const body = $('qBody'); body.replaceChildren(); body.className = tab;
   shownEvent = evKey(v);
-  if (tab === 'quests') body.append(section('DAILY', 'daily', v.daily), section('WEEKLY', 'weekly', v.weekly));
-  else if (tab === 'season') body.append(section('SEASON', 'season', v.season));
+  if (tab === 'quests') body.append(section([head('DAILY', 'daily'), head('WEEKLY', 'weekly')], [...v.daily, ...v.weekly])); // one grid: 3 dailies + 2 weeklies = one row
+  else if (tab === 'season') body.append(section([head('SEASON', 'season')], v.season));
   else {
     const fr = el('iframe', 'frame qFrame'); fr.setAttribute('sandbox', ''); fr.srcdoc = ev.html; fr.title = 'Event';
     const side = el('div', 'qSide'), t = el('div', 'lbl'), tm = el('span', 'qTimer'); tm.dataset.t = 'event';
