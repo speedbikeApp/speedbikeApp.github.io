@@ -49,4 +49,5 @@ assert.equal(sanitizeName('  Bob<script>  '), 'Bobscript'); assert.equal(sanitiz
 assert.throws(() => resolveAuthMode({}), /DEV_AUTH=1/); assert.throws(() => resolveAuthMode({ NODE_ENV: 'production' })); assert.equal(resolveAuthMode({ DEV_AUTH: '1' }), 'dev'); assert.equal(resolveAuthMode({ GOOGLE_APPLICATION_CREDENTIALS: 'k.json' }), 'firebase');
 assert.equal(resolveAuthMode({ GOOGLE_APPLICATION_CREDENTIALS: 'k.json', DEV_AUTH: '1' }), 'dev');
 assert.throws(() => resolveAuthMode({ DEV_AUTH: '0' }));
+assert.throws(() => resolveAuthMode({ DEV_AUTH: '1', NODE_ENV: 'production' }), /refused in production/);
 console.log('protocol tests ok');
