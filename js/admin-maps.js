@@ -7,6 +7,7 @@ import { registerAdminTab, ADMIN_ERR } from './admin-core.js';
 import { scene, camera, setEditorView, makeBikeMesh } from './render.js';
 import { MAPS, groundAt } from './maps.js';
 import { spawnPoints } from './state.js';
+import { makeHistory, undoKey } from './history.js';
 import { validateMap, defaultModes, MODE_IDS, rayBox, rectPlatform, groundHit, pickObject, platformBox, spawnBox, dirOfYaw, yawOfDir, platformCorners, LIM } from './mapdef.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
@@ -106,7 +107,8 @@ function openEditor({ def, id, call, onClose }) {
   // ---- model changes ----
   function resyncSpawnY() { for (const s of m.spawns) { const y = groundAt(m, s.x, s.z); if (y > -Infinity) s.y = y; } }
   function check() { fitHalf(m); const v = validateMap(m); say(v.ok ? 'MAP OK' : 'PROBLEM: ' + v.why, v.ok ? 'ok' : 'bad'); return v; }
-  function changed() { dirty = true; view.dirty = true; resyncSpawnY(); spawnsDirty = true; check(); }
+  function changed() { dirty = true; view.dirty = true; resyncSpawnY(); spawnsDirty = true; check(); hist.note(); }
+  const hist = makeHistory(() => m, (s) => { for (const k of Object.keys(m)) delete m[k]; Object.assign(m, s); sel = null; changed(); buildSettings(); }, () => !!(drag || mv)); // undo / redo
   const select = (s) => { sel = s; buildSettings(); };
 
   // ---- TOOLS window ----
@@ -114,7 +116,7 @@ function openEditor({ def, id, call, onClose }) {
   for (const [t, label] of [['select', 'SELECT'], ['platform', 'PLATFORM'], ['spawn', 'SPAWN']]) { toolBtns[t] = btn(label, '', () => setTool(t)); tools.append(toolBtns[t]); }
   const setTool = (t) => { tool = t; for (const k in toolBtns) toolBtns[k].classList.toggle('sel', k === t); say(t === 'platform' ? 'DRAG ON THE GROUND TO SIZE A PLATFORM (ALT+DRAG = LOOK)' : t === 'spawn' ? 'CLICK A PLATFORM TO PLACE A SPAWN POINT' : 'RIGHT CLICK AN OBJECT TO SELECT IT'); };
   const del = () => {
-    if (!sel) return;
+    hist.now(); if (!sel) return;
     if (sel.kind === 'spawn' && m.spawns.length <= LIM.minSpawns) return say(`MIN ${LIM.minSpawns} SPAWN POINTS`, 'bad');
     if (sel.kind === 'platform' && m.platforms.length <= 1) return say('MIN 1 PLATFORM', 'bad');
     (sel.kind === 'platform' ? m.platforms : m.spawns).splice(sel.index, 1); select(null); changed();
@@ -178,6 +180,7 @@ function openEditor({ def, id, call, onClose }) {
   root.addEventListener('contextmenu', (e) => e.preventDefault());
   root.addEventListener('pointerdown', (e) => {
     if (e.target !== root) return;
+    hist.now(); // a new click / drag starts a new undo step
     root.setPointerCapture(e.pointerId);
     if (e.button === 2) { // select; holding and dragging moves the object on the horizontal plane at its height
       pickAt(e); if (!sel) return;
@@ -227,6 +230,7 @@ function openEditor({ def, id, call, onClose }) {
     if (e.code === 'Escape' && e.type === 'keydown') { e.preventDefault(); e.stopImmediatePropagation(); if (typing(e)) e.target.blur(); else close(); return; }
     if (typing(e)) { e.stopImmediatePropagation(); return; }
     e.stopImmediatePropagation();
+    if (e.type === 'keydown' && undoKey(e, hist)) return; // Ctrl+Z / Ctrl+Y
     if (e.type === 'keyup') return void keys.delete(e.code);
     if (e.code === 'Delete' || e.code === 'Backspace') del(); else if (!e.ctrlKey && !e.metaKey) { keys.add(e.code); if (e.code === 'Space') e.preventDefault(); }
   };

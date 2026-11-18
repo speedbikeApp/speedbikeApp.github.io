@@ -11,6 +11,7 @@ import { BUILTIN_PARTS, partList } from './parts.js';
 import { ACHIEVEMENTS } from './achievements.js';
 import { useCatalog } from './catalog.js';
 import { makeBikeMesh, shapeGeom, buildShapes, dropShapeUnits } from './bikemodels.js';
+import { makeHistory, undoKey } from './history.js';
 import { SHAPE_TYPES, SHAPE_ROLES, MAX_SHAPES, cleanShape, validateShapes } from './shapedef.js';
 
 const ERR = { bad_name: "NAME: 1-20 LETTERS, NUMBERS, SPACE _ . ' -", bad_price: 'PRICE: WHOLE NUMBER 0-1,000,000', bad_ach: 'UNKNOWN ACHIEVEMENT', bad_base: 'BAD BASE MODEL', bad_shapes: 'INVALID SHAPES', too_many: 'TOO MANY CUSTOM ITEMS', not_found: 'ITEM NOT FOUND', forbidden: 'NOT AN ADMIN', offline: 'NOT CONNECTED', timeout: 'NO ANSWER FROM SERVER' };
@@ -139,6 +140,7 @@ export function openBikeEditor({ start, call, onClose = () => {} }) {
   view.addEventListener('contextmenu', (e) => e.preventDefault());
   view.addEventListener('pointerdown', (e) => {
     if (e.target !== canvas) return;
+    hist.now(); // a new drag starts a new undo step
     ptrs.set(e.pointerId, [e.clientX, e.clientY]); try { view.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
     if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); drag = { kind: 'pinch', moved: true }; return; }
     const h = ray(e, shown());
@@ -222,7 +224,7 @@ export function openBikeEditor({ start, call, onClose = () => {} }) {
   r3b.append(saveBtn, newBtn, btn('CLOSE', '', () => close())); bar.append(r1, r3b);
 
   // ---- model changes ----
-  const touch = () => { dirty = true; stat(); };
+  const touch = () => { dirty = true; stat(); hist.note(); };
   function choose(i) { if (i === cur) return; cur = i; draw(); rebuild(); }
   function fields() { // selected shape -> inputs
     const s = shapes[cur]; for (const k in inputs) inputs[k].forEach((inp, i) => { inp.disabled = !s; if (s && document.activeElement !== inp) inp.value = r3(s[k][i]); });
@@ -244,20 +246,21 @@ export function openBikeEditor({ start, call, onClose = () => {} }) {
     if (patch.mirror !== undefined) draw();
   }
   function add(type) { // inside the selected EMPTY, else at the top level
+    hist.now(); // each discrete action is its own undo step
     if (shapes.length >= MAX_SHAPES) return say(`MAX ${MAX_SHAPES} SHAPES`, 'bad');
     const into = cur >= 0 && shapes[cur].type === 'empty' ? cur : undefined, sz = wheelCat ? 0.12 : 0.3;
     shapes.push(cleanShape(cat, { type, p: into !== undefined ? [0, 0, 0] : wheelCat ? [0, 0.45, 0] : [0, 1, 0], r: [0, 0, 0], s: type === 'empty' ? [1, 1, 1] : [sz, sz, sz], role: 'glow', mirror: false, parent: into }));
     setList(order(), shapes.length - 1); touch(); draw(); rebuild(); list.scrollTop = 1e6;
   }
   function dup() { // the selected object and everything inside it
-    if (cur < 0) return; const set = [...sub(cur)]; if (shapes.length + set.length > MAX_SHAPES) return say(`MAX ${MAX_SHAPES} SHAPES`, 'bad');
+    hist.now(); if (cur < 0) return; const set = [...sub(cur)]; if (shapes.length + set.length > MAX_SHAPES) return say(`MAX ${MAX_SHAPES} SHAPES`, 'bad');
     const n0 = shapes.length, at = new Map(set.map((o, k) => [o, n0 + k]));
     for (const o of set) { const s = { ...shapes[o] }; if (o === cur) s.p = [s.p[0], s.p[1], s.p[2] + 0.12]; else s.parent = at.get(s.parent); shapes.push(s); }
     setList(order(), n0); touch(); draw(); rebuild();
   }
-  function del() { if (cur < 0) return; const gone = sub(cur), keep = cur; setList(order().filter((i) => !gone.has(i)), -1); cur = Math.min(keep, shapes.length - 1); touch(); draw(); rebuild(); }
+  function del() { hist.now(); if (cur < 0) return; const gone = sub(cur), keep = cur; setList(order().filter((i) => !gone.has(i)), -1); cur = Math.min(keep, shapes.length - 1); touch(); draw(); rebuild(); }
   function reparent(i, p) { // keeps the object where it is in the world (Unity style)
-    if (p === (shapes[i].parent ?? -1)) return; if (p >= 0 && sub(i).has(p)) return say('CAN NOT PUT AN OBJECT INSIDE ITSELF', 'bad');
+    hist.now(); if (p === (shapes[i].parent ?? -1)) return; if (p >= 0 && sub(i).has(p)) return say('CAN NOT PUT AN OBJECT INSIDE ITSELF', 'bad');
     scene.updateMatrixWorld(true);
     const loc = (p >= 0 ? objs[p][0] : proxies).matrixWorld.clone().invert().multiply(objs[i][0].matrixWorld), P = new THREE.Vector3(), Q = new THREE.Quaternion(), S = new THREE.Vector3();
     loc.decompose(P, Q, S); const E = new THREE.Euler().setFromQuaternion(Q), D = 180 / Math.PI;
@@ -278,9 +281,13 @@ export function openBikeEditor({ start, call, onClose = () => {} }) {
     const c = await call('itemList', {}); if (c.ok) useCatalog(c); // merge into PARTS: the garage list shows it
   }
   const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+  const hist = makeHistory(() => ({ base, shapes }), (s) => { // undo / redo: put a snapshot back
+    base = s.base; shapes = s.shapes; baseSel.value = base; cur = Math.min(cur, shapes.length - 1); dirty = true; stat(); draw(); rebuild();
+  }, () => !!drag);
   const onKey = (e) => {
     if (binding) { e.stopImmediatePropagation(); e.preventDefault(); if (e.code === 'Escape') { binding = null; drawKeys(); } else if (e.code !== 'Delete') bindKey(e.code); return; }
     if (e.code === 'Escape') { e.stopImmediatePropagation(); if (typing(e)) e.target.blur(); else close(); }
+    else if (!typing(e) && undoKey(e, hist)) e.stopImmediatePropagation(); // Ctrl+Z / Ctrl+Y (inside a text box the browser's own undo runs)
     else if (typing(e) || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     else if (e.code === 'Delete') { e.stopImmediatePropagation(); del(); }
     else { const t = SHAPE_TYPES.find((k) => keys[k] === e.code); if (t) { e.stopImmediatePropagation(); e.preventDefault(); add(t); } }
