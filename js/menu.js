@@ -17,6 +17,7 @@ import { initAccountUi, openAccount, accountEsc, isSignedIn } from './account-ui
 import { initMultiUi, onScreen as multiScreen, multiBack } from './multi-ui.js';
 import { initFriendsUi, onScreen as friendsScreen } from './friends-ui.js';
 import { initAdminUi, onScreen as adminScreen } from './admin-ui.js';
+import { initPush, enable as pushEnable, disable as pushDisable, notifyOn, shouldAsk } from './push.js';
 import { initPartyUi } from './party-ui.js';
 import { initQuestsUi, onScreen as questsScreen, updateQuestBadge } from './quests-ui.js';
 import { initProfileUi, refreshProfile, onScreen as profileScreen } from './profile-ui.js';
@@ -178,12 +179,27 @@ function syncSettingsUi() {
   $('sMute').textContent = s.muted ? 'MUTED' : 'ON';
   $('sMute').classList.toggle('sel', s.muted);
   $('sQuality').value = s.quality;
+  $('sNotify').textContent = notifyOn() ? 'ON' : 'OFF'; $('sNotify').classList.toggle('sel', !notifyOn());
 }
 
 // h: {onPlay(modeId), onResume, onRestart, onQuit, onTutorial}
 export function initMenu(h) {
   const on = (id, fn) => $(id).addEventListener('click', fn);
   on('mPlay', () => showScreen('scrPlay'));
+  // notifications: installed app only (and only when the server has push); settings row + one-time card
+  initPush().then((ok) => {
+    if (!ok) return;
+    $('sNotifyRow').hidden = false;
+    if (shouldAsk(getSave().settings.notify, ok, Notification.permission)) $('pushCard').hidden = false;
+  });
+  on('pushNo', () => { setSetting('notify', 'off'); $('pushCard').hidden = true; });
+  on('pushOn', async () => { $('pushCard').hidden = true; await pushEnable(); syncSettingsUi(); });
+  on('sNotify', async () => {
+    $('sNotifyHint').hidden = true;
+    if (notifyOn()) await pushDisable();
+    else if ((await pushEnable()) === 'denied') $('sNotifyHint').hidden = false;
+    syncSettingsUi();
+  });
   on('mTut', () => h.onTutorial());
   on('pSingle', () => showScreen('scrMode'));
   on('pMulti', () => showScreen('scrMulti'));

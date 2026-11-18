@@ -112,6 +112,8 @@
   .mbtn.sel { background: rgba(0,255,255,.35); color: #fff; border-color: #fff; }
   .lbl { font-size: 12px; letter-spacing: 3px; opacity: .85; margin-top: 4px; }
   #coinLine { font-size: 13px; letter-spacing: 2px; }
+  #pushCard { display: flex; flex-direction: column; gap: 6px; align-items: center; padding: 8px 12px; font-size: 12px; letter-spacing: 2px; text-align: center; } #pushCard[hidden] { display: none; } #pushCard div { display: flex; gap: 8px; }
+  #sNotifyHint { grid-column: 2 / span 2; font-size: 11px; color: #fc3; } #sNotifyRow[hidden] { display: none; }
   .setrow { display: grid; grid-template-columns: 110px minmax(120px, 220px) 44px; align-items: center; gap: 10px; font-size: 13px; letter-spacing: 2px; width: 100%; }
   .setrow span:last-child { text-align: right; font-size: 12px; }
   .setrow input[type=range] { width: 100%; height: 32px; accent-color: #0ff; touch-action: pan-y; margin: 0; }
@@ -447,6 +449,7 @@
   <div id="scrMain" class="screen">
     <h1 id="logo">SPEED<span>BIKE</span></h1>
     <div id="tagline">NEON LIGHT-CYCLE ARENA</div>
+    <div id="pushCard" class="frame" hidden><b>TURN ON NOTIFICATIONS?</b><span>Get told when events start.</span><div><button id="pushOn" class="mbtn frame primary" type="button">ON</button><button id="pushNo" class="mbtn frame" type="button">NOT NOW</button></div></div>
     <button id="mTut" class="mbtn frame tut" type="button" hidden>TUTORIAL<small>LEARN THE CONTROLS</small></button>
     <button id="mPlay" class="mbtn frame primary" type="button">PLAY</button>
     <button id="mGarage" class="mbtn frame" type="button">GARAGE</button>
@@ -716,6 +719,7 @@
     <label class="setrow"><span>SFX</span><input id="sSfx" type="range" min="0" max="100" step="1"><span id="vSfx"></span></label>
     <label class="setrow"><span>ENGINE</span><input id="sEngine" type="range" min="0" max="100" step="1"><span id="vEngine"></span></label>
     <div class="setrow"><span>SOUND</span><button id="sMute" class="mbtn frame" type="button"></button></div>
+    <div class="setrow" id="sNotifyRow" hidden><span>ALERTS</span><button id="sNotify" class="mbtn frame" type="button"></button><small id="sNotifyHint" hidden>BLOCKED IN BROWSER SETTINGS</small></div>
     <label class="setrow"><span>QUALITY</span><select id="sQuality"><option value="low">LOW (1x)</option><option value="medium">MEDIUM (1.5x)</option><option value="high">HIGH (2x)</option></select></label>
     <div class="setrow"><span>CONTROLS</span><button id="sControls" class="mbtn frame" type="button">KEYS &amp; PAD</button></div>
     <div id="sMore" class="mrow"><button id="sAccount" class="mbtn frame" type="button">ACCOUNT</button><button id="sStats" class="mbtn frame" type="button">STATS</button></div>

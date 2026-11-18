@@ -1,0 +1,11 @@
+name: push-tick
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run push jobs (also keeps the Render instance awake)
+        run: curl -fsS -X POST https://speedbike-server.onrender.com/push/tick --max-time 90 || true

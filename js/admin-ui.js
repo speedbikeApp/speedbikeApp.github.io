@@ -11,6 +11,7 @@ import './admin-drops.js';
 import './admin-levels.js';
 import './admin-quests.js';
 import './admin-games.js';
+import './admin-push.js';
 import { mountItems } from './admin-items.js';
 
 const $ = (id) => document.getElementById(id);

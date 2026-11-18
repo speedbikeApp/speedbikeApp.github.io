@@ -18,6 +18,7 @@ import { registerGameOps } from './admin-games.js';
 import { createJsonMapStore, createFirestoreMapStore, createMapPool, registerMapOps, createMapsHandler } from './admin-maps.js';
 import { createJsonCatalogStore, createFirestoreCatalogStore } from './catalog-store.js';
 import { createCatalog, registerItemOps, createCatalogHandler } from './admin-items.js';
+import { createJsonPushStore, createFirestorePushStore, createPush, registerPushOps } from './push.js';
 import { Parties } from './party.js';
 import { Matchmaker, LOBBY_MAX } from './matchmaker.js';
 import { Room } from './room.js';
@@ -42,6 +43,7 @@ export function createGameServer(opts) {
   const catalog = createCatalog(opts.catalog || createJsonCatalogStore(null));
   const mapsHandler = createMapsHandler({ pool: mapPool, allowedOrigins, production: !!opts.production });
   const catalogHandler = createCatalogHandler({ catalog, allowedOrigins, production: !!opts.production, log });
+  const push = createPush({ store: opts.push || createJsonPushStore(null), catalog, vapid: opts.vapid, sender: opts.pushSender, allowedOrigins, production: !!opts.production, log });
   const sessions = new Set(), byUid = new Map(), rooms = new Map();
   // Featured mode: the hourly rotation unless an admin pinned one (override, persisted in the catalog store so it survives restarts).
   let override = null, featured = featuredMode(Date.now()), onlineTimer = null, nextRoomId = 0;
@@ -68,7 +70,8 @@ export function createGameServer(opts) {
   // Admin console (server/admin.js): ops are registered by module; PLAYERS in admin-players.js. Other modules: `admin.register(op, handler)` (exposed on the returned object).
   const admin = new Admin({ store: adminStore, names: opts.adminUsernames, log });
   const kick = (uid, msg) => { const s = byUid.get(uid); if (!s) return; s.send(msg); cleanup(s); s.ws.close(4003, String(msg.code || msg.t)); };
-  registerItemOps({ admin, catalog, log }); // GARAGE tab (server/admin-items.js)
+  registerItemOps({ admin, catalog, log });
+  registerPushOps({ admin, push, log }); // GARAGE tab (server/admin-items.js)
   registerPlayerOps({ admin, catalog, adminStore, socialStore, social, rankStore: store, send: (uid, m) => byUid.get(uid)?.send(m), kick, sessionOf: (uid) => byUid.get(uid), log });
 
   registerMapOps({ admin, mapStore, pool: mapPool, log }); // MAPS tab
@@ -280,6 +283,7 @@ export function createGameServer(opts) {
     if (req.url.split('?')[0] === '/auth/login') return void loginHandler(req, res).catch((e) => { log('[login] crashed:', e.message); if (!res.headersSent) res.writeHead(500); res.end(); });
     if (req.url.startsWith('/auth/') && req.url.split('?')[0] !== '/auth/login') return void accountsHandler(req, res).catch((e) => { log('[accounts] crashed:', e.message); if (!res.headersSent) res.writeHead(500); res.end(); });
     if (req.url.split('?')[0] === '/catalog') return void catalogHandler(req, res);
+    if (req.url.startsWith('/push/')) return void push.handler(req, res).catch((e) => { log('[push] crashed:', e.message); if (!res.headersSent) res.writeHead(500); res.end(); });
     if (req.url.split('?')[0] === '/maps') return void mapsHandler(req, res).catch((e) => { log('[maps] failed:', e.message); if (!res.headersSent) res.writeHead(503); res.end(); });
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.url.split('?')[0] === '/health') {
@@ -344,14 +348,14 @@ export function createGameServer(opts) {
   }, 15000);
 
   return {
-    server, wss, mm, rooms, sessions, parties, admin, adminStore, mapStore, mapPool,
+    server, wss, mm, rooms, sessions, parties, admin, push, adminStore, mapStore, mapPool,
     listen: (port = opts.port ?? 8787) => new Promise((resolve) => server.listen(port, () => resolve(server.address().port))),
     async close() {
       clearInterval(loop); clearInterval(beat); clearInterval(spingTimer); clearTimeout(onlineTimer);
       for (const s of sessions) s.ws.terminate();
       await new Promise((r) => wss.close(r));
       await new Promise((r) => server.close(r));
-      await store.flush?.(); await socialStore.flush?.(); await adminStore.flush?.(); await opts.catalog?.flush?.(); await mapStore.flush?.();
+      await store.flush?.(); await socialStore.flush?.(); await adminStore.flush?.(); await opts.catalog?.flush?.(); await mapStore.flush?.(); await opts.push?.flush?.();
     },
   };
 }
@@ -361,24 +365,26 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const env = process.env;
   const mode = resolveAuthMode(env);
   const allowedOrigins = (env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean), production = env.NODE_ENV === 'production';
-  let auth, store, login, accounts, social, adminStore, catalogStore, mapStore;
+  let auth, store, login, accounts, social, adminStore, catalogStore, mapStore, pushStore;
   if (mode === 'firebase') {
     const fb = await createFirebaseAuth(env); auth = fb.auth; store = createFirestoreStore(fb.db); social = createFirestoreSocialStore(fb.db, fb.FieldPath);
-    adminStore = createFirestoreAdminStore(fb.db, fb.fbAuth); catalogStore = createFirestoreCatalogStore(fb.db); mapStore = createFirestoreMapStore(fb.db);
+    adminStore = createFirestoreAdminStore(fb.db, fb.fbAuth); catalogStore = createFirestoreCatalogStore(fb.db); mapStore = createFirestoreMapStore(fb.db); pushStore = createFirestorePushStore(fb.db);
     login = createLoginHandler({ enabled: true, allowedOrigins, production, log: console.log, banOf: async (uid) => { const b = await adminStore.getBan(uid); return banActive(b) ? b : null; }, ...createFirebaseLoginDeps({ db: fb.db, auth: fb.fbAuth }, env) });
     accounts = createAccountsHandler({ enabled: true, allowedOrigins, production, log: console.log, publicUrl: env.PUBLIC_URL || undefined, mailer: createMailer(env, { production }), deps: createFirebaseAccountDeps({ db: fb.db, auth: fb.fbAuth }) });
   }
   else { auth = createDevAuth(); store = createJsonStore(env.RANKS_FILE || path.join(HERE, 'data', 'ranks.json')); social = createJsonSocialStore(env.SOCIAL_FILE || path.join(HERE, 'data', 'social.json')); adminStore = createJsonAdminStore(env.ADMIN_FILE || path.join(HERE, 'data', 'admin.json'), social); }
   mapStore ||= createJsonMapStore(env.MAPS_FILE || path.join(HERE, 'data', 'maps.json'));
   catalogStore ||= createJsonCatalogStore(env.CATALOG_FILE || path.join(HERE, 'data', 'catalog.json'));
+  pushStore ||= createJsonPushStore(env.PUSH_FILE || path.join(HERE, 'data', 'push.json'));
   console.log(`[server] auth=${auth.mode} ranks=${store.kind}`);
   const app = createGameServer({
-    auth, store, social, admin: adminStore, catalog: catalogStore, maps: mapStore, adminUsernames: env.ADMIN_USERNAMES, timeScale: Number(env.TIME_SCALE) || 1, // TIME_SCALE is for tests only
+    auth, store, social, admin: adminStore, catalog: catalogStore, maps: mapStore, push: pushStore, adminUsernames: env.ADMIN_USERNAMES, timeScale: Number(env.TIME_SCALE) || 1, // TIME_SCALE is for tests only
     countdownMs: Number(env.LOBBY_COUNTDOWN_MS) || undefined,
     allowedOrigins, login, accounts, production, healthToken: env.HEALTH_TOKEN,
   });
   const port = await app.listen(Number(env.PORT) || 8787);
   console.log(`[server] listening on :${port}  (health: http://localhost:${port}/health)`);
+  setInterval(() => app.push.tick().catch((e) => console.error('[push] tick failed:', e.message)), 10 * 60 * 1000).unref(); // also driven by POST /push/tick (GitHub cron)
   const stop = async () => { await app.close(); process.exit(0); };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   // Safety net: one bad handler must not drop every match. Log the error only, never message payloads.
