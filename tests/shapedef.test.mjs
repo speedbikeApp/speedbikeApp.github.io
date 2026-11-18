@@ -26,3 +26,6 @@ assert.equal(getPart('body', 'c_a').shapes, undefined); assert.deepEqual(getPart
 assert.deepEqual([getPart('tire', 'c_c').base, getPart('tire', 'c_c').shapes.length, getPart('rim', 'c_d'), getPart('glow', 'c_e')], ['none', 1, null, null]);
 applyCatalog(null);
 console.log('shapedef tests passed');
+// object tree: parent must be an earlier entry; children never mirror
+assert.deepEqual(validateShapes('body', [{ ...S, type: 'empty' }, { ...S, parent: 0, mirror: true }]).shapes[1], { ...S, parent: 0, mirror: false });
+for (const bad of [[{ ...S, parent: 0 }], [S, { ...S, parent: 1 }], [S, { ...S, parent: -1 }], [S, { ...S, parent: 0.5 }], [S, { ...S, parent: '0' }]]) assert.equal(validateShapes('body', bad).ok, false, JSON.stringify(bad));

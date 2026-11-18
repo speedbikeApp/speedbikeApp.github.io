@@ -1,9 +1,11 @@
 // Custom bike-part shapes (BIKE EDITOR). Pure data + validation (no three, no DOM): the client (parts.js, bikemodels.js, admin-bikeedit.js) and the server
 // (server/admin-items.js) run the SAME validator. A custom body / tire / rim item = base built-in model (or 'none') + `shapes`:
-//   {type, p:[x,y,z], r:[rx,ry,rz] degrees, s:[sx,sy,sz] size in bike units, role, mirror}   (at most MAX_SHAPES)
+//   {type, p:[x,y,z], r:[rx,ry,rz] degrees, s:[sx,sy,sz] size in bike units, role, mirror, parent?}   (at most MAX_SHAPES)
+// Object tree: `parent` = index of an EARLIER entry (so no cycles); p / r / s are then local to that parent and the child moves with it.
+// type 'empty' draws nothing (a group to hold children). mirror only applies to top-level entries (children follow their parent's copy).
 // Bodies live in bike space (x +-0.8, y 0..2, z +-1.6, +z forward). Tire / rim shapes are in WHEEL space: origin = the wheel centre, x = axle, y / z within radius ~0.7;
 // they are added to each wheel (and spin with it). Out-of-range numbers are CLAMPED; wrong types / unknown type or role / too many shapes are rejected.
-export const SHAPE_TYPES = ['box', 'sphere', 'cylinder', 'cone', 'torus', 'capsule', 'wedge', 'tube'];
+export const SHAPE_TYPES = ['box', 'sphere', 'cylinder', 'cone', 'torus', 'capsule', 'wedge', 'tube', 'empty'];
 export const SHAPE_ROLES = ['shell', 'plate', 'canopy', 'dark', 'glow', 'bright', 'hot', 'lamp', 'tire', 'tireGlow'];
 export const MAX_SHAPES = 60;
 export const SHAPE_LIM = { // position half range per axis, size [min, max], rotation range (degrees)
@@ -20,7 +22,9 @@ export function cleanShape(cat, s) {
   if (!s || typeof s !== 'object' || !SHAPE_TYPES.includes(s.type) || !SHAPE_ROLES.includes(s.role)) return null;
   if (s.mirror !== undefined && typeof s.mirror !== 'boolean') return null;
   const L = lim(cat), p = vec(s.p, L.p), r = vec(s.r, [SHAPE_LIM.r, SHAPE_LIM.r, SHAPE_LIM.r]), sz = vec(s.s, [L.s, L.s, L.s]);
-  return p && r && sz ? { type: s.type, p, r, s: sz, role: s.role, mirror: s.mirror === true } : null;
+  if (s.parent !== undefined && !(Number.isInteger(s.parent) && s.parent >= 0)) return null;
+  if (!p || !r || !sz) return null;
+  return s.parent === undefined ? { type: s.type, p, r, s: sz, role: s.role, mirror: s.mirror === true } : { type: s.type, p, r, s: sz, role: s.role, mirror: false, parent: s.parent };
 }
 /** undefined / null = no shapes. -> {ok:true, shapes} (clean copy) | {ok:false, why}. */
 export function validateShapes(cat, list) {
@@ -29,7 +33,7 @@ export function validateShapes(cat, list) {
   if (!Array.isArray(list)) return { ok: false, why: 'shapes must be a list' };
   if (list.length > MAX_SHAPES) return { ok: false, why: `at most ${MAX_SHAPES} shapes` };
   const out = [];
-  for (let i = 0; i < list.length; i++) { const s = cleanShape(cat, list[i]); if (!s) return { ok: false, why: `shape ${i + 1} is invalid` }; out.push(s); }
+  for (let i = 0; i < list.length; i++) { const s = cleanShape(cat, list[i]); if (!s || s.parent >= i) return { ok: false, why: `shape ${i + 1} is invalid` }; out.push(s); }
   return { ok: true, shapes: out };
 }
 /** Short stable cache key of a (clean) shape list. */

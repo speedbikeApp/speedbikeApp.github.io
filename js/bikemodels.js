@@ -305,9 +305,18 @@ export function placeShape(m, sh, mirror = false) {
   const k = mirror ? -1 : 1, D = Math.PI / 180;
   m.position.set(k * sh.p[0], sh.p[1], sh.p[2]); m.rotation.set(sh.r[0] * D, k * sh.r[1] * D, k * sh.r[2] * D); m.scale.set(sh.s[0], sh.s[1], sh.s[2]); return m;
 }
-export function addShapes(g, M, shapes) {
-  for (const sh of shapes) for (const mir of sh.mirror && Math.abs(sh.p[0]) > 0.001 ? [false, true] : [false]) g.add(placeShape(new THREE.Mesh(shapeGeom(sh.type), M[sh.role]), sh, mir));
+/** Build the shape tree under g. mat(sh, i) -> material, or null for an invisible node; 'empty' is a plain group. Returns objs[i] = the copies of node i
+ *  (two for a mirrored top-level node and everything inside it). */
+export function buildShapes(g, shapes, mat) {
+  const objs = [], mirs = [];
+  shapes.forEach((sh, i) => {
+    const m = sh.type === 'empty' ? null : mat(sh, i), mk = (mir) => placeShape(m ? new THREE.Mesh(shapeGeom(sh.type), m) : new THREE.Group(), sh, mir);
+    if (sh.parent === undefined) { mirs[i] = sh.mirror && Math.abs(sh.p[0]) > 0.001 ? [false, true] : [false]; objs[i] = mirs[i].map((mir) => { const o = mk(mir); g.add(o); return o; }); }
+    else { mirs[i] = mirs[sh.parent]; objs[i] = objs[sh.parent].map((p, k) => { const o = mk(mirs[i][k]); p.add(o); return o; }); }
+  });
+  return objs;
 }
+export const addShapes = (g, M, shapes) => { buildShapes(g, shapes, (sh) => M[sh.role]); };
 // builder = base builder + the shapes (rim builders run once per side: add the shapes once)
 const shapeBuilder = (cat, base, sh) => (!sh ? base : (...a) => { const r = base(...a); if (cat !== 'rim' || a[4] > 0) addShapes(a[0], a[1], sh); return r; });
 export const dropShapeUnits = () => { for (const k of [...unitCache.keys()]) if (k.includes('+')) unitCache.delete(k); }; // editor: forget old drafts
