@@ -59,8 +59,11 @@ export function createCatalog(store) {
     async putQuests(c) { await store.putQuests(c); quests = c; },
     async getEvents() { if (!events) events = (await store.getEvents()).map((e) => validateEvent(e)).filter((v) => v.ok).map((v) => v.event); return events; },
     async putEvents(l) { await store.putEvents(l); events = l; },
-    /** The event running at `now` (latest start wins when two overlap) or null. */
-    async activeEvent(now = Date.now()) { return (await this.getEvents()).filter((e) => eventActive(e, now)).sort((a, b) => b.start - a.start)[0] || null; },
+    /** The event to serve: the one running at `now` (latest start wins when two overlap), else the soonest upcoming one, else null. */
+    async activeEvent(now = Date.now()) {
+      const l = await this.getEvents();
+      return l.filter((e) => eventActive(e, now)).sort((a, b) => b.start - a.start)[0] || l.filter((e) => e.start > now).sort((a, b) => a.start - b.start)[0] || null;
+    },
     getFeatured: () => store.getFeatured(),
     putFeatured: (m) => store.putFeatured(m),
     async putItem(it) { const c = await get(); await store.put(it.id, it); const i = c.items.findIndex((x) => x.id === it.id); if (i >= 0) c.items[i] = it; else c.items.push(it); },

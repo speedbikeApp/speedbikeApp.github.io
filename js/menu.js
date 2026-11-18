@@ -25,6 +25,7 @@ import { ACTIONS, ACTION_LABEL, groups, codeLabel, rebind, defaultKeys, setBindi
 const $ = (id) => document.getElementById(id);
 let current = null;      // visible screen id or null
 let settingsFrom = null; // 'main' | 'pause'
+let acFromSettings = false; // account opened from SETTINGS: its BACK returns there
 
 const SCREENS = ['scrMain', 'scrPlay', 'scrMode', 'scrMapSel', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrQuests', 'scrProfile', 'scrPick', 'scrAccount', 'scrAdmin', 'scrSettings', 'scrControls'];
 const FULL_MENU = ['scrMain', 'scrPlay', 'scrMode', 'scrMapSel', 'scrMulti', 'scrQueue', 'scrLobby', 'scrFriends', 'scrAbilities', 'scrGarage', 'scrStats', 'scrQuests', 'scrProfile', 'scrPick', 'scrAccount', 'scrAdmin']; // screens shown over the empty arena (HUD hidden)
@@ -51,7 +52,7 @@ export function showScreen(name, backdrop = 'home') {
   if (name === 'scrMulti' || name === 'scrQueue' || name === 'scrLobby') multiScreen(name);
   if (name === 'scrFriends') friendsScreen();
   if (name === 'scrAdmin') adminScreen();
-  if (name === 'scrSettings') syncSettingsUi();
+  if (name === 'scrSettings') { syncSettingsUi(); $('sMore').hidden = settingsFrom !== 'main'; } // account / stats only from the main menu, not the pause menu
   if (name !== 'scrControls') cancelCapture();
   if (name === 'scrControls') renderControls('');
   if (name === 'scrMain') updateQuestBadge();
@@ -202,16 +203,17 @@ export function initMenu(h) {
   initAdminUi({ show: showScreen });
   initPartyUi();
   initProfileUi({ show: showScreen });
-  on('mAbilities', () => showScreen('scrAbilities'));
   on('mGarage', () => showScreen('scrGarage'));
-  on('mStats', () => showScreen('scrStats'));
+  on('gAbil', () => { saveSoon(); showScreen('scrAbilities'); });
+  on('sStats', () => showScreen('scrStats'));
   initQuestsUi({ show: showScreen });
-  on('mAccount', () => showScreen('scrAccount'));
-  initAccountUi({ newAccount: () => h.onTutorial(true), back: () => showScreen('scrMain'), open: () => showScreen('scrAccount'), refresh: () => { if (['scrMain', 'scrAbilities', 'scrGarage', 'scrStats', 'scrQuests', 'scrProfile'].includes(current)) showScreen(current); } });
+  on('sAccount', () => { acFromSettings = true; showScreen('scrAccount'); });
+  const acBack = () => { const s = acFromSettings; acFromSettings = false; showScreen(s ? 'scrSettings' : 'scrMain'); };
+  initAccountUi({ newAccount: () => h.onTutorial(true), back: acBack, open: () => showScreen('scrAccount'), refresh: () => { if (['scrMain', 'scrAbilities', 'scrGarage', 'scrStats', 'scrQuests', 'scrProfile'].includes(current)) showScreen(current); } });
   // Esc: close the delete confirmation first, else back to the main menu (capture phase: runs before the pause handler)
-  addEventListener('keydown', (e) => { if (e.code === 'Escape' && current === 'scrAccount') { e.preventDefault(); if (!accountEsc()) showScreen('scrMain'); } });
+  addEventListener('keydown', (e) => { if (e.code === 'Escape' && current === 'scrAccount') { e.preventDefault(); if (!accountEsc()) acBack(); } });
   on('gBack', () => { saveSoon(); showScreen('scrMain'); });
-  on('stBack', () => showScreen('scrMain'));
+  on('stBack', () => showScreen('scrSettings'));
   $('gTabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-cat]'); if (b && tutorial.stage() !== 'color') { gCat = b.dataset.cat; gSel = null; renderGarage(''); } });
   $('gList').addEventListener('click', (e) => { const b = e.target.closest('button[data-id]'); if (b) { gSel = b.dataset.id; renderGarage(''); } });
   on('gAct', () => {
@@ -222,7 +224,7 @@ export function initMenu(h) {
     renderGarage(r.ok ? '' : G_MSG[r.reason] || '');
     if (r.ok && tutorial.stage() === 'color') { tutorial.syncColor(); if (tutorial.stage() !== 'color') showScreen('scrMain'); }
   });
-  on('abBack', () => { saveSoon(); showScreen('scrMain'); });
+  on('abBack', () => { saveSoon(); showScreen('scrGarage'); });
   $('abList').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-id]');
     if (!b) return;
@@ -272,7 +274,9 @@ export function menuBack() {
   if (current === 'scrMapSel') { showScreen('scrMode'); return true; }
   if (current === 'scrMode' || current === 'scrMulti') { showScreen('scrPlay'); return true; }
   if (current === 'scrQueue' || current === 'scrLobby') return multiBack(current);
-  if (current === 'scrPlay' || current === 'scrFriends' || current === 'scrAdmin' || current === 'scrAbilities' || current === 'scrGarage' || current === 'scrStats' || current === 'scrQuests' || current === 'scrProfile') { showScreen('scrMain'); return true; }
+  if (current === 'scrAbilities') { saveSoon(); showScreen('scrGarage'); return true; }
+  if (current === 'scrStats') { showScreen('scrSettings'); return true; }
+  if (current === 'scrPlay' || current === 'scrFriends' || current === 'scrAdmin' || current === 'scrGarage' || current === 'scrQuests' || current === 'scrProfile') { showScreen('scrMain'); return true; }
   if (current === 'scrPick') { showScreen('scrProfile'); return true; }
   return false;
 }

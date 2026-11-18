@@ -11,44 +11,46 @@ const $ = (id) => document.getElementById(id);
 let tab = 'quests', shownEvent = null; // shownEvent: id rendered in the EVENT tab (null = none), to re-render when it ends / starts
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 
-function row(v) {
+function row(v) { // one quest cube: title, requirement + progress, bar, reward (+ CLAIM)
   const r = el('div', 'qRow frame' + (v.done ? ' done' : ''));
-  const head = el('div', 'qHead'); head.append(el('b', '', v.quest.title.toUpperCase()), el('span', 'tag', v.claimed ? 'CLAIMED' : `${v.progress} / ${v.count}`));
   const bar = el('div', 'bar'), fill = el('i'); fill.style.width = Math.round((v.progress / v.count) * 100) + '%'; bar.append(fill);
-  const req = parseRequirement(v.quest.requirement), rw = el('div', 'qRw'); rw.append(el('span', '', 'REWARD: ' + rewardText(v.quest.reward)));
+  const req = parseRequirement(v.quest.requirement), rw = el('div', 'qRw'); rw.append(el('span', '', rewardText(v.quest.reward)));
   if (v.done && !v.claimed) { const b = el('button', 'mbtn frame primary qClaim', 'CLAIM'); b.type = 'button'; b.dataset.key = v.key; rw.append(b); }
-  r.append(head, el('small', '', v.quest.body || (req ? requirementLabel(req) : '')), bar, rw);
+  r.append(el('b', 'qTtl', v.quest.title.toUpperCase()), el('small', '', v.quest.body || (req ? requirementLabel(req) : '')), el('span', 'tag', v.claimed ? 'CLAIMED' : `${v.progress} / ${v.count}`), bar, rw);
   return r;
 }
+const grid = (list) => { const g = el('div', 'qGrid'); g.append(...list.map(row)); return g; };
 const section = (title, timer, list) => {
   const s = el('div', 'qSec'), h = el('div', 'lbl'), t = el('span', 'qTimer'); h.append(title + ' ', t); if (timer) t.dataset.t = timer;
-  s.append(h, ...list.map(row)); return s;
+  s.append(h, grid(list)); return s;
 };
+const evKey = (v) => (v.event ? v.event.id + (v.event.active ? ':on' : ':soon') : null);
 
 function render() {
-  const v = questsView();
-  $('qEvTab').classList.toggle('dim', !v.event);
-  $('qEvTab').firstChild.textContent = v.event ? 'EVENT' : 'NO EVENT RIGHT NOW';
-  if (tab === 'event' && !v.event) tab = 'quests';
+  const v = questsView(), ev = v.event;
+  $('qEvTab').classList.toggle('dim', !ev); $('qEvTab').classList.toggle('soon', !!ev && !ev.active);
+  if (tab === 'event' && !ev) tab = 'quests';
   for (const b of $('qTabs').children) b.classList.toggle('sel', b.dataset.tab === tab);
   const body = $('qBody'); body.replaceChildren(); body.className = tab;
-  shownEvent = v.event ? v.event.id : null;
+  shownEvent = evKey(v);
   if (tab === 'quests') body.append(section('DAILY', 'daily', v.daily), section('WEEKLY', 'weekly', v.weekly));
   else if (tab === 'season') body.append(section('SEASON', 'season', v.season));
   else {
-    const fr = el('iframe', 'frame qFrame'); fr.setAttribute('sandbox', ''); fr.srcdoc = v.event.html; fr.title = 'Event';
+    const fr = el('iframe', 'frame qFrame'); fr.setAttribute('sandbox', ''); fr.srcdoc = ev.html; fr.title = 'Event';
     const side = el('div', 'qSide'), t = el('div', 'lbl'), tm = el('span', 'qTimer'); tm.dataset.t = 'event';
-    t.append(v.event.title.toUpperCase() + ' - ENDS IN ', tm); side.append(t, ...v.event.quests.map(row));
+    t.append(ev.title.toUpperCase() + ' - ', tm); side.append(t, grid(ev.quests));
     body.append(fr, side);
   }
   tick(v);
 }
 function tick(v = questsView()) { // timers only: a full render every second would eat button presses and reload the iframe
-  const now = Date.now(), at = { daily: () => 'RESETS IN ' + hms(v.resets.daily - now), weekly: () => 'RESETS IN ' + dh(v.resets.weekly - now),
-    season: () => `ENDS IN ${daysLeft(v.resets.season - now)} DAYS`, event: () => (v.event ? dh(v.event.end - now) : '') };
+  const now = Date.now(), ev = v.event, at = { daily: () => 'RESETS IN ' + hms(v.resets.daily - now), weekly: () => 'RESETS IN ' + dh(v.resets.weekly - now),
+    season: () => `ENDS IN ${daysLeft(v.resets.season - now)} DAYS`,
+    event: () => (ev ? (ev.active ? 'ENDS IN ' + dh(ev.end - now) : 'STARTS IN ' + dh(ev.start - now)).toUpperCase() : '') };
   for (const s of document.querySelectorAll('#qBody .qTimer')) s.textContent = at[s.dataset.t]();
+  $('qEvTab').textContent = !ev ? 'NO EVENT RIGHT NOW' : (ev.active ? `EVENT · ${dh(ev.end - now)} LEFT` : `EVENT IN ${dh(ev.start - now)}`).toUpperCase();
   $('qTitle').textContent = tab === 'season' ? 'SEASON ' + seasonNo(v) : 'QUESTS';
-  if ((v.event ? v.event.id : null) !== shownEvent) render();
+  if (evKey(v) !== shownEvent) render();
 }
 const seasonNo = (v) => (v.season[0] ? +/^s:(\d+):/.exec(v.season[0].key)[1] : ''); // the period key carries the number
 

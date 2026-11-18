@@ -3,7 +3,7 @@
 //   track(id, amount = 1, param = null) -> [view]   add progress to every ACTIVE quest (today's dailies, this week's weeklies, this season's 10, the running
 //        event's) whose requirement id is `id`. Param requirements: early_kill(S) / early_death(S) count when param <= S (track('early_kill', 1, secondsAfterGo)).
 //        Progress stops at the quest's count. Returns the views of the quests that just became complete (for toasts). Saves soon.
-//   questsView(now = Date.now()) -> { daily: [view], weekly: [view], season: [view], event: { id, title, start, end, html, quests: [view] } | null,
+//   questsView(now = Date.now()) -> { daily: [view], weekly: [view], season: [view], event: { id, title, start, end, html, active, quests: [view] } | null (active false = starts later: no progress, no claim),
 //        resets: { daily, weekly, season } (ms) }   view = { key, kind: 'daily'|'weekly'|'season'|'event', quest: {id,title,body,requirement,reward}, progress, count, done, claimed }.
 //        key is unique per period, e.g. 'd:2026-11-17:d_win', 'w:2026-W47:..', 's:006:..', 'e:<eventId>:..'. A period change resets that block when it is read / tracked.
 //        event.html is admin-written: show it ONLY in a sandboxed iframe (sandbox="" + srcdoc), never innerHTML. Quest text: textContent.
@@ -59,11 +59,18 @@ export function track(id, amount = 1, param = null, now = Date.now()) {
   return done;
 }
 
+/** An event that has not started yet: shown (countdown + quest cubes) but never tracked or claimable. */
+function upcoming(now) {
+  const e = getEvent(); if (!e || e.start <= now) return null;
+  const quests = e.quests.map((quest) => ({ key: `e:${e.id}:${quest.id}`, kind: 'event', quest, progress: 0, count: reqOf(quest).count, done: false, claimed: false }));
+  return { id: e.id, title: e.title, start: e.start, end: e.end, html: e.html, active: false, quests };
+}
+
 export function questsView(now = Date.now()) {
   const { list, ev } = entries(now), of = (k) => list.filter((v) => v.kind === k).map(pub);
   return {
     daily: of('daily'), weekly: of('weekly'), season: of('season'),
-    event: ev ? { id: ev.id, title: ev.title, start: ev.start, end: ev.end, html: ev.html, quests: of('event') } : null,
+    event: ev ? { id: ev.id, title: ev.title, start: ev.start, end: ev.end, html: ev.html, active: true, quests: of('event') } : upcoming(now),
     resets: { daily: nextDailyReset(now), weekly: nextWeeklyReset(now), season: nextSeasonReset(now) },
   };
 }

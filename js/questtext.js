@@ -2,15 +2,15 @@
 import { parseReward } from './questdef.js';
 import { ABILITIES } from './abilities.js';
 
-/** Reward string -> "+500 SBCOINS / +2000 XP / RARE DROP / 5x PROTECTOR" parts ('' for an invalid string). */
+/** Reward string -> "+500 SBCOINS / +2000 XP / +1 RARE DROP / +5 PROTECTOR" parts ('' for an invalid string). */
 export function rewardText(s) {
   const parts = parseReward(s) || [];
   return parts.map((r) => {
     if (r.type === 'coins') return `+${r.amount} SBCOINS`;
     if (r.type === 'xp') return `+${r.amount} XP`;
-    if (r.type === 'powerup') return `${r.amount}x ${ABILITIES[r.id].name.toUpperCase()}`;
-    return `${r.amount > 1 ? r.amount + 'x ' : ''}${r.type.replace('_drop', '').toUpperCase()} DROP`;
-  }).join(' + ');
+    if (r.type === 'powerup') return `+${r.amount} ${ABILITIES[r.id].name.toUpperCase()}`;
+    return `+${r.amount} ${r.type.replace('_drop', '').toUpperCase()} DROP`;
+  }).join(' · ');
 }
 const p2 = (n) => String(n).padStart(2, '0');
 /** ms left -> "hh:mm:ss" (hours may pass 24). */

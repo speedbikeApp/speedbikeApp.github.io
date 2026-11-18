@@ -208,18 +208,20 @@
   /* ---- quests screen ---- */
   #scrQuests { width: min(860px, 96vw); position: relative; } #scrQuests #qTabs { width: 100%; } #qTabs .mbtn { padding: 6px 8px; font-size: 13px; min-height: 36px; }
   #qTabs .mbtn.sel { border-color: #fff; } #qTabs .mbtn.dim { opacity: .45; cursor: default; }
-  #qBody { width: 100%; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
-  #qBody.event { flex-direction: row; align-items: stretch; gap: 10px; } .qSec, .qSide { display: flex; flex-direction: column; gap: 5px; min-width: 0; } .qSide { flex: 1; }
-  .qFrame { flex: 1; min-width: 0; height: 320px; border: 2px solid var(--neon); background: #000; box-shadow: 0 0 10px var(--neon); }
-  .qRow { padding: 5px 8px; font-size: 12px; letter-spacing: 1px; text-align: left; display: flex; flex-direction: column; gap: 3px; }
-  .qRow small { font-size: 11px; opacity: .85; font-family: sans-serif; letter-spacing: 0; } .qHead { display: flex; justify-content: space-between; gap: 8px; } .qHead .tag { font-size: 11px; opacity: .85; white-space: nowrap; }
+  #qBody { width: 100%; display: flex; flex-direction: column; gap: 6px; flex: none; } /* flex:none - the default shrink squashed the body into the BACK button once the screen hit its max-height */
+  #qBody.event { gap: 8px; } .qSec, .qSide { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .qGrid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; } #qBody.season .qGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .qFrame { width: 100%; box-sizing: border-box; height: 240px; border: 2px solid var(--neon); background: #000; box-shadow: 0 0 10px var(--neon); }
+  .qRow { padding: 6px 8px; font-size: 12px; letter-spacing: 1px; text-align: left; display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 138px; }
+  .qTtl { overflow-wrap: anywhere; } .qRow small { font-size: 11px; opacity: .85; font-family: sans-serif; letter-spacing: 0; flex: 1; overflow-wrap: anywhere; } .qRow .tag { font-size: 11px; opacity: .85; }
   .qRow .bar { height: 6px; border: 1px solid var(--neon); } .qRow .bar i { display: block; height: 100%; background: var(--neon); box-shadow: 0 0 6px var(--neon); }
   .qRow.done { border-color: #fc3; } .qRow.done .bar i { background: #fc3; box-shadow: 0 0 6px #fc3; } .qRow.done .tag { color: #fc3; }
-  .qRw { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11px; color: #fc3; min-height: 22px; } .qClaim { min-height: 26px !important; padding: 2px 14px !important; font-size: 12px !important; flex: none; }
+  .qRw { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #fc3; min-height: 22px; } .qClaim { min-height: 26px !important; padding: 2px 8px !important; font-size: 12px !important; }
+  #qTabs .mbtn.soon { opacity: .7; }
   #mQuests .fbadge { margin-left: 6px; } #mQuests { display: flex; align-items: center; justify-content: center; }
   #qPop { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.75); z-index: 5; } #qPop[hidden] { display: none; }
-  @media (max-height: 460px) { .qFrame { height: 210px; } .qRow { padding: 3px 8px; gap: 2px; } .qRow small { font-size: 10px; } #qBody { gap: 4px; } }
-  @media (max-width: 700px) { #qBody.event { flex-direction: column; } .qFrame { flex: none; height: 150px; } }
+  @media (max-height: 460px) { .qFrame { height: 150px; } .qRow { padding: 3px 6px; gap: 2px; min-height: 104px; } .qRow small { font-size: 10px; } #qBody { gap: 4px; } .qGrid { gap: 5px; } }
+  @media (max-width: 560px) { .qGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   #toasts { position: fixed; top: calc(100px * var(--hud)); left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
   .toast { padding: 6px 18px; font-size: 15px; font-weight: 800; letter-spacing: 3px; color: #fff; text-align: center; border-color: #fc3; box-shadow: 0 0 14px #fc3; background: rgba(20,14,0,.8); animation: toastIn .3s ease-out, toastOut .5s ease-in 4.2s forwards; }
   .toast small { display: block; font-size: 10px; font-weight: 500; letter-spacing: 1px; color: #fc3; margin-top: 2px; }
@@ -447,18 +449,9 @@
     <div id="tagline">NEON LIGHT-CYCLE ARENA</div>
     <button id="mTut" class="mbtn frame tut" type="button" hidden>TUTORIAL<small>LEARN THE CONTROLS</small></button>
     <button id="mPlay" class="mbtn frame primary" type="button">PLAY</button>
-    <div class="mrow" style="width:100%">
-      <button id="mSettings" class="mbtn frame" type="button">SETTINGS</button>
-      <button id="mAbilities" class="mbtn frame" type="button">ABILITIES</button>
-    </div>
-    <div class="mrow" style="width:100%">
-      <button id="mGarage" class="mbtn frame" type="button">GARAGE</button>
-      <button id="mStats" class="mbtn frame" type="button">STATS</button>
-    </div>
-    <div class="mrow" style="width:100%">
-      <button id="mQuests" class="mbtn frame" type="button">QUESTS<b id="mQBadge" class="fbadge" hidden></b></button>
-      <button id="mAccount" class="mbtn frame" type="button">ACCOUNT</button>
-    </div>
+    <button id="mGarage" class="mbtn frame" type="button">GARAGE</button>
+    <button id="mQuests" class="mbtn frame" type="button">QUESTS<b id="mQBadge" class="fbadge" hidden></b></button>
+    <button id="mSettings" class="mbtn frame" type="button">SETTINGS</button>
     <div id="coinLine"><span class="coins">SBCOINS <b id="mCoins">0</b></span> &nbsp; <span id="mName"></span></div>
     <div id="mAcct"></div>
     <button id="mProfile" class="frame" type="button" aria-label="Profile">
@@ -582,7 +575,7 @@
     <div id="gMain">
       <div id="gLeft"><canvas id="gCanvas"></canvas><div id="gInfo"></div><button id="gAct" class="mbtn frame primary" type="button"></button></div>
       <div id="gRight">
-        <div id="gTabs" class="mrow"><button class="mbtn frame" type="button" data-cat="body">BODY</button><button class="mbtn frame" type="button" data-cat="tire">TIRES</button><button class="mbtn frame" type="button" data-cat="rim">RIMS</button><button class="mbtn frame" type="button" data-cat="glow">COLOR</button></div>
+        <div id="gTabs" class="mrow"><button class="mbtn frame" type="button" data-cat="body">BODY</button><button class="mbtn frame" type="button" data-cat="tire">TIRES</button><button class="mbtn frame" type="button" data-cat="rim">RIMS</button><button class="mbtn frame" type="button" data-cat="glow">COLOR</button><button id="gAbil" class="mbtn frame" type="button">ABILITIES</button></div>
         <div id="gList"></div>
       </div>
     </div>
@@ -725,6 +718,7 @@
     <div class="setrow"><span>SOUND</span><button id="sMute" class="mbtn frame" type="button"></button></div>
     <label class="setrow"><span>QUALITY</span><select id="sQuality"><option value="low">LOW (1x)</option><option value="medium">MEDIUM (1.5x)</option><option value="high">HIGH (2x)</option></select></label>
     <div class="setrow"><span>CONTROLS</span><button id="sControls" class="mbtn frame" type="button">KEYS &amp; PAD</button></div>
+    <div id="sMore" class="mrow"><button id="sAccount" class="mbtn frame" type="button">ACCOUNT</button><button id="sStats" class="mbtn frame" type="button">STATS</button></div>
     <button id="sBack" class="mbtn frame" type="button">BACK</button>
   </div>
   <div id="scrControls" class="screen frame">

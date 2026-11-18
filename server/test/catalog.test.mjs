@@ -96,7 +96,7 @@ const sl = await boss.op('lset', { levels: { ...DEFAULT_LEVELS, xpPerLevel: 5000
 assert.equal(sl.ok, true); assert.equal(sl.levels.junk, undefined); assert.deepEqual(JSON.parse((await get()).body).levels, sl.levels); assert.deepEqual(await catStore.getLevels(), sl.levels);
 assert.deepEqual((await boss.op('lreset')).levels, DEFAULT_LEVELS); assert.deepEqual(JSON.parse((await get()).body).levels, DEFAULT_LEVELS);
 
-// QUESTS + EVENTS ops: admin only, validated, served in GET /catalog (the event only while it runs), reset restores defaults
+// QUESTS + EVENTS ops: admin only, validated, served in GET /catalog (the running event, else the soonest upcoming one), reset restores defaults
 import { DEFAULT_QUESTS } from '../../js/questdef.js';
 const qv = { id: 'e_play', title: 'ON MY WAY TO THE TOP', body: 'play a multiplayer game!', requirement: 'multiplayer_game_completed:1', reward: 'common_drop:1' };
 const evOf = (id, start, end, extra = {}) => ({ id, title: 'EV ' + id, start, end, html: '<p>x</p>', quests: [qv], ...extra });
@@ -114,14 +114,16 @@ const now = Date.now(), H = 3600e3;
 assert.deepEqual((await boss.op('eget')).events, []);
 for (const e of [{}, evOf('bad id', 1, 2), evOf('x', 5, 5), evOf('x', 1, 2, { html: 'x'.repeat(20001) }), evOf('x', 1, 2, { quests: [{ ...qv, requirement: 'nope:1' }] })]) assert.equal((await boss.op('eset', { event: e })).code, 'bad_event');
 await boss.op('eset', { event: evOf('past', now - 9 * H, now - 8 * H) }); await boss.op('eset', { event: evOf('future', now + 8 * H, now + 9 * H) });
-assert.equal(JSON.parse((await get()).body).event, null, 'nothing running');
+assert.equal(JSON.parse((await get()).body).event.id, 'future', 'nothing running: the upcoming one is served');
+await boss.op('eset', { event: evOf('later', now + 20 * H, now + 21 * H) }); await boss.op('eset', { event: evOf('soon', now + 2 * H, now + 3 * H) });
+assert.equal(JSON.parse((await get()).body).event.id, 'soon', 'soonest upcoming wins'); await boss.op('edel', { id: 'later' }); await boss.op('edel', { id: 'soon' });
 const se = await boss.op('eset', { event: evOf('live', now - H, now + H, { junk: 1 }) });
 assert.equal(se.ok, true); assert.equal(se.event.junk, undefined); assert.deepEqual(se.events.map((e) => e.id), ['past', 'live', 'future'], 'sorted by start');
 qcat = JSON.parse((await get()).body); assert.equal(qcat.event.id, 'live'); assert.deepEqual(qcat.event.quests, [qv]); assert.equal(qcat.event.html, '<p>x</p>');
 assert.equal((await boss.op('eset', { event: evOf('live', now - H, now + H, { title: 'RENAMED' }) })).events.length, 3, 'same id replaces');
 assert.equal(JSON.parse((await get()).body).event.title, 'RENAMED'); assert.equal((await catStore.getEvents()).length, 3);
 assert.equal((await boss.op('edel', { id: 'nope' })).code, 'not_found');
-assert.deepEqual((await boss.op('edel', { id: 'live' })).events.map((e) => e.id), ['past', 'future']); assert.equal(JSON.parse((await get()).body).event, null);
+assert.deepEqual((await boss.op('edel', { id: 'live' })).events.map((e) => e.id), ['past', 'future']); assert.equal(JSON.parse((await get()).body).event.id, 'future'); await boss.op('edel', { id: 'future' }); assert.equal(JSON.parse((await get()).body).event, null);
 
 boss.close(); alice.close(); await app.close(); clearTimeout(guard);
 console.log('catalog server tests passed');

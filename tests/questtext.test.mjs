@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { rewardText, hms, dh, daysLeft, unclaimedCount } from '../js/questtext.js';
 assert.equal(rewardText('coins:500'), '+500 SBCOINS');
-assert.equal(rewardText('xp:2000,rare_drop:1'), '+2000 XP + RARE DROP');
-assert.equal(rewardText('epic_drop:2'), '2x EPIC DROP');
-assert.match(rewardText('powerup(protector):5'), /^5x [A-Z ]+$/);
+assert.equal(rewardText('xp:2000,rare_drop:1'), '+2000 XP · +1 RARE DROP');
+assert.equal(rewardText('epic_drop:2'), '+2 EPIC DROP');
+assert.match(rewardText('powerup(protector):5'), /^\+5 [A-Z ]+$/);
 assert.equal(rewardText('junk'), '');
 assert.equal(hms(3723000), '01:02:03'); assert.equal(hms(-5), '00:00:00');
 assert.equal(dh(90 * 3600000), '3d 18h'); assert.equal(dh(5 * 3600000), '5h');
