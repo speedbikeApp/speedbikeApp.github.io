@@ -1,7 +1,7 @@
 // GARAGE tab ops + the public catalog. args are untrusted (admin.js already verified the sender is an admin). Ops:
 // (results never use the key `id`: the router uses it to correlate replies)
 //   itemList {} -> {items:[custom], overrides:{id:{name?,price?,ach?}}}
-//   itemSave {id?, item}  no id: create custom {cat, name, price, ach?, base, color?} -> {item}; id 'c_..': update (cat fixed; hidden:bool allowed); built-in id: override {name?, price?, ach?:id|null}
+//   itemSave {id?, item}  no id: create custom {cat, name, price, ach?, base (built-in id, or 'none' for body / tire / rim), shapes? (js/shapedef.js; null clears), color?} -> {item}; id 'c_..': update (cat fixed; hidden:bool allowed); built-in id: override {name?, price?, ach?:id|null}
 //   itemDelete {id}       custom: hide it (owners keep it; never really deleted); built-in: remove its override
 // DROPS: dget / dset / dreset (see below). LEVELS: lget {} / lset {levels} / lreset {} -> {levels} (js/leveldef.js).
 // QUESTS: qget {} / qset {quests} / qreset {} -> {quests} (js/questdef.js validateQuestConfig). EVENTS: eget {} -> {events}; eset {event} (create / replace by id) -> {event, events}; edel {id} -> {events}.
@@ -12,6 +12,7 @@ import { isAchievementId } from '../js/achievements.js';
 import { DEFAULT_DROPS, validateDrops } from '../js/dropdef.js';
 import { DEFAULT_LEVELS, validateLevels } from '../js/leveldef.js';
 import { DEFAULT_QUESTS, validateQuestConfig, validateEvent, eventActive } from '../js/questdef.js';
+import { validateShapes } from '../js/shapedef.js';
 import { adminError as E } from './admin.js';
 import { originAllowed } from './login.js';
 
@@ -28,8 +29,10 @@ const none = (v) => v === undefined || v === null || v === '';
 export function cleanItem(it) {
   if (!it || typeof it !== 'object') throw E('bad_item');
   if (!CATS.includes(it.cat)) throw E('bad_cat');
-  if (typeof it.base !== 'string' || !BUILTIN_PARTS[it.cat].some((p) => p.id === it.base)) throw E('bad_base');
+  if (typeof it.base !== 'string' || !(it.base === 'none' && it.cat !== 'glow' || BUILTIN_PARTS[it.cat].some((p) => p.id === it.base))) throw E('bad_base');
+  const sh = validateShapes(it.cat, it.shapes); if (!sh.ok || (it.base === 'none' && !sh.shapes.length)) throw E('bad_shapes');
   const o = { id: it.id, cat: it.cat, name: name(it.name), price: price(it.price), base: it.base };
+  if (sh.shapes.length) o.shapes = sh.shapes;
   if (!none(it.ach)) o.ach = ach(it.ach);
   if (!none(it.color)) o.color = color(it.color);
   if (it.hidden === true) o.hidden = true;

@@ -2,7 +2,7 @@ import { CFG } from './config.js';
 import { createState, createBike } from './state.js';
 import { step, turnBike, canTurn, isAirborne, startBoost, startJump } from './physics.js';
 import { initInput, popTurn, popAction, pushAction, clearQueue, setOnPause } from './input.js';
-import { render, renderMapPreview, burst, resetCamera, resetEffects, setBikeStyle, spectateNext } from './render.js';
+import { render, renderMapPreview, newBackground, burst, resetCamera, resetEffects, setBikeStyle, spectateNext } from './render.js';
 import * as audio from './audio.js';
 import { initHud, openPendingDrops, setTimer, setPing, setScoreboard, setStatus, showPause, showLeave, syncOverlays, drawMinimap, setAbilityButtons, setMatchReward, setAbilityHud, setShieldTag, flashTurn, setBikeInfo, showUnlocks, showAnnounce } from './hud.js';
 import { createAI, updateAIs } from './ai.js';
@@ -36,7 +36,7 @@ const spBikes = state.bikes; // singleplayer bikes: state.bikes is swapped for t
 let modeId = 'standard';
 const match = createMatch(state, MODES.standard, Math.random, {
   maps: CUSTOM, // single-player custom maps (custommaps.js), resolved at match start
-  onRoundStart() { roundCnt = { boosts: 0, jumps: 0 }; clearQueue(); resetCamera(); resetEffects(); },
+  onRoundStart(m) { if (m.mode.multimap || m.round <= 1) newBackground(); /* random theme per match; MULTIMAP: per round */ roundCnt = { boosts: 0, jumps: 0 }; clearQueue(); resetCamera(); resetEffects(); },
   onRespawn(b) { if (b.id === state.playerId) { clearQueue(); resetCamera(); } }, // Death Match
 });
 let paused = false;

@@ -6,6 +6,7 @@ import { isAdmin, onAdminChange, registerAdminTab, hasAdminTab, adminTabs, ADMIN
 import { rankLabel, defaultRank } from './ranks.js';
 // ---- tab modules plug in here (each registers itself on import) ----
 import './admin-garage.js';
+import './admin-bikeedit.js';
 import './admin-maps.js';
 import './admin-drops.js';
 import './admin-levels.js';

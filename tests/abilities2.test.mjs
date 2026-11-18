@@ -32,23 +32,34 @@ const parked = (id, x, z1, z2) => { const o = createBike(id, 0, x, z2, 0, 1); o.
   assert.equal(A.ABILITIES.turbo.price, 0); assert.equal(A.ABILITIES.turbo.cooldown, CFG.abilities.turbo.cooldown);
   assert.ok(A.isAbilityId('turbo') && !A.isAbilityId('nope') && !A.isAbilityId('toString') && !A.isAbilityId(5));
 }
-{ // Turbo: 2.5x (37.5 u/s) for ~3.33 s covers ~125 units (fake huge arena), leaves a trail, then back to base speed
+{ // Turbo: 1 s wind-up at 0.35x, then 1 s dash at 7x, then base speed; ~110 units (fake huge arena)
   const half = CFG.arena.half; CFG.arena.half = 400;
-  const b = bike(0, -300, 0, 1, 0, ['turbo']), s = mk(b);
+  const T = CFG.abilities.turbo, b = bike(0, -300, 0, 1, 0, ['turbo']), s = mk(b);
   assert.ok(A.useAbility(b, s));
-  run(s, DT); near(b.speed, 37.5, 1e-9);
-  run(s, CFG.abilities.turbo.duration + DT);
-  near(b.x + 300, 125, 0.6); near(b.speed, 15);
-  // trail drawn along the whole dash
-  near(b.trail[0].x2 - b.trail[0].x1, b.x + 300, 1e-6);
+  run(s, DT); near(b.speed, 15 * T.windupMult, 1e-9);
+  run(s, T.windup * 0.5); near(b.speed, 15 * T.windupMult, 1e-9);
+  run(s, T.windup * 0.5 + 2 * DT); near(b.speed, 15 * T.mult, 1e-9);
+  run(s, T.dashTime); near(b.speed, 15);
+  near(b.x + 300, 15 * (T.windup * T.windupMult + T.dashTime * T.mult), 0.6);
+  near(b.trail[0].x2 - b.trail[0].x1, b.x + 300, 1e-6); // trail drawn along the whole dash
+  CFG.arena.half = half;
+}
+{ // no tunnelling: a dash (7x) stopped by a thin parked trail directly in its path dies on it, even starting just before it
+  const half = CFG.arena.half; CFG.arena.half = 400;
+  for (const gap of [10, 20, 40, 60, 95]) for (const off of [0, 0.37]) {
+    const b = bike(0, -300 + off, 0, 1, 0, ['turbo']), wall = parked(7, -300 + off + gap, -5, 5), s = mk(b, wall);
+    A.useAbility(b, s);
+    const ev = run(s, 3, () => !b.alive);
+    assert.ok(!b.alive && ev.some((e) => e.victim === 0 && e.killer === 7), `dash hit the trail at gap ${gap}`);
+  }
   CFG.arena.half = half;
 }
 { // turning allowed during Turbo; trail gets a new segment
   const b = bike(0, -40, 0, 1, 0, ['turbo']), s = mk(b);
-  A.useAbility(b, s); run(s, 0.5);
+  A.useAbility(b, s); run(s, 1.5);
   assert.ok(canTurn(b)); turnBike(b, 1);
   assert.equal(b.dz, 1); assert.equal(b.trail.length, 2);
-  run(s, 0.1); near(b.speed, 37.5, 1e-9);
+  run(s, 0.1); near(b.speed, 15 * CFG.abilities.turbo.mult, 1e-9);
 }
 { // cooldown: cannot reuse, ready again after cooldown seconds (from activation)
   const b = bike(0, -300 + 0, 0, 1, 0, ['turbo']), s = mk(b); b.baseSpeed = b.speed = 0;
@@ -63,10 +74,10 @@ const parked = (id, x, z1, z2) => { const o = createBike(id, 0, x, z2, 0, 1); o.
 { // Turbo and normal boost don't multiply: max wins (either order)
   const b = bike(0, -300, 0, 1, 0, ['turbo']), s = mk(b);
   startBoost(b); run(s, DT); near(b.speed, 22.5, 1e-9);
-  A.useAbility(b, s); run(s, DT); near(b.speed, 37.5, 1e-9);
-  run(s, CFG.boost.duration); assert.ok(!b.boosting); near(b.speed, 37.5, 1e-9); // boost over, turbo remains
+  A.useAbility(b, s); run(s, DT); near(b.speed, 22.5, 1e-9); // wind-up is 0.35x but max(boost, turbo) = boost
+  run(s, 1.5); assert.ok(!b.boosting); near(b.speed, 105, 1e-9); // boost over (wind-up ended), turbo dash on
   const c = bike(1, -300, 10, 1, 0, ['turbo']), t = mk(c);
-  A.useAbility(c, t); run(t, DT); startBoost(c); run(t, DT); near(c.speed, 37.5, 1e-9);
+  A.useAbility(c, t); run(t, 1.1); startBoost(c); run(t, DT); near(c.speed, 105, 1e-9);
 }
 { // Fast Charge: boost lasts 2.1 s, jump recharges in 3.75 s
   const b = bike(0, -300, 0, 1, 0, ['fastCharge']), s = mk(b);

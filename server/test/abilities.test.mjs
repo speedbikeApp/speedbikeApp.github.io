@@ -59,7 +59,7 @@ function harness(mode = 'standard', loadouts = [], opts = {}) {
   h.room.input(0, { kind: 'ability', ability: 'turbo' }); h.advance(0.03);
   const ev = h.abilityEvs(0)[0];
   assert.ok(ev); assert.equal(ev.ability, 'turbo'); assert.equal(typeof ev.x, 'number');
-  assert.ok(h.bike(0).active.turbo > 3 && h.bike(0).speed > baseSpeed * 2.4, 'turbo speeds the bike up on the server');
+  assert.ok(h.bike(0).active.turbo > 1.5 && h.bike(0).speed < baseSpeed, 'turbo winds up (slow) on the server');
   assert.ok(h.bike(0).cd.turbo > 14);
   assert.equal(h.of(2, 'ev').filter((e) => e.kind === 'ability').length, 1, 'everyone gets the event');
   const n = h.of(0, 'ev').length;
@@ -94,11 +94,11 @@ function harness(mode = 'standard', loadouts = [], opts = {}) {
   assert.equal(ev.tick, T, 'event stamped with the rewound tick');
   const ran = h.room.tick - T; const left = ABILITIES.turbo.duration - ran * DT;
   assert.ok(Math.abs(h.bike(0).active.turbo - left) < 2 * DT, `turbo timer replayed from T (${h.bike(0).active.turbo.toFixed(3)} vs ${left.toFixed(3)})`);
-  // the bike travelled further than an un-boosted one by the replayed turbo stretch
+  // the bike travelled less than an un-boosted one (wind-up brake replayed)
   const ref = harness('standard', [[], [], [], []]); ref.run();
   while (ref.room.tick < h.room.tick) ref.advance(0.01);
   const d = (b) => Math.hypot(b.x - b.trail[0].x1, b.z - b.trail[0].z1);
-  assert.ok(d(h.bike(0)) > d(ref.bike(0)) + 0.5 * (ran * DT) * ref.bike(0).baseSpeed * 1.4, 'replay includes the turbo stretch');
+  assert.ok(d(h.bike(0)) < d(ref.bike(0)) - 0.2 * (ran * DT) * ref.bike(0).baseSpeed, 'replay includes the slow wind-up');
   // the cooldown history is rewound too: a second press (same tick) is refused
   const n = h.of(0, 'ev').length; h.room.input(0, { kind: 'ability', ability: 'turbo', ctick: T + 2 }); h.advance(0.02); assert.equal(h.of(0, 'ev').length, n);
 }

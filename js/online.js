@@ -11,7 +11,7 @@ import { validateMap } from './mapdef.js';
 import { createBike, resetBike, spawnPoints } from './state.js';
 import { canTurn, isAirborne } from './physics.js';
 import { popTurn, popAction, clearQueue } from './input.js';
-import { burst, resetCamera, resetEffects, setBikeStyle, spectateNext } from './render.js';
+import { burst, newBackground, resetCamera, resetEffects, setBikeStyle, spectateNext } from './render.js';
 import * as audio from './audio.js';
 import { setHudPlayers, resetHudPlayers, setOnlineResult, openPendingDrops, flashTurn, showAnnounce, setAbilityHud } from './hud.js';
 import { ABILITIES, setLoadout, cycleAbility, activeDef } from './abilities.js';
@@ -122,7 +122,7 @@ export function begin(msg, st, bikes0, exitCb) {
   for (const b of state.bikes) { match.scores[b.id] = 0; if (mode.kind === 'deathmatch') match.lives[b.id] = CFG.deathMatch.lives; }
   if (mode.kind === 'deathmatch') match.kills = match.scores;
   tb = { v: mode.roundTime, tick: 0 }; cdBase = { cd: CFG.match.countdown, tick: 0 }; runStart = 0;
-  placeBikes(); resetCamera(); resetEffects(); clearQueue(); setOnlineResult(null);
+  placeBikes(); resetCamera(); resetEffects(); clearQueue(); setOnlineResult(null); newBackground();
   announceLoadout();
   document.body.classList.add('online');
   net.lock(true);
@@ -189,6 +189,7 @@ on('round', (m) => {
   if (mode.kind === 'deathmatch') match.kills = match.scores;
   if (m.phase === 'countdown') {
     if (m.mapId && m.mapId !== state.map.id) state.map = mapOfMsg(m); // multimap: new map each round
+    if (mode.multimap) newBackground(); // cosmetic: own random theme every MULTIMAP round
     placeBikes(m.bikes); resetSim(sim, m.tick); resetCamera(); resetEffects(); clearQueue();
     match.respawnIn = {}; match.lastResult = null;
     match.phase = 'countdown'; cdBase = { cd: m.cd, tick: m.tick }; tb = { v: m.roundTime, tick: m.tick };

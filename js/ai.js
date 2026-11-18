@@ -277,7 +277,7 @@ export function aiAbilities(state, b, ai, rng = Math.random) {
   return out;
 }
 
-// Hard AI abilities: Turbo on a long open straight (or when an opponent is right behind us); Protector when boxed in by a
+// Hard AI abilities: Turbo on a long open straight (never with an opponent right behind: the wind-up is slow); Protector when boxed in by a
 // trail (not the wall) and the jump is unavailable. Uses whatever of the two the bike has equipped.
 export function aiUseAbilities(state, b, ai, rng = Math.random) {
   if (!b.abilities || !b.abilities.length || !b.alive) return false;
@@ -289,7 +289,7 @@ export function aiUseAbilities(state, b, ai, rng = Math.random) {
       const rx = o.x - b.x, rz = o.z - b.z, behind = -(rx * b.dx + rz * b.dz), lat = Math.abs(rx * -b.dz + rz * b.dx);
       if (behind > 0 && behind < CFG.ai.chasedDist && lat < 3) chased = true;
     }
-    if (f > CFG.ai.turboLook * r && (chased || rng() < CFG.ai.turboChance)) return useAbilityId(b, 'turbo', state);
+    if (!chased && f > CFG.ai.turboLook * r && rng() < CFG.ai.turboChance) return useAbilityId(b, 'turbo', state);
   }
   if (b.abilities.includes('protector') && canUse(b, 'protector') && f < CFG.ai.jumpTrigger * r && b.jumpMeter < 1 && pf.kind === 'trail') {
     const [ldx, ldz] = left(b), [rdx, rdz] = right(b), gap = CFG.minTurnGap + 1;

@@ -19,7 +19,7 @@ export const CFG = {
   // Cooldown starts on activation (so it includes the active duration). All timers tick on the fixed step (pause freezes them).
   abilities: {
     maxSlots: 3,                  // equipped abilities per bike
-    turbo: { price: 0, cooldown: 15, duration: 125 / 37.5, mult: 2.5 }, // 2.5x base speed for 125/37.5 = ~3.33 s (~125 u at base 15 u/s)
+    turbo: { price: 0, cooldown: 15, windup: 1.0, windupMult: 0.35, dashTime: 1.0, mult: 7, get duration() { return this.windup + this.dashTime; } }, // dash: 1 s braking at 0.35x, then 1 s at 7x (~110 u at base 15 u/s)
     fastCharge: { price: 300, boostDuration: 2.1, jumpRecharge: 3.75 },   // passive
     rocketJump: { price: 300, cooldown: 8, height: 7, timeScale: 1.4 },    // timeScale stretches the arc (rise/float/fall)
     doubleJump: { price: 400 },                                           // passive: one extra jump per airtime (arc restarts from current height)
@@ -95,7 +95,7 @@ export const CFG = {
     jumpTrigger: 5,               // boxed-in AI jumps when the trail ahead is closer than this (units)
     boostLook: 45,
     loadouts: [[], [], ['turbo', 'protector']], // abilities per difficulty (Hard only)
-    turboLook: 50,                // AI uses Turbo with at least this much open road ahead (and a per-think chance below)
+    turboLook: 55,                // AI uses Turbo with at least this much open road ahead (the dash covers ~110, the AI can still turn) (and a per-think chance below)
     turboChance: 0.04, chasedDist: 14,                // AI boosts only with at least this much open road ahead
     levels: [
       // look: danger distance; every: think every N ticks (staggered); miss: chance to ignore danger on a think;

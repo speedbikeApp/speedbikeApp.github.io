@@ -24,7 +24,7 @@ const others = (b, state) => state.bikes.filter((o) => o !== b && o.alive);
 // onActivate(bike, state) -> false to refuse (cooldown not consumed). onTick(bike, dt) runs every tick while equipped.
 // passive `mods`: numbers/booleans combined by modOf().
 export const ABILITIES = {
-  turbo: mk('turbo', 'Turbo Boost', 'TURBO', '>>>', 'active', 'Dash forward at 2.5x speed for ~125 units. You can still turn.',
+  turbo: mk('turbo', 'Turbo Boost', 'TURBO', '>>>', 'active', 'Brake for a second, then dash forward at 7x speed. You can still turn.',
     { onActivate: () => true }),
   fastCharge: mk('fastCharge', 'Fast Charge', 'CHARGE', '+', 'passive', 'Boost lasts longer and jump recharges faster.',
     { get mods() { return { boostDuration: A('fastCharge').boostDuration, jumpRecharge: A('fastCharge').jumpRecharge }; } }),
@@ -102,11 +102,16 @@ export const protectLeft = (b) => Math.max((b.active && b.active.protector) || 0
 export const onCooldown = (b, id) => (b.cd[id] || 0) > 0;
 export const canUse = (b, id) => !!b.alive && ABILITIES[id].type === 'active' && !onCooldown(b, id) && !(ABILITIES[id].once && b.used[id]);
 
+// Turbo phase from the active timer: 0 none, 1 wind-up, 2 dash (shared by the HUD and the client-only visuals).
+export function turboPhase(b) {
+  const T = A('turbo'), left = b.active && b.active.turbo || 0;
+  return !b.alive || left <= 0 ? 0 : T.duration - left < T.windup ? 1 : 2;
+}
 // Speed multiplier from boost / Turbo (the larger one - they don't stack) and from being slowed.
 export function speedMult(b) {
   let m = 1;
   if (b.boosting) m = CFG.boost.mult;
-  if (isActive(b, 'turbo')) m = Math.max(m, A('turbo').mult);
+  if (isActive(b, 'turbo')) { const T = A('turbo'); m = T.duration - b.active.turbo < T.windup ? (b.boosting ? m : T.windupMult) : Math.max(m, T.mult); } // wind-up (slow) then dash, from the active timer
   if (b.slowLeft > 0) m *= A('slowDown').mult;
   return m;
 }

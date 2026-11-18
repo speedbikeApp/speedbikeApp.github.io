@@ -1,6 +1,7 @@
 // Garage parts: pure data (no three, no DOM). render.js builds the meshes from the ids; save.js validates against PARTS.
 // A part is {id, name, price, ach?}. price = SBCoins; ach = achievement id that unlocks it (price then ignored);
 // price 0 and no ach = free (owned from the start). Colours are 0xRRGGBB.
+import { validateShapes } from './shapedef.js';
 export const CATS = ['body', 'tire', 'rim', 'glow'];
 export const CAT_LABEL = { body: 'BODY', tire: 'TIRES', rim: 'RIMS', glow: 'COLOR' };
 export const DEFAULT_PARTS = { body: 'sleek', tire: 'slim', rim: 'spoked', glow: 'orange' };
@@ -42,7 +43,7 @@ export const BUILTIN_PARTS = {
 };
 
 // ---- admin catalog (server/admin-items.js, GET /catalog): custom items + overrides merged over BUILTIN_PARTS at runtime ----
-// Custom item {id:'c_...', cat, name, price, ach?, base (built-in id whose model it uses), color?, hidden?}; override {name?, price?, ach?: id|null} by id.
+// Custom item {id:'c_...', cat, name, price, ach?, base (built-in id whose model it uses, or 'none' = shapes only), shapes? (js/shapedef.js, body / tire / rim), color?, hidden?}; override {name?, price?, ach?: id|null} by id.
 // Hidden parts stay in PARTS (save validation, owners keep them) but are left out of the shop (isShown).
 export const isCustomId = (id) => typeof id === 'string' && /^c_[A-Za-z0-9]{1,24}$/.test(id);
 export const PARTS = {};
@@ -59,11 +60,12 @@ export function applyCatalog(cat) {
     return q;
   });
   for (const it of items) {
-    const list = it && PARTS[it.cat], base = list && BUILTIN_PARTS[it.cat].find((p) => p.id === it.base);
+    const list = it && PARTS[it.cat], base = list && (it.base === 'none' && it.cat !== 'glow' ? { id: 'none' } : BUILTIN_PARTS[it.cat].find((p) => p.id === it.base));
     if (!base || !isCustomId(it.id) || list.some((p) => p.id === it.id)) continue;
     const q = { id: it.id, name: safeName(it.name) || it.id, price: Number(it.price) || 0, base: base.id, custom: true };
     if (it.ach) q.ach = it.ach;
     if (it.cat === 'glow') q.color = Number.isInteger(it.color) ? it.color : base.color; else if (Number.isInteger(it.color)) q.color = it.color;
+    const v = validateShapes(it.cat, it.shapes); if (v.ok && v.shapes.length) q.shapes = v.shapes; else if (base.id === 'none') continue; // base 'none' needs shapes
     if (it.hidden) q.hidden = true;
     list.push(q);
   }

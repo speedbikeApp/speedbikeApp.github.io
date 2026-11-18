@@ -6,7 +6,7 @@ import { CATS, CAT_LABEL, BUILTIN_PARTS, partList, isCustomId } from './parts.js
 import { ACHIEVEMENTS } from './achievements.js';
 import { useCatalog } from './catalog.js';
 
-const ERR = { bad_name: 'NAME: 1-20 LETTERS, NUMBERS, SPACE _ . \' -', bad_price: 'PRICE: WHOLE NUMBER 0-1,000,000', bad_ach: 'UNKNOWN ACHIEVEMENT', bad_base: 'BAD BASE MODEL', bad_cat: 'BAD CATEGORY', bad_color: 'BAD COLOUR', bad_item: 'BAD ITEM', too_many: 'TOO MANY CUSTOM ITEMS' };
+const ERR = { bad_name: 'NAME: 1-20 LETTERS, NUMBERS, SPACE _ . \' -', bad_price: 'PRICE: WHOLE NUMBER 0-1,000,000', bad_ach: 'UNKNOWN ACHIEVEMENT', bad_base: 'BAD BASE MODEL', bad_shapes: 'INVALID SHAPES (MAX 60, KNOWN TYPE AND ROLE)', bad_cat: 'BAD CATEGORY', bad_color: 'BAD COLOUR', bad_item: 'BAD ITEM', too_many: 'TOO MANY CUSTOM ITEMS' };
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
 const btn = (label, cls, fn) => { const b = el('button', 'mbtn frame' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; };
 const field = (label, node) => { const l = el('label', 'adLine'); l.append(el('span', '', label + ' '), node); return l; };
@@ -33,7 +33,7 @@ function mountGarage(root, { call }) {
     const name = el('input'); name.maxLength = 20; name.value = p ? p.name : '';
     const price = el('input'); price.type = 'number'; price.min = 0; price.max = 1000000; price.step = 1; price.value = p ? p.price : 0;
     const ach = select([['', 'NONE (PRICE)'], ...ACHIEVEMENTS.map((a) => [a.id, a.name.toUpperCase()])], p && p.ach || '');
-    const base = select(BUILTIN_PARTS[cat].map((b) => [b.id, b.name.toUpperCase()]), p && p.base || BUILTIN_PARTS[cat][0].id); base.disabled = !custom;
+    const base = select([...BUILTIN_PARTS[cat].map((b) => [b.id, b.name.toUpperCase()]), ...(p && p.base === 'none' ? [['none', 'NONE (SHAPES ONLY)']] : [])], p && p.base || BUILTIN_PARTS[cat][0].id); base.disabled = !custom;
     const tint = el('input'); tint.type = 'checkbox'; tint.checked = !!(p && p.color != null && p.custom);
     const col = el('input'); col.type = 'color'; col.value = hex(p && p.color != null ? p.color : 0xff5a1f);
     const hid = el('input'); hid.type = 'checkbox'; hid.checked = !!(p && p.hidden);

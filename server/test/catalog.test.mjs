@@ -49,6 +49,23 @@ assert.deepEqual([u.ok, u.item.name, u.item.price, u.item.ach, u.item.cat, u.ite
 assert.equal((await boss.op('itemSave', { id: c.item.id, item: { base: 'slim' } })).code, 'bad_base');
 const l = await boss.op('itemList'); assert.equal(l.items.length, 1);
 
+// custom shapes: clamped, cleaned, rejected; base 'none' needs shapes; null clears; glow has none
+const shp = { type: 'box', p: [0, 1, 0], r: [0, 0, 0], s: [0.5, 0.5, 0.5], role: 'glow', mirror: true };
+const sv = await boss.op('itemSave', { item: { ...ok, name: 'Shaped', shapes: [shp, { ...shp, type: 'wedge', p: [9, -9, 9], s: [0, 99, 1], junk: 1 }] } });
+assert.ok(sv.ok, JSON.stringify(sv)); assert.deepEqual(sv.item.shapes[0], shp);
+assert.deepEqual([sv.item.shapes[1].p, sv.item.shapes[1].s, sv.item.shapes[1].junk], [[1.6, -0.3, 2.6], [0.01, 3, 1], undefined], 'clamped, extras dropped');
+await bad({ ...ok, shapes: Array(61).fill(shp) }, 'bad_shapes'); await bad({ ...ok, shapes: 'x' }, 'bad_shapes'); await bad({ ...ok, shapes: [{ ...shp, type: 'cube' }] }, 'bad_shapes');
+await bad({ ...ok, shapes: [{ ...shp, role: 'visor' }] }, 'bad_shapes'); await bad({ ...ok, shapes: [{ ...shp, p: [0, 1] }] }, 'bad_shapes'); await bad({ ...ok, shapes: [{ ...shp, s: [1, NaN, 1] }] }, 'bad_shapes');
+await bad({ ...ok, shapes: [{ ...shp, mirror: 'yes' }] }, 'bad_shapes'); await bad({ ...ok, shapes: [null] }, 'bad_shapes'); await bad({ ...ok, cat: 'glow', base: 'red', shapes: [shp] }, 'bad_shapes');
+await bad({ ...ok, base: 'none' }, 'bad_shapes'); await bad({ ...ok, base: 'none', shapes: [] }, 'bad_shapes'); await bad({ ...ok, cat: 'glow', base: 'none', shapes: [shp] }, 'bad_base');
+const sn = await boss.op('itemSave', { item: { ...ok, cat: 'tire', base: 'none', name: 'Scratch', shapes: [{ ...shp, p: [5, 0, 0] }] } });
+assert.ok(sn.ok && sn.item.base === 'none' && sn.item.shapes[0].p[0] === 0.7, 'wheel limits are tighter');
+assert.equal((await boss.op('itemSave', { id: sv.item.id, item: { name: 'Shaped 2' } })).item.shapes.length, 2, 'update keeps shapes');
+assert.equal((await boss.op('itemSave', { id: sv.item.id, item: { shapes: null } })).item.shapes, undefined, 'null clears shapes');
+assert.equal((await boss.op('itemSave', { id: sn.item.id, item: { shapes: null } })).code, 'bad_shapes', 'none-based item cannot lose all shapes');
+
+// (hidden, not removed: the counts below include them)
+for (const i of [sv.item.id, sn.item.id]) await boss.op('itemDelete', { id: i });
 // built-in override + reset
 assert.equal((await boss.op('itemSave', { id: 'armored', item: { price: 99, name: 'Tank', ach: 'wins100' } })).ok, true);
 assert.equal((await boss.op('itemSave', { id: 'armored', item: { price: -5 } })).code, 'bad_price');
@@ -63,7 +80,7 @@ assert.equal((await boss.op('itemDelete', { id: 'armored' })).reset, true);
 // public endpoint: no auth, CORS only for allowed origins, cached copy matches
 let r = await get({ Origin: 'https://game.example' });
 assert.equal(r.status, 200); assert.equal(r.headers['access-control-allow-origin'], 'https://game.example'); assert.match(r.headers['cache-control'], /max-age/);
-cat = JSON.parse(r.body); assert.equal(cat.ok, true); assert.equal(cat.items.length, 1); assert.equal(cat.items[0].hidden, true); assert.deepEqual(cat.overrides, {});
+cat = JSON.parse(r.body); assert.equal(cat.ok, true); assert.equal(cat.items.length, 3); assert.equal(cat.items[0].hidden, true); assert.deepEqual(cat.overrides, {});
 assert.equal((await get({ Origin: 'https://evil.example' })).headers['access-control-allow-origin'], undefined);
 assert.equal((await get({ Origin: 'http://localhost:8000' })).headers['access-control-allow-origin'], 'http://localhost:8000', 'local dev origin');
 assert.equal((await get({}, 'POST')).status, 405);

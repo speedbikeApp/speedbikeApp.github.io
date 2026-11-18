@@ -4,14 +4,17 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { CFG } from './config.js';
+import { syncTurboFx } from './turbofx.js';
 import { protectLeft } from './abilities.js';
 import { MAPS } from './maps.js';
-import { glowHex, DEFAULT_PARTS, getPart } from './parts.js';
+import { glowHex, DEFAULT_PARTS } from './parts.js';
+import { makeBikeMesh, WHEEL_R, glowColor } from './bikemodels.js';
+import { buildBackground, randomBackground } from './backgrounds.js';
 import { makeCircuitTexture, makeTrailTexture, makeGridTexture } from './textures.js';
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
-const camera = new THREE.PerspectiveCamera(CFG.camera.fov, 1, 0.1, 400);
+const camera = new THREE.PerspectiveCamera(CFG.camera.fov, 1, 0.1, 1500); // far: background scenery reaches ~1000 units
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
 document.body.prepend(renderer.domElement);
 
@@ -114,190 +117,24 @@ function buildMap(map) {
 }
 buildMap(MAPS.arena);
 
-// ---- Bike models (primitives): dark hull, glowing colour accents, wheels with glowing rims, rider hint ----
-// Parts (js/parts.js ids): body shell, tire, rim, glow colour. Geometries are cached and shared (also with the garage preview
-// renderer); materials are per model and disposed with it.
+// ---- Background (js/backgrounds.js): cosmetic themed scenery around the map. bgWant = the match's theme (set by newBackground at
+// match start / each MULTIMAP round); the menu shows a fixed theme on a fixed map; the map editor shows the plain void. ----
+const MENU_BG = 'synthwave';
+let bgWant = 'void', bgOn = true, bg = null, bgKey = null, bgMap = null;
+function syncBg(id, map) {
+  if (!bgOn) id = 'void';
+  if (bg && bgKey === id && bgMap === map) return;
+  if (bg) { scene.remove(bg.group); bg.dispose(); }
+  bg = buildBackground(id, map); bgKey = id; bgMap = map; scene.add(bg.group);
+}
+export function setBackground(id, map) { bgWant = id; if (map) syncBg(id, map); }
+export function newBackground(rng = Math.random) { bgWant = randomBackground(rng, bgWant); return bgWant; }
+export function setBackgroundEnabled(on) { bgOn = !!on; }
+export const getBackground = () => bgWant;
+
+// ---- Bike models live in js/bikemodels.js (makeBikeMesh + BODIES / TIRES / RIMS builder tables); re-exported here ----
+export { makeBikeMesh };
 const unitBox = new THREE.BoxGeometry(1, 1, 1);
-const glowColor = (c, k = 1.5) => new THREE.Color(c).multiplyScalar(k); // >1 pushes past the bloom threshold
-const WHEEL_R = 0.5, TAU = Math.PI * 2;
-const geoCache = new Map();
-const geo = (key, make) => { let g = geoCache.get(key); if (!g) { g = make(); geoCache.set(key, g); } return g; };
-const cyl = (r, w, seg = 18) => geo(`cyl${r}_${w}_${seg}`, () => new THREE.CylinderGeometry(r, r, w, seg).rotateZ(Math.PI / 2)); // axis = x
-const torus = (r, t) => geo(`tor${r}_${t}`, () => new THREE.TorusGeometry(r, t, 8, 22).rotateY(Math.PI / 2));
-const helmetGeo = new THREE.SphereGeometry(0.23, 12, 10);
-
-function box(mat, sx, sy, sz, x, y, z, rx = 0) {
-  const m = new THREE.Mesh(unitBox, mat); m.scale.set(sx, sy, sz); m.position.set(x, y, z); m.rotation.x = rx; return m;
-}
-const mesh = (g, mat, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(g, mat); m.position.set(x, y, z); return m; };
-
-// Body shells. Local +z is forward; wheels sit at z = +-0.85, the rider is added separately. M = {dark, glow, bright, lamp, shell, plate, canopy}.
-// Smooth hulls are lathe/extrude geometry with a baked top-light gradient in the vertex colours (the materials are unlit), cached per key.
-const V3 = THREE.Vector3, PI2 = Math.PI / 2;
-function bake(g) { // fake shading: lighter facing up/forward, darker underneath
-  g.computeVertexNormals(); const n = g.attributes.normal, c = new Float32Array(n.count * 3);
-  for (let i = 0; i < n.count; i++) { const s = Math.min(1, 0.2 + 0.55 * Math.max(0, n.getY(i)) + 0.25 * Math.max(0, n.getZ(i)) + 0.12 * Math.abs(n.getX(i)) + 0.15 * (n.getY(i) < 0 ? 0 : 1)); c[i * 3] = c[i * 3 + 1] = c[i * 3 + 2] = s; }
-  g.setAttribute('color', new THREE.BufferAttribute(c, 3)); return g;
-}
-// hull of revolution around the z axis: pts = [radius, z] from tail to nose, squashed to sx/sy
-const lathe = (key, pts, sx, sy, seg = 14, rz = 0) => geo(key, () => bake(new THREE.LatheGeometry(pts.map(([r, z]) => new THREE.Vector2(r, z)), seg).rotateX(PI2).rotateZ(rz).scale(sx, sy, 1)));
-// flat plate: polygon [[z,y]...] seen from the side, thickness d along x
-const plate = (key, pts, d, bev = 0.02) => geo(key, () => bake(new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(z, y))), { depth: d, bevelEnabled: bev > 0, bevelSize: bev, bevelThickness: bev, bevelSegments: 1 }).translate(0, 0, -d / 2).rotateY(-PI2)));
-const tubeGeo = (pts, r) => geo(`tb${pts}_${r}`, () => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(([x, y, z]) => new V3(x, y, z))), 14, r, 4));
-const strutGeo = new THREE.CylinderGeometry(1, 1, 1, 6);
-function strut(g, mat, a, b, r = 0.035) { // rod between two points
-  const A = new V3(...a), B = new V3(...b), m = new THREE.Mesh(strutGeo, mat);
-  m.position.copy(A).add(B).multiplyScalar(0.5); m.scale.set(r, A.distanceTo(B), r); m.quaternion.setFromUnitVectors(new V3(0, 1, 0), B.sub(A).normalize()); g.add(m);
-}
-const put = (g, geom, mat, x, y, z, sx = 1, sy = 1, sz = 1) => { const m = mesh(geom, mat, x, y, z); m.scale.set(sx, sy, sz); g.add(m); return m; };
-const lampGeo = new THREE.SphereGeometry(1, 8, 6);
-// forks + swingarm tying the hull to both axles, headlight
-function chassis(g, M, top = 0.2, lz = 1.36, ly = 0.92, mat = M.dark) {
-  for (const s of [-1, 1]) {
-    strut(g, mat, [s * 0.34, 0.5, 0.85], [s * top, 1.0, 0.62], 0.032);
-    strut(g, mat, [s * 0.34, 0.5, -0.85], [s * top, 0.8, -0.3], 0.032);
-    put(g, lampGeo, M.bright, s * 0.34, 0.5, 0.85, 0.05, 0.05, 0.05); put(g, lampGeo, M.bright, s * 0.34, 0.5, -0.85, 0.05, 0.05, 0.05);
-  }
-  put(g, lampGeo, M.lamp, 0, ly, lz, 0.11, 0.045, 0.07);
-}
-const flank = (g, M, pts, r = 0.016) => { for (const s of [-1, 1]) g.add(mesh(tubeGeo(pts.map(([x, y, z]) => [x * s, y, z]), r), M.glow)); };
-const BODIES = {
-  sleek(g, M) { // smooth teardrop hull, rider canopy, glowing flank lines
-    put(g, lathe('sl', [[0.02, -1.1], [0.16, -1.04], [0.32, -0.85], [0.46, -0.5], [0.52, -0.1], [0.5, 0.3], [0.4, 0.7], [0.24, 1.05], [0.1, 1.3], [0.02, 1.42]], 0.5, 0.46, 16), M.shell, 0, 0.9, 0);
-    put(g, lathe('sl_s', [[0.02, -0.95], [0.2, -0.8], [0.27, -0.4], [0.2, 0], [0.02, 0.15]], 0.5, 0.34, 12), M.plate, 0, 1.1, -0.2);
-    put(g, lathe('sl_c', [[0.02, 0.15], [0.26, 0.3], [0.3, 0.6], [0.2, 0.95], [0.02, 1.1]], 0.46, 0.4, 12), M.canopy, 0, 1.0, 0.1);
-    flank(g, M, [[0.2, 0.84, -0.9], [0.265, 0.9, -0.3], [0.255, 0.9, 0.3], [0.17, 0.92, 0.85], [0.06, 0.9, 1.3]]);
-    g.add(box(M.glow, 0.3, 0.04, 0.05, 0, 0.98, -1.08));
-    chassis(g, M);
-  },
-  armored(g, M) { // bulky: wide hull, bolted side armour, bumper, heavy rear block
-    put(g, lathe('ar', [[0.02, -1.1], [0.3, -1.05], [0.46, -0.8], [0.5, -0.3], [0.5, 0.4], [0.44, 0.8], [0.3, 1.1], [0.02, 1.22]], 0.85, 0.62, 12), M.shell, 0, 0.86, 0);
-    for (const s of [-1, 1]) {
-      put(g, plate('ar_p', [[-0.85, 0.62], [0.9, 0.62], [1.1, 0.86], [0.75, 1.12], [-0.3, 1.14], [-0.95, 0.96]], 0.1), M.plate, s * 0.46, 0, 0);
-      g.add(mesh(tubeGeo([[s * 0.52, 0.88, -0.7], [s * 0.52, 0.9, 0.2], [s * 0.52, 0.95, 0.9]], 0.02), M.glow));
-      g.add(box(M.dark, 0.14, 0.26, 0.4, s * 0.38, 1.25, -0.5));                       // shoulder guard
-    }
-    put(g, plate('ar_b', [[0.3, 0.88], [1.0, 0.92], [1.3, 1.02], [1.0, 1.2], [0.3, 1.2]], 0.7, 0.03), M.plate, 0, 0, 0.15);
-    g.add(box(M.glow, 0.5, 0.05, 0.05, 0, 1.06, 1.31));
-    put(g, lathe('ar_c', [[0.02, 0.0], [0.28, 0.2], [0.34, 0.6], [0.2, 0.95], [0.02, 1.05]], 0.7, 0.4, 12), M.canopy, 0, 1.08, 0.05);
-    g.add(box(M.dark, 0.7, 0.42, 0.34, 0, 1.0, -1.0)); g.add(box(M.glow, 0.5, 0.08, 0.05, 0, 1.0, -1.18));
-    for (const x of [-0.18, 0.18]) g.add(box(M.glow, 0.05, 0.02, 0.5, x, 1.18, -0.1));
-    chassis(g, M, 0.3, 1.31, 0.8);
-  },
-  frame(g, M) { // open skeletal tubes around a glowing engine core
-    const G = M.glow;
-    for (const s of [-1, 1]) {
-      strut(g, G, [s * 0.14, 1.04, -0.6], [s * 0.14, 1.08, 0.5], 0.035);       // top rail
-      strut(g, G, [s * 0.14, 0.62, -0.5], [s * 0.14, 0.62, 0.25], 0.035);      // lower rail
-      strut(g, G, [s * 0.14, 1.08, 0.5], [s * 0.14, 0.62, 0.25], 0.035);       // down tube
-      strut(g, G, [s * 0.14, 1.04, -0.6], [s * 0.14, 0.62, -0.5], 0.03);       // seat stay
-      strut(g, G, [s * 0.14, 1.08, 0.5], [s * 0.15, 1.04, 0.68], 0.035);       // head tube
-      strut(g, M.bright, [s * 0.34, 0.5, 0.85], [s * 0.15, 1.04, 0.68], 0.028); // fork
-      strut(g, M.bright, [s * 0.34, 0.5, -0.85], [s * 0.14, 0.64, -0.5], 0.028); // swingarm
-    }
-    strut(g, G, [-0.14, 1.06, 0.1], [0.14, 1.06, 0.1], 0.03); strut(g, G, [-0.14, 0.62, -0.1], [0.14, 0.62, -0.1], 0.03);
-    put(g, lathe('fr_e', [[0.02, -0.4], [0.3, -0.25], [0.4, 0], [0.3, 0.25], [0.02, 0.42]], 0.55, 0.5, 12), M.shell, 0, 0.82, 0.02);
-    put(g, lampGeo, M.glow, 0, 0.82, 0.02, 0.1, 0.1, 0.1);
-    put(g, lathe('fr_t', [[0.02, -0.3], [0.2, -0.15], [0.24, 0.1], [0.14, 0.4], [0.02, 0.5]], 0.6, 0.4, 10), M.plate, 0, 1.2, -0.05);     // tank/seat
-    put(g, lathe('fr_s', [[0.02, -0.5], [0.2, -0.35], [0.22, 0], [0.02, 0.1]], 0.7, 0.3, 10), M.shell, 0, 1.15, -0.4);
-    g.add(box(M.glow, 0.28, 0.04, 0.05, 0, 1.0, -0.98)); strut(g, G, [0, 1.04, -0.6], [0, 1.0, -0.98], 0.03);
-    put(g, lampGeo, M.lamp, 0, 1.0, 0.8, 0.11, 0.045, 0.07);
-  },
-  wedge(g, M) { // low faceted diamond-section blade, rear wing, canards
-    put(g, lathe('we', [[0.02, -1.15], [0.5, -0.9], [0.56, -0.2], [0.46, 0.5], [0.2, 1.1], [0.02, 1.6]], 0.9, 0.5, 4, Math.PI / 4), M.shell, 0, 0.8, 0);
-    put(g, lathe('we_c', [[0.02, 0.0], [0.34, 0.3], [0.3, 0.7], [0.02, 1.05]], 0.55, 0.45, 4, Math.PI / 4), M.canopy, 0, 0.96, -0.05);
-    flank(g, M, [[0.3, 0.8, -1.0], [0.4, 0.8, -0.2], [0.3, 0.8, 0.6], [0.06, 0.8, 1.5]], 0.018);
-    g.add(box(M.bright, 1.0, 0.05, 0.36, 0, 1.06, -1.0, -0.12));                // rear wing
-    for (const x of [-0.5, 0.5]) g.add(box(M.dark, 0.05, 0.3, 0.4, x, 0.95, -1.0));
-    g.add(box(M.glow, 0.9, 0.04, 0.05, 0, 1.08, -1.19));
-    for (const s of [-1, 1]) { const c = box(M.bright, 0.4, 0.03, 0.22, s * 0.38, 0.84, 0.95); c.rotation.set(0, s * -0.4, s * 0.15); g.add(c); }
-    chassis(g, M, 0.22, 1.5, 0.79);
-  },
-  apex(g, M) { // premium: razor nose, side pods, canopy bubble, tail fin, double accent lines
-    put(g, lathe('ap', [[0.02, -1.15], [0.2, -1.1], [0.4, -0.8], [0.5, -0.3], [0.5, 0.2], [0.38, 0.7], [0.2, 1.1], [0.08, 1.45], [0.02, 1.62]], 0.55, 0.42, 18), M.shell, 0, 0.88, 0);
-    for (const s of [-1, 1]) {
-      put(g, lathe('ap_p', [[0.02, -0.5], [0.3, -0.3], [0.4, 0.1], [0.3, 0.5], [0.02, 0.75]], 0.3, 0.26, 10), M.plate, s * 0.5, 0.78, 0.0);
-      g.add(mesh(tubeGeo([[s * 0.52, 0.84, -0.5], [s * 0.54, 0.86, 0.1], [s * 0.5, 0.84, 0.7]], 0.015), M.glow));
-    }
-    put(g, lathe('ap_c', [[0.02, 0.0], [0.28, 0.2], [0.32, 0.55], [0.2, 0.95], [0.02, 1.15]], 0.46, 0.5, 14), M.canopy, 0, 1.0, 0.0);
-    put(g, lathe('ap_t', [[0.02, -1.0], [0.18, -0.85], [0.24, -0.4], [0.02, -0.1]], 0.5, 0.3, 10), M.plate, 0, 1.1, -0.15);
-    put(g, plate('ap_f', [[-0.35, 0], [0.3, 0], [-0.15, 0.62]], 0.05, 0.01), M.plate, 0, 1.0, -0.95);
-    flank(g, M, [[0.24, 0.9, -1.0], [0.28, 0.94, -0.3], [0.2, 0.95, 0.5], [0.07, 0.9, 1.4]], 0.014);
-    flank(g, M, [[0.12, 1.12, -0.8], [0.14, 1.12, 0.1]], 0.012);
-    g.add(box(M.glow, 0.34, 0.05, 0.05, 0, 1.0, -1.18));
-    chassis(g, M, 0.2, 1.52, 0.88);
-  },
-};
-
-// Tires: returns the half width (rims sit just outside it).
-const TIRES = {
-  slim(w, M) { w.add(mesh(cyl(0.5, 0.3), M.tire)); return 0.15; },
-  wide(w, M) { w.add(mesh(cyl(0.52, 0.56), M.tire)); w.add(mesh(cyl(0.53, 0.04), M.tireGlow)); return 0.28; },
-  knobby(w, M) {
-    w.add(mesh(cyl(0.46, 0.38), M.tire));
-    for (let i = 0; i < 12; i++) { const k = new THREE.Group(); k.rotation.x = i * TAU / 12; k.add(box(M.tire, 0.4, 0.1, 0.16, 0, 0.5, 0)); w.add(k); }
-    return 0.19;
-  },
-  dual(w, M) { for (const x of [-0.17, 0.17]) w.add(mesh(cyl(0.5, 0.16), M.tire, x)); w.add(mesh(cyl(0.42, 0.18), M.tireGlow)); return 0.27; },
-};
-
-// Rims: built for both sides (sx = +-1), at x = sx * (hw + 0.02).
-const RIMS = {
-  spoked(w, M, x, hw, sx) {
-    w.add(mesh(torus(0.4, 0.055), M.glow, x));
-    if (sx > 0) for (const a of [0, 1.0472, 2.0944]) { const s = box(M.glow, 2 * hw + 0.06, 0.06, 0.8); s.rotation.x = a; w.add(s); }
-  },
-  disc(w, M, x) {
-    w.add(mesh(cyl(0.38, 0.05, 20), M.glow, x));
-    w.add(box(M.dark, 0.07, 0.1, 0.34, x + Math.sign(x) * 0.02, 0.2, 0)); // off-centre mark so the spin is visible
-  },
-  triblade(w, M, x) {
-    for (let i = 0; i < 3; i++) { const k = new THREE.Group(); k.rotation.x = i * TAU / 3; k.position.x = x; k.add(box(M.glow, 0.05, 0.26, 0.2, 0, 0.22, 0, 0)); w.add(k); }
-    w.add(mesh(cyl(0.09, 0.07, 10), M.bright, x));
-    w.add(mesh(torus(0.4, 0.03), M.glow, x));
-  },
-  ring(w, M, x) {
-    w.add(mesh(torus(0.4, 0.07), M.glow, x));
-    w.add(mesh(torus(0.22, 0.04), M.bright, x));
-    w.add(mesh(geo('bead', () => new THREE.SphereGeometry(0.07, 8, 6)), M.bright, x, 0.31, 0)); // bead
-  },
-  turbine(w, M, x) {
-    for (let i = 0; i < 6; i++) { const k = new THREE.Group(); k.rotation.x = i * TAU / 6; k.position.x = x; const b = box(M.glow, 0.05, 0.3, 0.1, 0, 0.23, 0); b.rotation.y = 0.7; k.add(b); w.add(k); }
-    w.add(mesh(torus(0.42, 0.035), M.bright, x));
-  },
-};
-
-export function makeBikeMesh(color, parts = {}) {
-  const P = { body: parts.body, tire: parts.tire, rim: parts.rim };
-  const g = new THREE.Group(), wheels = [], mats = [];
-  const mk = (c) => { const m = new THREE.MeshBasicMaterial({ color: c }); mats.push(m); return m; };
-  const M = {
-    dark: mk(0x0b0b14), tire: mk(0x15151c),
-    glow: mk(glowColor(color, 1.6)), bright: mk(glowColor(color, 1.0)),
-    tireGlow: mk(glowColor(color, 0.9)),
-    helmet: mk(new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.55)), lamp: mk(new THREE.Color(2, 2, 2)),
-  };
-  const mkv = (c) => { const m = new THREE.MeshBasicMaterial({ color: c, vertexColors: true }); mats.push(m); return m; };
-  const skin = (c) => ({ shell: mkv(new THREE.Color(0x2a2c40).lerp(new THREE.Color(c), 0.07)), plate: mkv(new THREE.Color(0x5c607c).lerp(new THREE.Color(c), 0.08)), canopy: mkv(new THREE.Color(c).multiplyScalar(0.55)) });
-  Object.assign(M, skin(color));
-  // custom catalog items use their base part's model; an optional colour re-tints that part's accents (unknown ids fall back to the default model)
-  const pick = (cat, T, def) => { const p = getPart(cat, P[cat]), k = (p && p.base) || P[cat]; return [T[k] || T[def], p && p.custom && p.color != null ? tint(p.color) : M]; };
-  const tint = (c) => ({ ...M, ...skin(c), glow: mk(glowColor(c, 1.6)), bright: mk(glowColor(c, 1.0)), tireGlow: mk(glowColor(c, 0.9)) });
-  const [tire, MT] = pick('tire', TIRES, 'slim'), [rim, MR] = pick('rim', RIMS, 'spoked'), [body, MB] = pick('body', BODIES, 'sleek');
-  for (const z of [-0.85, 0.85]) {
-    const w = new THREE.Group(); w.position.set(0, WHEEL_R, z);
-    const hw = tire(w, MT);
-    for (const sx of [-1, 1]) rim(w, MR, sx * (hw + 0.02), hw, sx);
-    g.add(w); wheels.push(w);
-  }
-  body(g, MB);
-  g.add(box(M.dark, 0.42, 0.55, 0.34, 0, 1.28, -0.1, 0.5));                // rider torso (leaning)
-  g.add(box(M.bright, 0.44, 0.1, 0.12, 0, 1.4, -0.22, 0.5));               // back stripe
-  const h = new THREE.Mesh(helmetGeo, M.helmet); h.position.set(0, 1.72, 0.18); g.add(h);
-  g.add(box(M.glow, 0.3, 0.08, 0.1, 0, 1.72, 0.38));                       // visor
-  g.scale.setScalar(CFG.bikeScale);
-  return { group: g, wheels, mats };
-}
 
 // ---- Trails: one InstancedMesh per bike, growing instance count, only new/growing instances are rewritten ----
 const trailTex = makeTrailTexture();
@@ -518,7 +355,7 @@ export function resetEffects() {
 export function render(state, dt, followId, extra = 0, overview = false) {
   if (editorView) { // map editor (js/admin-maps.js) owns the camera and the scene content
     if (editorView.dirty || editorView.map !== curMap) { buildMap(editorView.map); editorView.dirty = false; }
-    editorView.frame(dt);
+    editorView.frame(dt); syncBg('void', editorView.map);
     if (composer && bloomStrength > 0) composer.render(dt); else renderer.render(scene, camera);
     return;
   }
@@ -540,6 +377,7 @@ export function render(state, dt, followId, extra = 0, overview = false) {
     if (b.alive) { const sp = b.speed * dt / WHEEL_R; v.wheels[0].rotation.x += sp; v.wheels[1].rotation.x += sp; }
     const pl = b.alive ? protectLeft(b) : 0; // shield shell: solid, then blinking for the last 0.5 s
     v.shield.visible = pl > 0 && (pl > 0.5 || Math.floor(pl * 10) % 2 === 0);
+    syncTurboFx(v, b, performance.now() / 1000);
     syncTrail(b, v, ex + (b.vox ? b.vox * b.dx : 0) + (b.voz ? b.voz * b.dz : 0), dt); // trail head follows the part of the offset along the heading
     if (b.alive) { if (b.id === followId) follow = b; else if (b.id === cam.specId) alt = b; }
   }
@@ -554,6 +392,7 @@ export function render(state, dt, followId, extra = 0, overview = false) {
     else updateOrbit(dt);
   }
   updateFx(dt);
+  syncBg(bgWant, curMap); bg.update(dt, camera);
   if (composer && bloomStrength > 0) composer.render(dt); else renderer.render(scene, camera);
 }
 
@@ -572,6 +411,7 @@ export function renderMapPreview(map, dt) {
   for (const v of bikeViews.values()) { v.group.visible = false; v.mesh.visible = false; }
   fragMesh.visible = false;
   updateTop(dt);
+  syncBg(MENU_BG, MAPS.tiers); bg.update(dt, camera);
   if (composer && bloomStrength > 0) composer.render(dt); else renderer.render(scene, camera);
 }
 

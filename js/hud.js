@@ -2,7 +2,7 @@
 import { CFG } from './config.js';
 import { abilityCharges } from './save.js';
 import { abilityIcon } from './icons.js';
-import { activeDef, ABILITIES, isActive, canUse, protectLeft } from './abilities.js';
+import { turboPhase, activeDef, ABILITIES, isActive, canUse, protectLeft } from './abilities.js';
 import { MAPS } from './maps.js';
 import { platformCorners } from './mapdef.js';
 import { getAchievement } from './achievements.js';
@@ -126,7 +126,7 @@ export function setAbilityHud(b) {
     charges = abilityCharges(def.id);
     ready = charges >= 1 && canUse(b, def.id); active = isActive(b, def.id);
     usedUp = !!(def.once && b.used[def.id]);
-    key = `${def.id}|${Math.ceil(cdLeft)}|${Math.floor(frac * 50)}|${ready}|${active}|${actives.length}|${actives.indexOf(def.id)}|${usedUp}|${charges}`;
+    key = `${def.id}|${Math.ceil(cdLeft)}|${Math.floor(frac * 50)}|${ready}|${active}|${actives.length}|${actives.indexOf(def.id)}|${usedUp}|${charges}|${def.id === 'turbo' ? turboPhase(b) : 0}`;
   } else key = 'none';
   if (cache.abHud === key) return;
   cache.abHud = key;
@@ -136,7 +136,7 @@ export function setAbilityHud(b) {
   $('abIcon').innerHTML = def ? abilityIcon(def.id) : '--';
   $('abName').innerHTML = def ? def.short + ' ' + (charges === Infinity ? '<span class="star">✪</span>' : 'x' + charges) : 'NONE'; // def.short is a built-in constant
   el.classList.toggle('empty', !!def && charges < 1);
-  $('abState').textContent = !def ? '' : charges < 1 ? 'EMPTY' : ready ? '' : usedUp ? 'USED' : active && cdLeft <= 0 ? 'ON' : Math.ceil(cdLeft) + 's';
+  $('abState').textContent = !def ? '' : charges < 1 ? 'EMPTY' : ready ? '' : usedUp ? 'USED' : active && cdLeft <= 0 ? 'ON' : def.id === 'turbo' && turboPhase(b) ? (turboPhase(b) === 1 ? 'CHARGING' : 'DASH') : Math.ceil(cdLeft) + 's';
   for (const id of ['abPrev', 'abNext']) $(id).style.visibility = actives.length > 1 ? 'visible' : 'hidden'; // arrows switch the power-up
 }
 
