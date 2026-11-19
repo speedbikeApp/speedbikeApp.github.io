@@ -87,14 +87,14 @@ export function createGameServer(opts) {
   });
 
   const mm = new Matchmaker({
-    countdownMs: opts.countdownMs, soloWaitMs: opts.soloWaitMs, makeBot: newBot, // solo lobbies: one human + bots that join one by one
+    countdownMs: opts.countdownMs, soloWaitMs: opts.soloWaitMs, makeBot: newBot, // admin can switch bots off (botsOn below) // solo lobbies: one human + bots that join one by one
     allowed: (mode, now) => FIXED_MODES.includes(mode) || mode === featuredNow(now),
     onStart: (lobby) => {
       // The lobby starts with 1..4 humans (countdown over, or full): bots that joined the lobby keep their seats, the rest are filled with bots (server/bots.js).
       const humans = lobby.players.map((s) => ({ uid: s.uid, username: s.username, rank: s.rank, colorIdx: s.colorIdx, send: s.send, session: s, party: s.group != null, loadout: s.loadout, admin: s.admin }));
       const room = new Room({
         id: ++nextRoomId, mode: lobby.mode, timeScale, mapPool: mapPool.poolFor(lobby.mode),
-        players: [...humans, ...makeBots(humans, LOBBY_MAX, undefined, lobby.bots)],
+        players: [...humans, ...(botsOn || lobby.forced ? makeBots(humans, LOBBY_MAX, undefined, lobby.bots) : [])], // bots off: humans only (an admin FORCE START still fills)
         onLeave: handleLeave, onEnd: handleEnd,
       });
       rooms.set(room.id, room);
@@ -103,7 +103,11 @@ export function createGameServer(opts) {
     },
   });
 
-  registerGameOps({ admin, mm, rooms, log, featured: { // GAMES tab
+  // Bots switch (GAMES tab), persisted in the catalog store. Off: no solo lobbies, no bot seats (old 2-human minimum).
+  let botsOn = true;
+  const setBots = (on) => { botsOn = on; mm.setMakeBot(on ? newBot : null); };
+  catalog.getBots().then((on) => { if (!on) setBots(false); }).catch((e) => log('[catalog] bots read failed:', e.message));
+  registerGameOps({ admin, mm, rooms, log, bots: { get: () => botsOn, set: async (on) => { await catalog.putBots(on); setBots(on); } }, featured: { // GAMES tab
     view: () => ({ current: featured, override }),
     set: async (m) => { await catalog.putFeatured(m); override = m; applyFeatured(); },
   } });

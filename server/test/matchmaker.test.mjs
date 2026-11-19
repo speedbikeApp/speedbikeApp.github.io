@@ -163,4 +163,14 @@ console.log('matchmaker tests ok');
   clock = 200000; const d = player('d'); mm.queue(d, 'standard'); mm.leave(d);
   assert.equal(mm.stats().lobbies, 0); assert.equal(d.where, null); mm.tick(210000); assert.equal(started.length, 2, 'an emptied lobby is gone');
 }
+{ // admin bots switch: off sends a lone human (with arrived bots) back to the queue; on again replans
+  started.length = 0; clock = 0;
+  const makeBot = (hs, bs) => ({ username: 'b' + bs.length, colorIdx: 3 - bs.length, bot: true });
+  const mm = mk({ makeBot, soloWaitMs: 1000, botJoinMs: [1000, 1000] }), a = player('a');
+  mm.queue(a, 'standard'); mm.tick(1000); assert.equal(last(a, 'lobby').players.length, 2);
+  mm.setMakeBot(null); assert.equal(a.where.type, 'queue'); assert.equal(mm.stats().lobbies, 0);
+  mm.tick(99999); assert.equal(started.length, 0, 'nothing starts with one human and no bots');
+  clock = 100000; mm.setMakeBot(makeBot); assert.equal(a.where.type, 'lobby'); assert.equal(last(a, 'lobby').countdownEndsAt, 103000);
+  mm.tick(103000); assert.equal(started.length, 1); assert.equal(started[0].bots.length, 3);
+}
 console.log('solo lobby tests ok');

@@ -4,6 +4,7 @@
 // Level table (leveling system): getLevels() -> table|null (null = defaults), putLevels(t). Firestore `config/levels`, JSON key `__levels`.
 // Quests (js/questdef.js): getQuests() -> config|null (null = defaults), putQuests(c). Firestore `config/quests`, JSON key `__quests`.
 // Events: getEvents() -> [event] (stored as a list), putEvents(list). Firestore `config/events` {list}, JSON key `__events`.
+// Bots switch (admin GAMES tab): getBots() -> false only when an admin turned bots off, putBots(bool). Firestore `config/bots` {on}, JSON key `__bots`.
 // Featured-mode override (admin GAMES tab): getFeatured() -> mode id | null (= hourly rotation), putFeatured(id|null). Firestore `config/featured` {mode}, JSON key `__featured`.
 // Firestore: `items/{id}` = the item / override document. Admin SDK only: firestore.rules has no rule for it, so clients are denied (they read GET /catalog).
 import fs from 'node:fs';
@@ -35,6 +36,8 @@ export function createJsonCatalogStore(file) {
     async putEvents(l) { d.__events = structuredClone(l); save(); },
     async getFeatured() { return d.__featured ?? null; },
     async putFeatured(m) { d.__featured = m; save(); },
+    async getBots() { return d.__bots !== false; },
+    async putBots(on) { d.__bots = !!on; save(); },
     flush: () => chain,
   };
 }
@@ -56,6 +59,8 @@ export function createFirestoreCatalogStore(db) {
     async putEvents(l) { await db.doc('config/events').set({ list: l }); },
     async getFeatured() { const x = await db.doc('config/featured').get(); return x.exists ? x.data().mode ?? null : null; },
     async putFeatured(m) { await db.doc('config/featured').set({ mode: m }); },
+    async getBots() { const x = await db.doc('config/bots').get(); return !x.exists || x.data().on !== false; },
+    async putBots(on) { await db.doc('config/bots').set({ on: !!on }); },
     flush: async () => {},
   };
 }

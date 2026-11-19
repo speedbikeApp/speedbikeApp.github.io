@@ -68,6 +68,17 @@ const s2 = bob.next('start'); assert.equal((await boss.op('gstart', { lobby: g.l
 const e2 = bob.next('end'), e3 = cy.next('end'); assert.equal((await boss.op('gstop', { id: (await boss.op('gget')).rooms[0].id })).ok, true);
 assert.equal((await e2).reason, 'stopped'); await e3;
 
+// ---- bots switch: off = a lone player waits in the queue (no solo lobby), persisted; on again = the waiting player gets a solo lobby
+assert.equal((await boss.op('gget')).bots, true);
+assert.equal((await boss.op('gbots', { on: 'no' })).code, 'bad_value');
+assert.equal((await boss.op('gbots', { on: false })).bots, false);
+assert.equal((await boss.op('gget')).bots, false); assert.equal(await catStore.getBots(), false, 'persisted');
+bob.send({ t: 'queue', mode: 'standard' }); await bob.next('queued');
+assert.deepEqual((await boss.op('gget')).queues.map((q) => q.players), [['Bobby']], 'no solo lobby while bots are off');
+const relob = bob.next('lobby'); assert.equal((await boss.op('gbots', { on: true })).bots, true);
+assert.equal((await relob).players.length, 1, 'bots back on: the waiting player gets a solo lobby');
+bob.send({ t: 'leaveQueue' });
+
 // ---- featured override: immediate broadcast, /health, matchmaker, persistence, AUTO clears
 const auto = featuredMode(Date.now()), other = ['hyper', '3d', 'multimap'].find((m) => m !== auto);
 assert.equal((await boss.op('gfeatured', { mode: 'standard' })).code, 'bad_mode');

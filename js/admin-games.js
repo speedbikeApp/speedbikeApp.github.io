@@ -1,5 +1,5 @@
 // ADMIN > GAMES tab: waiting queues / lobbies (FORCE START), running matches (STOP) and the featured-mode selector. The server is the only authority
-// (server/admin-games.js: gget / gstart / gstop / gfeatured). The list refreshes every 3 s while the tab is open. User text only via textContent. DOM only.
+// (server/admin-games.js: gget / gstart / gstop / gfeatured / gbots). The list refreshes every 3 s while the tab is open. User text only via textContent. DOM only.
 import { registerAdminTab, ADMIN_ERR } from './admin-core.js';
 import { net, MODE_LABEL } from './online.js';
 
@@ -9,8 +9,8 @@ const ERR = { ...ADMIN_ERR, not_found: 'NO LONGER WAITING / RUNNING' };
 const label = (m) => MODE_LABEL[m] || String(m).toUpperCase();
 
 function mountGames(root, { call }) {
-  const msg = el('div', 'adMsg'), feat = el('div', 'adSec'), body = el('div');
-  root.append(msg, feat, body);
+  const msg = el('div', 'adMsg'), feat = el('div', 'adSec'), botSec = el('div', 'adSec'), body = el('div');
+  root.append(msg, feat, botSec, body);
   const say = (t, kind) => { msg.textContent = t || ''; msg.className = 'adMsg' + (kind ? ' ' + kind : ''); };
   const fail = (r) => say(ERR[r.code] || String(r.code || 'ERROR').toUpperCase(), 'bad');
   const act = async (op, args, ok) => { say('...'); const r = await call(op, args); if (r.ok) { say(ok, 'ok'); load(); } else { fail(r); load(); } };
@@ -27,8 +27,15 @@ function mountGames(root, { call }) {
   const section = (title) => { const s = el('div', 'adSec'); s.append(el('b', '', title)); body.appendChild(s); return s; };
   const row = (s, text, ...btns) => { const r = el('div', 'adLine'); r.append(el('span', '', text + ' '), ...btns); s.appendChild(r); };
 
+  function drawBots(on) {
+    botSec.textContent = ''; botSec.append(el('b', '', 'FILL WITH BOTS'));
+    const row = el('div', 'adLine');
+    row.append(el('span', '', on ? 'ON - A PLAYER ALONE GETS BOTS, FREE SEATS ARE BOTS ' : 'OFF - MATCHES NEED 2 PLAYERS, NO BOT SEATS '),
+      btn(on ? 'TURN OFF' : 'TURN ON', on ? 'danger' : 'primary', () => act('gbots', { on: !on }, on ? 'BOTS OFF' : 'BOTS ON')));
+    botSec.append(row);
+  }
   function draw(r) {
-    drawFeatured(r.featured); body.textContent = '';
+    drawFeatured(r.featured); drawBots(r.bots !== false); body.textContent = '';
     const wait = section('WAITING (QUEUES AND LOBBIES)');
     for (const l of r.lobbies) {
       const left = Math.max(0, Math.ceil((l.endsAt - net.serverNow()) / 1000));

@@ -3,12 +3,13 @@
 //   gstart {lobby:id} | {queue:mode}   start a waiting lobby / queue now (empty seats become bots)
 //   gstop {id}                         end a running room at once; nobody's rank changes (host: reason 'stopped')
 //   gfeatured {mode:'auto'|hyper|3d|multimap}   override the hourly featured mode (persisted), 'auto' clears it
+//   gbots {on:bool}                    fill free seats with bots (solo queue) or not (persisted); gget returns bots:bool
 import { FEATURED_CYCLE } from '../js/rotation.js';
 import { adminError as E } from './admin.js';
 
-// deps: { admin, mm, rooms (Map), featured: { view(), set(mode|null) }, log }
-export function registerGameOps({ admin, mm, rooms, featured, log = () => {} }) {
-  admin.register('gget', async () => ({ ...mm.view(), rooms: [...rooms.values()].map((r) => r.adminView()), featured: { ...featured.view(), cycle: FEATURED_CYCLE } }));
+// deps: { admin, mm, rooms (Map), featured: { view(), set(mode|null) }, bots: { get(), set(bool) }, log }
+export function registerGameOps({ admin, mm, rooms, featured, bots, log = () => {} }) {
+  admin.register('gget', async () => ({ ...mm.view(), bots: bots.get(), rooms: [...rooms.values()].map((r) => r.adminView()), featured: { ...featured.view(), cycle: FEATURED_CYCLE } }));
   admin.register('gstart', async (a, ctx) => {
     const ok = a.lobby !== undefined ? mm.forceStart(a.lobby) : typeof a.queue === 'string' && mm.forceStartQueue(a.queue);
     if (!ok) throw E('not_found');
@@ -18,6 +19,10 @@ export function registerGameOps({ admin, mm, rooms, featured, log = () => {} }) 
     const r = rooms.get(a.id);
     if (!r || r.over) throw E('not_found');
     log(`[admin] ${ctx.uid} stop room ${r.id}`); r.stop(); return {};
+  });
+  admin.register('gbots', async (a, ctx) => {
+    if (typeof a.on !== 'boolean') throw E('bad_value');
+    await bots.set(a.on); log(`[admin] ${ctx.uid} bots ${a.on ? 'on' : 'off'}`); return { bots: a.on };
   });
   admin.register('gfeatured', async (a, ctx) => {
     const m = a.mode === 'auto' ? null : a.mode;
