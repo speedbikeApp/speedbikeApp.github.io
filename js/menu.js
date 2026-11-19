@@ -15,6 +15,7 @@ import { setPlayerName } from './hud.js';
 import * as tutorial from './tutorial.js';
 import { initAccountUi, openAccount, accountEsc, isSignedIn } from './account-ui.js';
 import { initMultiUi, onScreen as multiScreen, multiBack } from './multi-ui.js';
+import { sendNameIcon } from './online.js';
 import { initFriendsUi, onScreen as friendsScreen } from './friends-ui.js';
 import { initAdminUi, onScreen as adminScreen } from './admin-ui.js';
 import { initPush, enable as pushEnable, disable as pushDisable, notifyOn, shouldAsk } from './push.js';
@@ -40,6 +41,7 @@ export function showScreen(name, backdrop = 'home') {
   if (name === 'scrMain') {
     $('mCoins').textContent = getSave().coins; $('mName').textContent = getSave().profile.username;
     const tb = tutorial.menuButton(isSignedIn()); // TUTORIAL replaces PLAY as the bold button
+    $('mQuests').hidden = $('mSettings').hidden = !isSignedIn(); $('mLogin').hidden = isSignedIn(); // signed out: one LOGIN button instead
     $('mTut').hidden = !tb; $('mPlay').classList.toggle('primary', !tb); $('mPlay').classList.toggle('pulse', !!tutorial.matchStage());
   }
   if (name === 'scrMode') { syncDiff(); $('mSelMapName').textContent = mapLabel(getSave().settings.spMap); }
@@ -186,6 +188,7 @@ function syncSettingsUi() {
 export function initMenu(h) {
   const on = (id, fn) => $(id).addEventListener('click', fn);
   on('mPlay', () => showScreen('scrPlay'));
+  on('mLogin', () => showScreen('scrAccount'));
   // notifications: installed app only (and only when the server has push); settings row + one-time card
   initPush().then((ok) => {
     if (!ok) return;
@@ -225,7 +228,7 @@ export function initMenu(h) {
   initQuestsUi({ show: showScreen });
   on('sAccount', () => { acFromSettings = true; showScreen('scrAccount'); });
   const acBack = () => { const s = acFromSettings; acFromSettings = false; showScreen(s ? 'scrSettings' : 'scrMain'); };
-  initAccountUi({ newAccount: () => h.onTutorial(true), back: acBack, open: () => showScreen('scrAccount'), refresh: () => { if (['scrMain', 'scrAbilities', 'scrGarage', 'scrStats', 'scrQuests', 'scrProfile'].includes(current)) showScreen(current); } });
+  initAccountUi({ iconChanged: sendNameIcon, newAccount: () => h.onTutorial(true), back: acBack, open: () => showScreen('scrAccount'), refresh: () => { if (['scrMain', 'scrAbilities', 'scrGarage', 'scrStats', 'scrQuests', 'scrProfile'].includes(current)) showScreen(current); } });
   // Esc: close the delete confirmation first, else back to the main menu (capture phase: runs before the pause handler)
   addEventListener('keydown', (e) => { if (e.code === 'Escape' && current === 'scrAccount') { e.preventDefault(); if (!accountEsc()) acBack(); } });
   on('gBack', () => { saveSoon(); showScreen('scrMain'); });

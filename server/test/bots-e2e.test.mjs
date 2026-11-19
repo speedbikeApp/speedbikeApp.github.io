@@ -119,7 +119,12 @@ await sleep(100); assert.equal(app.rooms.size, 0);
 // ---- one human alone: a solo lobby, bots join one at a time, the match starts when full; bots look like players but stay bots ----
 {
   const t0 = Date.now(), c = client('solo1'); await c.hello();
+  c.send({ t: 'icon', icon: 'admin' }); // not an admin: shown as nothing
   c.send({ t: 'queue', mode: 'standard' });
+  assert.equal((await c.next('lobby')).players[0].icon, undefined, 'a non-admin cannot show the admin icon');
+  c.send({ t: 'icon', icon: 'star:3' }); c.send({ t: 'leaveQueue' }); await sleep(100); c.msgs.length = 0;
+  c.send({ t: 'queue', mode: 'standard' });
+  assert.equal((await c.next('lobby')).players[0].icon, 'star:3', 'prestige star shown');
   const s = await c.next('start', 15000), took = Date.now() - t0;
   assert.ok(took >= 1000 && took < 12000, `started after the short wait + bot arrivals (${took} ms)`);
   assert.deepEqual(c.msgs.filter((m) => m.t === 'lobby').map((m) => m.players.length), [1, 2, 3], 'bots arrive one by one in the lobby list');

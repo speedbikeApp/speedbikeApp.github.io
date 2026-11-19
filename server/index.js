@@ -91,7 +91,7 @@ export function createGameServer(opts) {
     allowed: (mode, now) => FIXED_MODES.includes(mode) || mode === featuredNow(now),
     onStart: (lobby) => {
       // The lobby starts with 1..4 humans (countdown over, or full): bots that joined the lobby keep their seats, the rest are filled with bots (server/bots.js).
-      const humans = lobby.players.map((s) => ({ uid: s.uid, username: s.username, rank: s.rank, colorIdx: s.colorIdx, send: s.send, session: s, party: s.group != null, loadout: s.loadout, admin: s.admin }));
+      const humans = lobby.players.map((s) => ({ uid: s.uid, username: s.username, rank: s.rank, colorIdx: s.colorIdx, send: s.send, session: s, party: s.group != null, loadout: s.loadout, admin: s.admin, icon: s.icon }));
       const room = new Room({
         id: ++nextRoomId, mode: lobby.mode, timeScale, mapPool: mapPool.poolFor(lobby.mode),
         players: [...humans, ...(botsOn || lobby.forced ? makeBots(humans, LOBBY_MAX, undefined, lobby.bots) : [])], // bots off: humans only (an admin FORCE START still fills)
@@ -136,7 +136,7 @@ export function createGameServer(opts) {
         if (r.bot) { out.push({ id: r.id, uid: null, username: r.username, place: r.place, won: r.won, left: false, scores: r.scores, rankBefore: p.rank, rankAfter: p.rank, change: 'none', bot: true }); continue; } // bots: display rank only, never saved
         let entry = byId.get(r.id);
         if (!entry) { const l = p.leavePromise && await p.leavePromise; entry = { id: r.id, uid: r.uid, rankBefore: l?.rankBefore || p.rank, rankAfter: l?.rankAfter || p.rank, change: l?.change || 'none' }; }
-        out.push({ id: r.id, uid: r.uid, username: r.username, place: r.place, won: r.won, left: r.left, scores: r.scores, rankBefore: entry.rankBefore, rankAfter: entry.rankAfter, change: entry.change, ...(p.party ? { party: true } : {}), ...(r.unranked ? { unranked: true } : {}), ...(p.admin ? { admin: true } : {}) });
+        out.push({ id: r.id, uid: r.uid, username: r.username, place: r.place, won: r.won, left: r.left, scores: r.scores, rankBefore: entry.rankBefore, rankAfter: entry.rankAfter, change: entry.change, ...(p.party ? { party: true } : {}), ...(r.unranked ? { unranked: true } : {}), ...(p.icon ? { icon: p.icon } : {}) });
       }
       for (const p of room.players) {
         const s = p.session;
@@ -208,6 +208,7 @@ export function createGameServer(opts) {
       case 'ping': return s.send({ t: 'pong', c: msg.c, serverNow: Date.now() });
       case 'queue': if (banActive(s.ban)) { s.send({ t: 'banned', ...banView(s.ban) }); return void s.ws.close(4003, 'banned'); }
         if (msg.loadout) s.loadout = msg.loadout; return void onQueue(s, msg.mode);
+      case 'icon': s.iconPick = msg.icon; return;
       case 'loadout': if (s.room) s.room.setLoadout(s.bikeId, msg.abilities); else s.loadout = msg.abilities; return;
       case 'leaveQueue': return void onLeaveQueue(s);
       case 'leave':
@@ -312,7 +313,8 @@ export function createGameServer(opts) {
     ipConns.set(ip, (ipConns.get(ip) || 0) + 1);
     const s = {
       ws, uid: null, username: '', rank: null, where: null, authed: false, helloPending: false, dead: false, alive: true, violations: 0,
-      room: null, bikeId: -1, colorIdx: 0, group: null, rtt: null, sping: null, loadout: [], admin: false, ban: null,
+      room: null, bikeId: -1, colorIdx: 0, group: null, rtt: null, sping: null, loadout: [], admin: false, ban: null, iconPick: null,
+      get icon() { return this.iconPick === null ? (this.admin ? 'admin' : '') : this.iconPick === 'admin' && !this.admin ? '' : this.iconPick; }, // name icon: the player's pick, admin only while admin
       limiter: new RateLimiter(20, 30), searchLimiter: new RateLimiter(0.7, 5), socialLimiter: new RateLimiter(1, 10), partyLimiter: new RateLimiter(2, 12), inLimiter: new RateLimiter(30, 30),
       send: (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); },
     };

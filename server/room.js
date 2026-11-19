@@ -66,7 +66,7 @@ export class Room {
 
     this.broadcast({
       t: 'start', mode, mapId: this.state.map.id, ...(MAPS[this.state.map.id] ? {} : { map: this.state.map }), seed: this.seed, tick0: 0, cfgOverrides: {},
-      players: this.players.map((p) => ({ id: p.id, uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, bot: !!p.bot, loadout: this.state.bikes[p.id].abilities.slice(), ...(p.admin ? { admin: true } : {}) })),
+      players: this.players.map((p) => ({ id: p.id, uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, bot: !!p.bot, loadout: this.state.bikes[p.id].abilities.slice(), ...(p.icon ? { icon: p.icon } : {}) })),
     }, (p) => ({ you: p.id }));
     this.#syncPhase();
   }

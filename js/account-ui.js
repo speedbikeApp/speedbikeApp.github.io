@@ -1,7 +1,9 @@
 // ACCOUNT screen (login / register tabs, signed-in user panel) + main-menu status line. DOM only; talks to auth.js.
 // User-provided strings are only ever written with textContent / .value. Passwords are never logged or stored here.
 import * as auth from './auth.js';
-import { setUsername, saveSoon } from './save.js';
+import { setUsername, saveSoon, getSave } from './save.js';
+import { isAdmin } from './admin-core.js';
+import { levelInfo } from './levels.js';
 import { setPlayerName } from './hud.js';
 import { cloudUserChanged, flushCloud, initCloudSave, setOnApplied } from './cloudsave.js';
 
@@ -162,9 +164,19 @@ export function renderAccount() {
   $('acOut').hidden = !s.configured || (!!user && tab !== 'reset');
   $('acPickBox').hidden = !s.configured || !pick || tab === 'reset';
   $('acIn').hidden = !s.configured || !user || pick || tab === 'reset';
-  if (user) { $('acName').textContent = user.username; $('acMail').textContent = user.email; }
+  if (user) { $('acName').textContent = user.username; $('acMail').textContent = user.email; renderIconPick(); }
   setTab(tab);
   statusLine();
+}
+
+// Icon next to the name (lobby, scoreboard, results): AUTO / NONE + the ones this player has (admin pencil, prestige star).
+let iconChanged = () => {}, refreshMenu = () => {};
+function renderIconPick() {
+  const sel = $('acIcon'), p = levelInfo().prestige | 0, cur = getSave().profile.nameIcon;
+  const opts = [['auto', 'AUTO'], ['none', 'NONE'], ...(isAdmin() || cur === 'admin' ? [['admin', '✎ ADMIN']] : []), ...(p > 0 || cur === 'star' ? [['star', `✪${p} PRESTIGE`]] : [])];
+  sel.textContent = '';
+  for (const [v, t] of opts) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); }
+  sel.value = cur;
 }
 
 /** Called by menu.js when the screen opens. */
@@ -183,7 +195,7 @@ function onUser(u) {
   if (named) { const n = setUsername(named.username); setPlayerName(n); saveSoon(); }
   cloudUserChanged(named); // load + merge account progress (silent on failure)
   if (changed) { resetForms(); if (!u) tab = 'login'; }
-  renderAccount();
+  renderAccount(); refreshMenu(); // main menu: LOGIN vs QUESTS / SETTINGS
   if (!u) toMain = false;
   else if (named && toMain) { toMain = false; if (justRegistered) { justRegistered = false; newAccount(); } else onBack(); return; }
   if (u && !u.username && tab !== 'reset') { try { openScreen(); } catch { /* menu not ready */ } }
@@ -192,6 +204,8 @@ function onUser(u) {
 export async function initAccountUi(h) {
   newAccount = h.newAccount || newAccount; onBack = h.back; openScreen = h.open || openScreen; setOnApplied(h.refresh || (() => {})); initCloudSave();
   $('acBack').addEventListener('click', () => onBack());
+  iconChanged = h.iconChanged || iconChanged; refreshMenu = h.refresh || refreshMenu;
+  $('acIcon').addEventListener('change', (e) => { getSave().profile.nameIcon = e.target.value; saveSoon(); iconChanged(); });
   for (const b of document.querySelectorAll('#acOut [data-tab]')) b.addEventListener('click', () => { setTab(b.dataset.tab); });
   for (const id of Object.keys(FORMS)) {
     const form = $(id);

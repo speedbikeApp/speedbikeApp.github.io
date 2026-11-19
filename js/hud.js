@@ -22,7 +22,8 @@ let baseBikes = [], meId = 0, onlineHud = false, onlineResult = null; // online:
 export const FRIEND_ICON = '<svg class="fi" viewBox="0 0 12 14" aria-label="friend"><title>Friend</title><circle cx="6" cy="4" r="3" fill="currentColor"/><path d="M0.5 14c0-3.6 2.4-5.6 5.5-5.6s5.5 2 5.5 5.6z" fill="currentColor"/></svg>';
 // Admin marker (pencil) shown next to an admin's name wherever FRIEND_ICON is; the server flags players with admin:true.
 export const ADMIN_ICON = '<span class="ai" title="Admin" aria-label="admin">✎</span>';
-const adminIcon = (a) => (a ? ADMIN_ICON : '');
+/** The icon next to a player's name (server-checked wire value): 'admin' -> ✎, 'star:N' -> ✪N (prestige), else nothing. */
+export function nameIconHtml(icon) { if (icon === 'admin') return ADMIN_ICON; const m = /^star:([1-9]\d?)$/.exec(icon || ''); return m ? `<span class="ai" title="Prestige ${m[1]}">✪${m[1]}</span>` : ''; }
 const friendIcon = (uid) => (uid && social.isFriend(uid) ? FRIEND_ICON : '');
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -184,7 +185,7 @@ export function setScoreboard(state, match, dm) {
   for (let i = 0; i < bikes.length; i++) {
     const b = bikes[i], r = scoreRow(dm, b.id, match, state.bikes[b.id].alive);
     const rk = b.rank ? `${b.rank.tier}${b.rank.div}${b.rank.wins}` : '';
-    const fr = friendIcon(b.uid), ad = adminIcon(b.admin), key = `${b.name}|${b.color}|${r.n}|${r.segs}|${r.out}|${r.dim}|${rk}|${fr ? 1 : 0}|${ad ? 1 : 0}`;
+    const fr = friendIcon(b.uid), ad = nameIconHtml(b.icon), key = `${b.name}|${b.color}|${r.n}|${r.segs}|${r.out}|${r.dim}|${rk}|${fr ? 1 : 0}|${ad}`;
     if (cache['sb' + b.id] === key) continue;
     cache['sb' + b.id] = key;
     const el = rowEls[i], c = css(b.color);
@@ -263,7 +264,7 @@ function onlineResultHtml(match) {
   const R = onlineResult, dm = match.mode.kind === 'deathmatch';
   const rows = R.rows.slice().sort((a, b) => a.place - b.place || a.id - b.id);
   const me = R.rows.find((r) => r.id === R.meId);
-  const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${r.rankAfter || r.rankBefore ? badgeHtml(r.rankAfter || r.rankBefore) : ''} ${colored(r.id, esc(r.username))}${adminIcon(r.admin)}${friendIcon(r.uid)} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
+  const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${r.rankAfter || r.rankBefore ? badgeHtml(r.rankAfter || r.rankBefore) : ''} ${colored(r.id, esc(r.username))}${nameIconHtml(r.icon)}${friendIcon(r.uid)} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
   const first = rows.filter((r) => r.place === 1);
   const title = R.stopped ? 'MATCH STOPPED BY ADMIN' : me && me.won ? 'YOU WIN!' : me && me.place === 1 ? 'TIED FOR 1ST' : first.length === 1 ? `${esc(first[0].username).toUpperCase()} WINS` : 'DRAW';
   let rank = '';

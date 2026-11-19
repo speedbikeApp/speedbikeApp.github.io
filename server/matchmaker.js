@@ -173,7 +173,7 @@ export class Matchmaker {
   }
 
   #sendLobby(l) {
-    const msg = { t: 'lobby', mode: l.mode, players: [...l.players.map((p) => ({ uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, ...(p.admin ? { admin: true } : {}) })),
+    const msg = { t: 'lobby', mode: l.mode, players: [...l.players.map((p) => ({ uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, ...(p.icon ? { icon: p.icon } : {}) })),
       ...l.bots.map((b) => ({ uid: null, username: b.username, rank: b.rank, colorIdx: b.colorIdx }))], countdownEndsAt: l.endsAt, serverNow: this.now() };
     for (const p of l.players) p.send(msg);
   }

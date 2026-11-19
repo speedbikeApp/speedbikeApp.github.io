@@ -44,6 +44,9 @@ export function parseClientMessage(raw) {
     case 'queue':
       if (!isStr(o.mode, 16) || !MODES_ALL.includes(o.mode)) return bad('bad_mode', 'unknown mode');
       return ok({ t: 'queue', mode: o.mode, ...(o.loadout !== undefined ? { loadout: sanitizeLoadout(o.loadout) } : {}) });
+    case 'icon': // the icon shown next to the player's name: '' | 'admin' (index.js checks the admin right) | 'star:N' (prestige N, client progress like coins)
+      if (typeof o.icon !== 'string' || !/^(admin|star:[1-9]\d?)?$/.test(o.icon)) return bad('bad_message', 'bad icon');
+      return ok({ t: 'icon', icon: o.icon });
     case 'loadout': // ability ids for the next match (lobby / party) or the final list during the first countdown of a match
       return ok({ t: 'loadout', abilities: sanitizeLoadout(o.abilities) });
     case 'leaveQueue': case 'leave':
