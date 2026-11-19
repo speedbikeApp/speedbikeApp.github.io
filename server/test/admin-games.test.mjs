@@ -40,15 +40,15 @@ for (const [op, a] of [['gget', {}], ['gstart', { queue: 'standard' }], ['gstop'
 }
 assert.equal(await adminStore.getProgress('uBob'), null);
 
-// ---- force start a lone queue, then a lobby; stop a running room without touching ranks
+// ---- force start a lone player's solo lobby; stop a running room without touching ranks
 const rankBefore = JSON.stringify(await ranks.getRank('uAlice'));
-alice.send({ t: 'queue', mode: 'standard' }); await alice.next('queued');
+alice.send({ t: 'queue', mode: 'standard' }); await alice.next('lobby');
 let g = await boss.op('gget');
-assert.deepEqual(g.queues.map((q) => [q.mode, q.players]), [['standard', ['Alice']]]); assert.equal(g.rooms.length, 0);
+assert.deepEqual(g.lobbies.map((l) => [l.mode, l.players]), [['standard', ['Alice']]]); assert.equal(g.queues.length, 0); assert.equal(g.rooms.length, 0);
 assert.equal((await boss.op('gstart', { queue: 'nope' })).code, 'not_found');
 assert.equal((await boss.op('gstart', { lobby: 999 })).code, 'not_found');
 const started = alice.next('start');
-assert.equal((await boss.op('gstart', { queue: 'standard' })).ok, true);
+assert.equal((await boss.op('gstart', { lobby: g.lobbies[0].id })).ok, true);
 await started;
 g = await boss.op('gget');
 assert.equal(g.queues.length, 0); assert.equal(g.rooms.length, 1);
@@ -78,7 +78,7 @@ assert.deepEqual([set.ok, set.featured.current, set.featured.override], [true, o
 const rm = await rot; assert.deepEqual([rm.featured, rm.manual, rm.nextRotation], [other, true, 0]);
 assert.equal((await health()).featured, other);
 alice.send({ t: 'queue', mode: auto }); assert.equal((await alice.next('error')).code, 'bad_mode', 'old featured mode no longer allowed');
-alice.send({ t: 'queue', mode: other }); await alice.next('queued'); alice.send({ t: 'leaveQueue' });
+alice.send({ t: 'queue', mode: other }); await alice.next((m) => m.t === 'lobby' && m.mode === other); alice.send({ t: 'leaveQueue' });
 await app.close(); // restart with the same stores: the override survives
 app = mk(); port = await app.listen(0);
 const late = client('uAlice', 'Alice'); await late.hello();

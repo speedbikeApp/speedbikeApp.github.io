@@ -6,9 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
 import { createGameServer } from '../index.js';
+import { BOT_NAMES } from '../bots.js';
 import { createDevAuth } from '../auth.js';
 import { createJsonStore } from '../store.js';
-import { defaultRank } from '../../js/ranks.js';
+import { defaultRank, ladderIndex } from '../../js/ranks.js';
 
 const guard = setTimeout(() => { console.error('bots e2e timed out'); process.exit(1); }, 120000);
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-bots-'));
@@ -16,7 +17,7 @@ const file = path.join(dir, 'ranks.json');
 const store = createJsonStore(file);
 const start1 = { ...defaultRank(), tier: 'He', div: 3, wins: 1 };    // a win = NEON 1
 for (const u of ['h1', 'h2', 'h3']) await store.setRank(u, start1, u);
-const app = createGameServer({ auth: createDevAuth(), store, timeScale: 40, countdownMs: 500, healthToken: 'tok', log: () => {} });
+const app = createGameServer({ auth: createDevAuth(), store, timeScale: 40, countdownMs: 500, soloWaitMs: 1000, healthToken: 'tok', log: () => {} });
 const port = await app.listen(0);
 
 function client(uid) {
@@ -41,7 +42,7 @@ const [sa, sb] = await Promise.all([a.next('start'), b.next('start')]);
 assert.equal(sa.players.length, 4, 'filled to 4');
 assert.deepEqual(sa.players.map((p) => !!p.bot), [false, false, true, true]);
 assert.deepEqual(sa.players.slice(0, 2).map((p) => p.uid).sort(), ['h1', 'h2']);
-for (const p of sa.players.filter((q) => q.bot)) { assert.match(p.username, /^BOT \w+/); assert.equal(p.uid, null); assert.equal(p.rank, null); assert.equal(p.loadout.length, 0, 'medium bots carry no abilities'); }
+for (const p of sa.players.filter((q) => q.bot)) { assert.ok(BOT_NAMES.includes(p.username), 'a player-like name, no BOT prefix'); assert.equal(p.uid, null); assert.ok(p.rank.tier, 'display rank'); assert.equal(p.loadout.length, 0, 'medium bots carry no abilities'); }
 assert.equal(new Set(sa.players.map((p) => p.colorIdx)).size, 4);
 const ia = sa.players.find((p) => p.uid === 'h1'), ib = sa.players.find((p) => p.uid === 'h2');
 assert.deepEqual(ia.loadout, ['turbo', 'protector'], 'queue loadout sanitized (unknown + duplicate dropped)'); assert.deepEqual(ib.loadout, []);
@@ -76,7 +77,7 @@ const h = await health(); assert.equal(h.roomStats[0].bots, 2); assert.ok(h.loop
 const [ea, eb] = await Promise.all([a.next('end', 90000), b.next('end', 90000)]);
 assert.equal(ea.ranks.length, 4);
 const bots = ea.ranks.filter((r) => r.bot), humans = ea.ranks.filter((r) => !r.bot);
-assert.equal(bots.length, 2); assert.ok(bots.every((r) => r.uid === null && r.rankBefore === null && r.rankAfter === null && r.change === 'none' && !r.left));
+assert.equal(bots.length, 2); assert.ok(bots.every((r) => r.uid === null && r.rankBefore.tier && JSON.stringify(r.rankAfter) === JSON.stringify(r.rankBefore) && r.change === 'none' && !r.left), 'bots: display rank, never changed');
 assert.deepEqual(humans.map((r) => r.uid).sort(), ['h1', 'h2']);
 for (const r of humans) {
   assert.equal(r.rankBefore.v, 2);
@@ -114,6 +115,22 @@ await sleep(100); assert.equal(app.rooms.size, 0);
   for (const c of cs) c.send({ t: 'leave' });
   await sleep(300);
   for (const c of cs) c.ws.close();
+}
+// ---- one human alone: a solo lobby, bots join one at a time, the match starts when full; bots look like players but stay bots ----
+{
+  const t0 = Date.now(), c = client('solo1'); await c.hello();
+  c.send({ t: 'queue', mode: 'standard' });
+  const s = await c.next('start', 15000), took = Date.now() - t0;
+  assert.ok(took >= 1000 && took < 12000, `started after the short wait + bot arrivals (${took} ms)`);
+  assert.deepEqual(c.msgs.filter((m) => m.t === 'lobby').map((m) => m.players.length), [1, 2, 3], 'bots arrive one by one in the lobby list');
+  assert.ok(c.msgs.filter((m) => m.t === 'lobby').every((m) => m.players.every((p) => !('bot' in p))), 'the lobby list carries no bot flag');
+  const bs = s.players.filter((p) => p.bot), lobbyNames = c.msgs.filter((m) => m.t === 'lobby').at(-1).players.slice(1).map((p) => p.username);
+  assert.equal(bs.length, 3); assert.equal(new Set(bs.map((p) => p.username)).size, 3, 'no repeated names');
+  assert.deepEqual(bs.slice(0, 2).map((p) => p.username), lobbyNames, 'the bots that joined the lobby are the ones that play');
+  for (const p of bs) { assert.ok(BOT_NAMES.includes(p.username) && !/bot/i.test(p.username)); assert.equal(p.uid, null); assert.ok(Math.abs(ladderIndex(p.rank) - ladderIndex(defaultRank())) <= 1, 'rank near the human'); }
+  c.send({ t: 'leave' }); await sleep(300); c.ws.close();
+  await store.flush();
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(file, 'utf8'))).filter((k) => !/^(h\db?|p\d|solo1)$/.test(k)), [], 'no rank record for any bot');
 }
 for (const c of [a, b]) c.ws.close();
 await app.close();

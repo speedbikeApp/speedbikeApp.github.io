@@ -50,4 +50,6 @@ assert.throws(() => resolveAuthMode({}), /DEV_AUTH=1/); assert.throws(() => reso
 assert.equal(resolveAuthMode({ GOOGLE_APPLICATION_CREDENTIALS: 'k.json', DEV_AUTH: '1' }), 'dev');
 assert.throws(() => resolveAuthMode({ DEV_AUTH: '0' }));
 assert.throws(() => resolveAuthMode({ DEV_AUTH: '1', NODE_ENV: 'production' }), /refused in production/);
+// bots have uid null: no friend / party request can target one
+for (const t of ['fadd', 'faccept', 'fdecline', 'fcancel', 'fremove', 'pinvite', 'paccept', 'pkick', 'ptransfer']) assert.equal(parse(JSON.stringify({ t, uid: null })).ok, false, t + ' with a null uid');
 console.log('protocol tests ok');

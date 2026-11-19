@@ -22,7 +22,7 @@ import { createJsonPushStore, createFirestorePushStore, createPush, registerPush
 import { Parties } from './party.js';
 import { Matchmaker, LOBBY_MAX } from './matchmaker.js';
 import { Room } from './room.js';
-import { makeBots } from './bots.js';
+import { makeBots, newBot } from './bots.js';
 import { settleMatch } from './ranking.js';
 import { createLoginHandler, createFirebaseLoginDeps, clientIp, WindowLimiter } from './login.js';
 import { createAccountsHandler, createFirebaseAccountDeps } from './accounts.js';
@@ -30,7 +30,7 @@ import { createMailer } from './email.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// opts: { maps (custom map store, default: in memory), auth, store, social (social store, default: in memory), admin (admin store, default: in memory), adminUsernames (ADMIN_USERNAMES: comma string or array), port, timeScale (TEST ONLY: speeds the sim up), countdownMs, allowedOrigins:[...] , log, loopMs (scheduler interval, default 16), healthToken (HEALTH_TOKEN: unlocks /health?detail=), maxConnsPerIp (default 20), connRatePerMin (new sockets per IP per minute, default 30) }
+// opts: { maps (custom map store, default: in memory), auth, store, social (social store, default: in memory), admin (admin store, default: in memory), adminUsernames (ADMIN_USERNAMES: comma string or array), port, timeScale (TEST ONLY: speeds the sim up), countdownMs, soloWaitMs (wait before bots join a one-human lobby), allowedOrigins:[...] , log, loopMs (scheduler interval, default 16), healthToken (HEALTH_TOKEN: unlocks /health?detail=), maxConnsPerIp (default 20), connRatePerMin (new sockets per IP per minute, default 30) }
 export function createGameServer(opts) {
   const { auth, store, timeScale = 1, allowedOrigins = [], log = console.log } = opts;
   // POST /auth/login (server/login.js). Without opts.login (dev auth / tests) the endpoint answers 503 {code:'unavailable'}.
@@ -87,14 +87,14 @@ export function createGameServer(opts) {
   });
 
   const mm = new Matchmaker({
-    countdownMs: opts.countdownMs,
+    countdownMs: opts.countdownMs, soloWaitMs: opts.soloWaitMs, makeBot: newBot, // solo lobbies: one human + bots that join one by one
     allowed: (mode, now) => FIXED_MODES.includes(mode) || mode === featuredNow(now),
     onStart: (lobby) => {
-      // The lobby starts with 2..4 humans (countdown over, or full): free slots are filled with bots (server/bots.js).
+      // The lobby starts with 1..4 humans (countdown over, or full): bots that joined the lobby keep their seats, the rest are filled with bots (server/bots.js).
       const humans = lobby.players.map((s) => ({ uid: s.uid, username: s.username, rank: s.rank, colorIdx: s.colorIdx, send: s.send, session: s, party: s.group != null, loadout: s.loadout, admin: s.admin }));
       const room = new Room({
         id: ++nextRoomId, mode: lobby.mode, timeScale, mapPool: mapPool.poolFor(lobby.mode),
-        players: [...humans, ...makeBots(humans, LOBBY_MAX)],
+        players: [...humans, ...makeBots(humans, LOBBY_MAX, undefined, lobby.bots)],
         onLeave: handleLeave, onEnd: handleEnd,
       });
       rooms.set(room.id, room);
@@ -129,7 +129,7 @@ export function createGameServer(opts) {
       const out = [];
       for (const r of results) {
         const p = room.players[r.id];
-        if (r.bot) { out.push({ id: r.id, uid: null, username: r.username, place: r.place, won: r.won, left: false, scores: r.scores, rankBefore: null, rankAfter: null, change: 'none', bot: true }); continue; }
+        if (r.bot) { out.push({ id: r.id, uid: null, username: r.username, place: r.place, won: r.won, left: false, scores: r.scores, rankBefore: p.rank, rankAfter: p.rank, change: 'none', bot: true }); continue; } // bots: display rank only, never saved
         let entry = byId.get(r.id);
         if (!entry) { const l = p.leavePromise && await p.leavePromise; entry = { id: r.id, uid: r.uid, rankBefore: l?.rankBefore || p.rank, rankAfter: l?.rankAfter || p.rank, change: l?.change || 'none' }; }
         out.push({ id: r.id, uid: r.uid, username: r.username, place: r.place, won: r.won, left: r.left, scores: r.scores, rankBefore: entry.rankBefore, rankAfter: entry.rankAfter, change: entry.change, ...(p.party ? { party: true } : {}), ...(r.unranked ? { unranked: true } : {}), ...(p.admin ? { admin: true } : {}) });

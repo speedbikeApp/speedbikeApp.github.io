@@ -263,7 +263,7 @@ function onlineResultHtml(match) {
   const R = onlineResult, dm = match.mode.kind === 'deathmatch';
   const rows = R.rows.slice().sort((a, b) => a.place - b.place || a.id - b.id);
   const me = R.rows.find((r) => r.id === R.meId);
-  const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${r.bot ? '' : badgeHtml(r.rankAfter || r.rankBefore)} ${colored(r.id, esc(r.username))}${adminIcon(r.admin)}${friendIcon(r.uid)} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
+  const lines = rows.map((r) => `<div class="line orow${r.id === R.meId ? ' me' : ''}">${r.place}. ${r.rankAfter || r.rankBefore ? badgeHtml(r.rankAfter || r.rankBefore) : ''} ${colored(r.id, esc(r.username))}${adminIcon(r.admin)}${friendIcon(r.uid)} &nbsp; ${r.left ? 'LEFT' : r.scores + (dm ? ' KILLS' : '')}</div>`).join('');
   const first = rows.filter((r) => r.place === 1);
   const title = R.stopped ? 'MATCH STOPPED BY ADMIN' : me && me.won ? 'YOU WIN!' : me && me.place === 1 ? 'TIED FOR 1ST' : first.length === 1 ? `${esc(first[0].username).toUpperCase()} WINS` : 'DRAW';
   let rank = '';

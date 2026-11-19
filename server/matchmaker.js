@@ -5,12 +5,16 @@
 // lobby atomically (never split). Grouped players carry p.group (the party id) until the host clears it; the host reads it at onStart.
 // Parties (unranked) and solo players (ranked) never share a lobby: otherwise a party could be used to farm rank wins from solos. So the open lobbies
 // are at most one per (mode, party-or-solo); two parties may share a party lobby.
-export const LOBBY_MAX = 4, LOBBY_MIN = 2, LOBBY_COUNTDOWN_MS = 30000;
+// Solo lobbies (with a makeBot hook): ONE human is enough. If nobody else joins within soloWaitMs, bots join one at a time (botJoinMs apart,
+// l.bots) and the match starts when the lobby is full. A second human switches the lobby to the normal countdown (bots that already joined stay).
+export const LOBBY_MAX = 4, LOBBY_MIN = 2, LOBBY_COUNTDOWN_MS = 30000, SOLO_WAIT_MS = 5000, BOT_JOIN_MS = [1000, 3000];
 
 export class Matchmaker {
   // allowed(mode, now) -> may a NEW queue join use this mode (the featured mode rotates; people already queued are kept).
-  constructor({ now = Date.now, countdownMs = LOBBY_COUNTDOWN_MS, allowed = () => true, onStart }) {
+  // makeBot(humans, bots) -> a bot entry { username, rank, colorIdx, ... } (server/bots.js newBot); without it a lobby needs LOBBY_MIN humans.
+  constructor({ now = Date.now, countdownMs = LOBBY_COUNTDOWN_MS, allowed = () => true, onStart, makeBot = null, soloWaitMs = SOLO_WAIT_MS, botJoinMs = BOT_JOIN_MS, rng = Math.random }) {
     this.now = now; this.countdownMs = countdownMs; this.allowed = allowed; this.onStart = onStart;
+    this.makeBot = makeBot; this.soloWaitMs = soloWaitMs; this.botJoinMs = botJoinMs; this.rng = rng;
     this.queues = new Map();   // mode -> [entry]  entry = { players:[player], group:id|null }
     this.lobbies = [];         // open lobbies (at most one per mode and kind), l.party = party lobby
     this.seq = 0;
@@ -53,7 +57,7 @@ export class Matchmaker {
       const l = w.lobby;
       l.players.splice(l.players.indexOf(p), 1);
       p.where = null; p.group = null;
-      if (l.players.length < LOBBY_MIN) { // dissolve: whoever is left goes back to the FRONT of the queue (parties stay together)
+      if (l.players.length < (this.#solo(l) ? 1 : LOBBY_MIN)) { // dissolve: whoever is left goes back to the FRONT of the queue (parties stay together)
         this.lobbies.splice(this.lobbies.indexOf(l), 1);
         if (!this.queues.has(l.mode)) this.queues.set(l.mode, []);
         const back = [];
@@ -64,14 +68,19 @@ export class Matchmaker {
         }
         this.queues.get(l.mode).unshift(...back);
         this.#notifyQueue(l.mode);
-      } else this.#sendLobby(l);
+      } else { if (this.#solo(l) && l.players.length === 1) this.#plan(l); this.#sendLobby(l); }
       return true;
     }
     return false;
   }
 
   tick(now = this.now()) {
-    for (const l of [...this.lobbies]) if (now >= l.endsAt && l.players.length >= LOBBY_MIN) this.#start(l);
+    for (const l of [...this.lobbies]) {
+      let arrived = false;
+      while (l.plan?.length && now >= l.plan[0]) { l.plan.shift(); l.bots.push(this.makeBot(l.players, l.bots)); arrived = true; }
+      if (this.#seats(l) >= LOBBY_MAX || (now >= l.endsAt && l.players.length >= (this.#solo(l) ? 1 : LOBBY_MIN))) this.#start(l);
+      else if (arrived) this.#sendLobby(l);
+    }
   }
 
   // Admin: start a waiting lobby now (free seats become bots in onStart, same as the countdown running out).
@@ -85,7 +94,7 @@ export class Matchmaker {
   forceStartQueue(mode) {
     const q = this.queues.get(mode);
     if (!q || !q.length) return false;
-    const party = q[0].players.some((p) => p.group != null), l = { id: ++this.seq, mode, party, players: [], endsAt: 0 };
+    const party = q[0].players.some((p) => p.group != null), l = { id: ++this.seq, mode, party, players: [], bots: [], plan: null, endsAt: 0 };
     this.lobbies.push(l);
     for (let i = 0; i < q.length && l.players.length < LOBBY_MAX;) {
       if (q[i].players.some((p) => p.group != null) !== party || q[i].players.length > LOBBY_MAX - l.players.length) { i++; continue; }
@@ -98,7 +107,7 @@ export class Matchmaker {
   view() {
     const names = (ps) => ps.map((p) => p.username);
     return {
-      lobbies: this.lobbies.map((l) => ({ id: l.id, mode: l.mode, party: l.party, players: names(l.players), endsAt: l.endsAt })),
+      lobbies: this.lobbies.map((l) => ({ id: l.id, mode: l.mode, party: l.party, players: [...names(l.players), ...l.bots.map((b) => `${b.username} (BOT)`)], endsAt: l.endsAt })),
       queues: [...this.queues].filter(([, q]) => q.length).map(([mode, q]) => ({ mode, players: names(q.flatMap((e) => e.players)) })),
     };
   }
@@ -115,20 +124,31 @@ export class Matchmaker {
     for (const party of [false, true]) {
       const mine = (e) => e.players.some((p) => p.group != null) === party; // a lone leftover of a dissolved party (group cleared) is a solo again
       let l = this.lobbies.find((x) => x.mode === mode && x.party === party);
-      if (!l && q.filter(mine).reduce((n, e) => n + e.players.length, 0) >= LOBBY_MIN) { l = { id: ++this.seq, mode, party, players: [], endsAt: 0 }; this.lobbies.push(l); }
+      if (!l && q.filter(mine).reduce((n, e) => n + e.players.length, 0) >= (party || !this.makeBot ? LOBBY_MIN : 1)) { l = { id: ++this.seq, mode, party, players: [], bots: [], plan: null, endsAt: 0 }; this.lobbies.push(l); }
       if (!l) continue;
       let joined = false;
-      for (let i = 0; i < q.length && l.players.length < LOBBY_MAX;) { // first entries that fit (a party that does not fit waits for the next lobby)
-        if (!mine(q[i]) || q[i].players.length > LOBBY_MAX - l.players.length) { i++; continue; }
+      for (let i = 0; i < q.length && this.#seats(l) < LOBBY_MAX;) { // first entries that fit (a party that does not fit waits for the next lobby)
+        if (!mine(q[i]) || q[i].players.length > LOBBY_MAX - this.#seats(l)) { i++; continue; }
         for (const p of q.splice(i, 1)[0].players) {
-          p.colorIdx = [0, 1, 2, 3].find((c) => !l.players.some((x) => x.colorIdx === c)); // distinct colour per lobby
+          p.colorIdx = [0, 1, 2, 3].find((c) => ![...l.players, ...l.bots].some((x) => x.colorIdx === c)); // distinct colour per lobby
           p.where = { type: 'lobby', lobby: l }; l.players.push(p); joined = true;
         }
       }
-      if (joined) l.endsAt = this.now() + this.countdownMs; // every join resets the countdown
-      if (l.players.length >= LOBBY_MAX) this.#start(l); else this.#sendLobby(l);
+      if (joined) { if (this.#solo(l) && l.players.length === 1) this.#plan(l); else { l.plan = null; l.endsAt = this.now() + this.countdownMs; } } // every join resets the countdown
+      if (this.#seats(l) >= LOBBY_MAX) this.#start(l); else this.#sendLobby(l);
     }
     this.#notifyQueue(mode);
+  }
+
+  #solo(l) { return !l.party && !!this.makeBot; }
+  #seats(l) { return l.players.length + l.bots.length; }
+  // One human in a solo lobby: schedule the bot arrivals (first after soloWaitMs, or a join gap if some bots are already in); endsAt = the last one.
+  #plan(l) {
+    const gap = () => Math.round(this.botJoinMs[0] + this.rng() * (this.botJoinMs[1] - this.botJoinMs[0]));
+    let t = this.now() + (l.bots.length ? gap() : this.soloWaitMs);
+    l.plan = [];
+    for (let n = LOBBY_MAX - 1 - l.bots.length; n > 0; n--) { l.plan.push(t); t += gap(); }
+    l.endsAt = l.plan.at(-1) ?? this.now();
   }
 
   #start(l) {
@@ -139,7 +159,8 @@ export class Matchmaker {
   }
 
   #sendLobby(l) {
-    const msg = { t: 'lobby', mode: l.mode, players: l.players.map((p) => ({ uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, ...(p.admin ? { admin: true } : {}) })), countdownEndsAt: l.endsAt, serverNow: this.now() };
+    const msg = { t: 'lobby', mode: l.mode, players: [...l.players.map((p) => ({ uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, ...(p.admin ? { admin: true } : {}) })),
+      ...l.bots.map((b) => ({ uid: null, username: b.username, rank: b.rank, colorIdx: b.colorIdx }))], countdownEndsAt: l.endsAt, serverNow: this.now() };
     for (const p of l.players) p.send(msg);
   }
 

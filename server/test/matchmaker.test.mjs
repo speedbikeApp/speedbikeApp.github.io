@@ -137,3 +137,30 @@ const last = (p, t) => [...p.msgs].reverse().find((m) => m.t === t);
   assert.equal(started.length, 1); assert.equal(started[0].players.length, 4); assert.equal(e.where.type, 'queue');
 }
 console.log('matchmaker tests ok');
+
+{ // solo lobbies (makeBot hook): one human waits soloWaitMs, then bots join one at a time; the match starts when full
+  started.length = 0; clock = 0;
+  const makeBot = (hs, bs) => ({ username: 'b' + bs.length, rank: null, colorIdx: [0, 1, 2, 3].find((c) => ![...hs, ...bs].some((p) => p.colorIdx === c)), bot: true });
+  const mm = mk({ makeBot, soloWaitMs: 5000, botJoinMs: [1000, 3000], rng: () => 0.5 }), [a, b, c] = ['a', 'b', 'c'].map(player);
+  mm.queue(a, 'standard');
+  assert.equal(a.where.type, 'lobby'); assert.equal(last(a, 'lobby').players.length, 1); assert.equal(last(a, 'lobby').countdownEndsAt, 9000, 'ends when the last bot arrives');
+  mm.tick(4999); assert.equal(last(a, 'lobby').players.length, 1);
+  mm.tick(5000); assert.deepEqual(last(a, 'lobby').players.map((p) => p.username), ['a', 'b0']);
+  assert.equal(last(a, 'lobby').players[1].uid, null); assert.ok(!('bot' in last(a, 'lobby').players[1]), 'no bot flag on the lobby list');
+  assert.deepEqual(mm.view().lobbies[0].players, ['a', 'b0 (BOT)'], 'the admin still sees it is a bot');
+  mm.tick(7000); assert.equal(last(a, 'lobby').players.length, 3);
+  mm.tick(9000); assert.equal(started.length, 1); assert.equal(started[0].bots.length, 3); assert.equal(started[0].players.length, 1);
+  assert.equal(new Set([a, ...started[0].bots].map((p) => p.colorIdx)).size, 4, 'distinct colours');
+
+  // a second human switches to the normal countdown (the bot that already joined stays); leaving back to one replans; the last one out dissolves
+  clock = 100000; mm.queue(b, 'standard'); clock = 105000; mm.tick(clock);
+  assert.equal(last(b, 'lobby').players.length, 2);
+  clock = 105500; mm.queue(c, 'standard');
+  assert.deepEqual(last(c, 'lobby').players.map((p) => p.username), ['b', 'c', 'b0']); assert.equal(last(c, 'lobby').countdownEndsAt, 135500);
+  mm.tick(134000); assert.equal(started.length, 1, 'no bots join while 2 humans count down');
+  clock = 134000; mm.leave(c); assert.equal(last(b, 'lobby').countdownEndsAt, 138000, 'alone again: the next bots join every gap');
+  mm.tick(136000); assert.equal(last(b, 'lobby').players.length, 3); mm.tick(138000); assert.equal(started.length, 2);
+  clock = 200000; const d = player('d'); mm.queue(d, 'standard'); mm.leave(d);
+  assert.equal(mm.stats().lobbies, 0); assert.equal(d.where, null); mm.tick(210000); assert.equal(started.length, 2, 'an emptied lobby is gone');
+}
+console.log('solo lobby tests ok');

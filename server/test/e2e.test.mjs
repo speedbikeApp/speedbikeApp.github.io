@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import WebSocket from 'ws';
 import { createGameServer } from '../index.js';
+import { BOT_NAMES } from '../bots.js';
 import { createDevAuth } from '../auth.js';
 import { createJsonStore } from '../store.js';
 import { defaultRank } from '../../js/ranks.js';
@@ -120,7 +121,7 @@ for (const r of end.ranks) assert.deepEqual([saved[r.uid].tier, saved[r.uid].div
   x.send({ t: 'queue', mode: 'deathmatch' }); y.send({ t: 'queue', mode: 'deathmatch' });
   const [sx] = await Promise.all([x.wait('start'), y.wait('start')]);
   assert.equal(sx.players.length, 4, 'two humans + two bots after the countdown');
-  assert.deepEqual(sx.players.map((p) => !!p.bot), [false, false, true, true]); assert.ok(sx.players.slice(2).every((p) => /^BOT /.test(p.username) && p.uid === null && p.rank === null));
+  assert.deepEqual(sx.players.map((p) => !!p.bot), [false, false, true, true]); assert.ok(sx.players.slice(2).every((p) => BOT_NAMES.includes(p.username) && p.uid === null && p.rank && p.rank.tier));
   assert.equal(new Set(sx.players.map((p) => p.colorIdx)).size, 4);
   await y.wait('round'); await new Promise((r) => setTimeout(r, 300));
   x.ws.terminate(); // socket dropped: charged a loss at once
@@ -135,7 +136,7 @@ for (const r of end.ranks) assert.deepEqual([saved[r.uid].tier, saved[r.uid].div
   const disk = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.deepEqual([disk.x.tier, disk.x.div], ['He', 3]); assert.equal(Object.keys(disk).filter((k) => /bot/i.test(k) || k === 'null').length, 0, 'bots have no rank record');
   // the survivor is free to queue again
-  y.send({ t: 'queue', mode: 'standard' }); assert.equal((await new Promise((res) => { y.waiters.push({ test: (m) => m.t === 'queued', resolve: res }); })).position, 1);
+  y.send({ t: 'queue', mode: 'standard' }); assert.equal((await new Promise((res) => { y.waiters.push({ test: (m) => m.t === 'lobby', resolve: res }); })).players.length, 1, 'alone: a solo lobby of one');
   y.ws.close();
 }
 

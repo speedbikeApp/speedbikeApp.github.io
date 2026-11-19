@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Room } from '../room.js';
 import { createAI, aiThink, makeRng } from '../../js/ai.js';
 import { canTurn } from '../../js/physics.js';
-import { defaultRank } from '../../js/ranks.js';
+import { defaultRank, ladderIndex } from '../../js/ranks.js';
 import { CFG } from '../../js/config.js';
 import { sanitizeLoadout, parseClientMessage } from '../protocol.js';
 import { makeBots, botLevel, BOT_NAMES } from '../bots.js';
@@ -118,11 +118,12 @@ function harness(mode = 'standard', loadouts = [], opts = {}) {
 {
   const bots = makeBots([{ colorIdx: 1, rank: defaultRank() }, { colorIdx: 3, rank: defaultRank() }], 4, 99);
   assert.equal(bots.length, 2); assert.deepEqual(bots.map((b) => b.colorIdx), [0, 2]);
-  assert.ok(bots.every((b) => b.bot && b.uid === null && b.rank === null && b.username.startsWith('BOT ') && BOT_NAMES.includes(b.username.slice(4))));
+  assert.ok(bots.every((b) => b.bot && b.uid === null && BOT_NAMES.includes(b.username) && ladderIndex(b.rank) <= 1), 'player-like names, display rank within one step of He 1');
   assert.notEqual(bots[0].username, bots[1].username);
   assert.equal(makeBots([1, 2, 3, 4].map((c) => ({ colorIdx: c % 4 })), 4).length, 0, 'full lobby: no bots');
   assert.equal(makeBots([{ colorIdx: 0 }, { colorIdx: 1 }, { colorIdx: 2 }], 4).length, 1);
-  const rk = (tier, div) => ({ ...defaultRank(), tier, div });
+  const rk = (tier, div, matches = 9) => ({ ...defaultRank(), tier, div, matches });
+  assert.equal(botLevel([{ rank: rk('He', 1, 0) }, { rank: rk('He', 1, 4) }]), 0, 'all new players: easy'); assert.equal(botLevel([{ rank: rk('He', 1, 0) }, { rank: rk('He', 1) }]), 1, 'one veteran: medium');
   assert.equal(botLevel([{ rank: rk('He', 1) }, { rank: rk('He', 3) }]), 1, 'Helium: medium'); assert.equal(botLevel([{ rank: rk('Ne', 1) }, { rank: rk('Xe', 2) }]), 2, 'Neon+: hard');
   assert.deepEqual(makeBots([{ colorIdx: 0, rank: rk('Xe', 3) }, { colorIdx: 1, rank: rk('Xe', 3) }], 4)[0].loadout, CFG.ai.loadouts[2], 'hard bots carry the singleplayer hard loadout');
 

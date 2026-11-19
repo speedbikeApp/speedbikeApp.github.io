@@ -16,7 +16,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-party-'));
 const store = createJsonStore(path.join(dir, 'ranks.json'));
 const mid = { ...defaultRank(), tier: 'He', div: 2, wins: 1 }; // any win promotes, any loss drops to 0 wins: the rank always changes when ranked
 for (const u of ['uidA', 'uidB', 'uidC', 'uidD']) await store.setRank(u, mid, u);
-const app = createGameServer({ auth: createDevAuth(), store, social: createJsonSocialStore(path.join(dir, 'social.json')), timeScale: 40, countdownMs: 400, log: () => {} });
+const app = createGameServer({ auth: createDevAuth(), store, social: createJsonSocialStore(path.join(dir, 'social.json')), timeScale: 40, countdownMs: 400, soloWaitMs: 600000, log: () => {} });
 const port = await app.listen(0);
 
 function client(uid, username) {
@@ -105,10 +105,10 @@ assert.deepEqual(members(B), ['uidB', 'uidC']);
 
 // ---- party game: B (leader) + C in a party, D solo. The party gets its own room (never mixed with ranked solos): D keeps waiting ----
 D.send({ t: 'queue', mode: 'standard' });
-await D.next('queued');
+await D.next('lobby'); // a solo lobby of one (no bots join: soloWaitMs is long here)
 B.send({ t: 'queue', mode: 'standard' });
 const [sb, sc] = await Promise.all([B.next('start'), C.next('start')]);
-assert.ok(!D.msgs.some((m) => m.t === 'start' || m.t === 'lobby'), 'the solo is not pulled into the party lobby'); assert.equal(D.last('queued').inQueue, 1);
+assert.ok(!D.msgs.some((m) => m.t === 'start') && D.msgs.filter((m) => m.t === 'lobby').every((m) => m.players.length === 1), 'the solo is not pulled into the party lobby');
 assert.ok(C.msgs.some((m) => m.t === 'queued' || m.t === 'lobby'), 'the member was pulled into the queue without asking');
 assert.deepEqual(sb.players.filter((p) => !p.bot).map((p) => p.uid).sort(), ['uidB', 'uidC']); assert.equal(sb.players.filter((p) => p.bot).length, 2, 'two bots fill the empty slots'); assert.equal(sb.seed, sc.seed);
 // leader cannot queue again while in the match; the party survives the game
