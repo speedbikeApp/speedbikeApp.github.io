@@ -6,6 +6,11 @@
 let admin = false;
 const listeners = new Set(), tabs = new Map();
 export const isAdmin = () => admin;
+// Founder badge (welcome.founder / founderUntil, or /health founderUntil before sign-in): display only, the server decides.
+let founder = false, founderUntil = null;
+export const isFounder = () => founder;
+export const getFounderUntil = () => founderUntil;
+export function setFounder(v, until) { founder = v === true; if (until !== undefined) founderUntil = Number.isFinite(until) ? until : null; }
 export function setAdmin(v) { v = v === true; if (v === admin) return; admin = v; for (const fn of [...listeners]) { try { fn(admin); } catch { /* ui bug must not break the socket */ } } }
 export function onAdminChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 

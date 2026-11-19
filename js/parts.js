@@ -1,6 +1,6 @@
 // Garage parts: pure data (no three, no DOM). render.js builds the meshes from the ids; save.js validates against PARTS.
 // A part is {id, name, price, ach?}. price = SBCoins; ach = achievement id that unlocks it (price then ignored);
-// price 0 and no ach = free (owned from the start). Colours are 0xRRGGBB.
+// price 0 and no ach = free (owned from the start); invite:true = earned from the invite link reward only. Colours are 0xRRGGBB.
 import { validateShapes } from './shapedef.js';
 export const CATS = ['body', 'tire', 'rim', 'glow'];
 export const CAT_LABEL = { body: 'BODY', tire: 'TIRES', rim: 'RIMS', glow: 'COLOR' };
@@ -39,6 +39,7 @@ export const BUILTIN_PARTS = {
     { id: 'white', name: 'Ice White', price: 250, color: 0xf2f2ff },
     { id: 'gold', name: 'Gold', price: 0, color: 0xffb300, ach: 'flawless' },
     { id: 'mint', name: 'Mint', price: 0, color: 0x2affb0, ach: 'win3d' },
+    { id: 'invited', name: 'Invited', price: 0, color: 0xff8fa3, invite: true }, // only from an invite-link reward (js/invite.js): not free, not for sale, not shown until owned
   ],
 };
 
@@ -71,11 +72,11 @@ export function applyCatalog(cat) {
   }
 }
 applyCatalog(null);
-export const isShown = (p, owned) => !p.hidden || owned;
+export const isShown = (p, owned) => (!p.hidden && !p.invite) || owned;
 export const partList = (cat) => PARTS[cat] || [];
 export const getPart = (cat, id) => partList(cat).find((p) => p.id === id) || null;
 export const isPartId = (cat, id) => !!getPart(cat, id);
-export const isFreePart = (p) => !p.ach && !(p.price > 0);
+export const isFreePart = (p) => !p.ach && !p.invite && !(p.price > 0);
 export const freeParts = (cat) => partList(cat).filter(isFreePart).map((p) => p.id);
 export const glowHex = (id) => (getPart('glow', id) || getPart('glow', DEFAULT_PARTS.glow)).color;
 
@@ -94,7 +95,7 @@ export function resolveAiColors(playerColor, ai) {
     if (used.some((c) => colorDist(c, a.color) < CLASH_DIST)) {
       let best = null;
       for (const g of PARTS.glow) {
-        if (g.hidden) continue;
+        if (g.hidden || g.invite) continue;
         const d = Math.min(...used.map((c) => colorDist(c, g.color)), ...ai.map((o) => (o === a ? 1e9 : colorDist(o.color, g.color) * 0.5)));
         if (d >= CLASH_DIST && (!best || d > best.d)) best = { d, name: g.name.toUpperCase(), color: g.color };
       }

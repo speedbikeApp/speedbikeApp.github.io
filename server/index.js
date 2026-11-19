@@ -20,6 +20,8 @@ import { createJsonCatalogStore, createFirestoreCatalogStore } from './catalog-s
 import { createCatalog, registerItemOps, createCatalogHandler } from './admin-items.js';
 import { createJsonPushStore, createFirestorePushStore, createPush, registerPushOps } from './push.js';
 import { Parties } from './party.js';
+import { Invites, INVITE } from './invites.js';
+import { createFounders, sessionIcon, parseFounderUntil } from './founder.js';
 import { Matchmaker, LOBBY_MAX } from './matchmaker.js';
 import { Room } from './room.js';
 import { makeBots, newBot } from './bots.js';
@@ -30,7 +32,7 @@ import { createMailer } from './email.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
-// opts: { maps (custom map store, default: in memory), auth, store, social (social store, default: in memory), admin (admin store, default: in memory), adminUsernames (ADMIN_USERNAMES: comma string or array), port, timeScale (TEST ONLY: speeds the sim up), countdownMs, soloWaitMs (wait before bots join a one-human lobby), allowedOrigins:[...] , log, loopMs (scheduler interval, default 16), healthToken (HEALTH_TOKEN: unlocks /health?detail=), maxConnsPerIp (default 20), connRatePerMin (new sockets per IP per minute, default 30) }
+// opts: { maps (custom map store, default: in memory), auth, store, social (social store, default: in memory), admin (admin store, default: in memory), adminUsernames (ADMIN_USERNAMES: comma string or array), port, timeScale (TEST ONLY: speeds the sim up), countdownMs, soloWaitMs (wait before bots join a one-human lobby), allowedOrigins:[...] , log, loopMs (scheduler interval, default 16), healthToken (HEALTH_TOKEN: unlocks /health?detail=), founderUntil (FOUNDER_UNTIL as ms: accounts created before it are founders, null = everybody), createdAt (async uid -> account creation ms, default: first seen by the social store; production: Firebase Auth metadata), inviteRewardCoins / inviteRewardCap (INVITE_REWARD_CAP), maxConnsPerIp (default 20), connRatePerMin (new sockets per IP per minute, default 30) }
 export function createGameServer(opts) {
   const { auth, store, timeScale = 1, allowedOrigins = [], log = console.log } = opts;
   // POST /auth/login (server/login.js). Without opts.login (dev auth / tests) the endpoint answers 503 {code:'unavailable'}.
@@ -44,6 +46,8 @@ export function createGameServer(opts) {
   const mapsHandler = createMapsHandler({ pool: mapPool, allowedOrigins, production: !!opts.production });
   const catalogHandler = createCatalogHandler({ catalog, allowedOrigins, production: !!opts.production, log });
   const push = createPush({ store: opts.push || createJsonPushStore(null), catalog, vapid: opts.vapid, sender: opts.pushSender, allowedOrigins, production: !!opts.production, log });
+  const createdAt = opts.createdAt || ((uid) => socialStore.firstSeen(uid));
+  const founders = createFounders({ until: opts.founderUntil ?? null, createdAt });
   const sessions = new Set(), byUid = new Map(), rooms = new Map();
   // Featured mode: the hourly rotation unless an admin pinned one (override, persisted in the catalog store so it survives restarts).
   let override = null, featured = featuredMode(Date.now()), onlineTimer = null, nextRoomId = 0;
@@ -64,7 +68,7 @@ export function createGameServer(opts) {
   const social = new Social({
     store: socialStore, log, getRank: (uid) => store.getRank(uid),
     liveRank: (uid) => byUid.get(uid)?.rank, isOnline: (uid) => !!byUid.get(uid)?.authed,
-    send: (uid, m) => byUid.get(uid)?.send(m),
+    send: (uid, m) => byUid.get(uid)?.send(m), isFounder: (uid) => founders.is(uid),
   });
 
   // Admin console (server/admin.js): ops are registered by module; PLAYERS in admin-players.js. Other modules: `admin.register(op, handler)` (exposed on the returned object).
@@ -81,10 +85,13 @@ export function createGameServer(opts) {
   const parties = new Parties({
     log, send: (uid, m) => byUid.get(uid)?.send(m), isOnline: (uid) => !!byUid.get(uid)?.authed, isFriend: (a, b) => social.isFriend(a, b),
     isBusy: (uid) => { const s = byUid.get(uid); return !!s && (!!s.where || !!s.room); },
-    info: (uid) => { const s = byUid.get(uid); return s && s.authed ? { username: s.username, rank: s.rank } : null; },
+    info: (uid) => { const s = byUid.get(uid); return s && s.authed ? { username: s.username, rank: s.rank, founder: s.founder } : null; },
     onMemberOut: (uid) => { const s = byUid.get(uid); if (s && queued(s)) { mm.leave(s); s.send({ t: 'unqueued', reason: 'party' }); } },
     onDisband: (uid) => { const s = byUid.get(uid); if (s && s.where) s.group = null; }, // a lone leftover in a queue / lobby is a normal ranked solo again
   });
+
+  const nameOf = async (uid) => byUid.get(uid)?.username || (await social.resolveNames([uid])).map.get(uid) || 'PLAYER';
+  const invites = new Invites({ store: socialStore, social, parties, log, isNew: async (uid) => Date.now() - (await createdAt(uid)) < INVITE.newAccountMs, isOnline: (uid) => !!byUid.get(uid)?.authed, isBusy: (uid) => { const s = byUid.get(uid); return !!s && (!!s.where || !!s.room); }, nameOf, send: (uid, m) => byUid.get(uid)?.send(m), rewardCoins: opts.inviteRewardCoins, rewardCap: opts.inviteRewardCap });
 
   const mm = new Matchmaker({
     countdownMs: opts.countdownMs, soloWaitMs: opts.soloWaitMs, makeBot: newBot, // admin can switch bots off (botsOn below) // solo lobbies: one human + bots that join one by one
@@ -144,6 +151,7 @@ export function createGameServer(opts) {
         s.room = null; s.where = null;
         s.rank = out[p.id].rankAfter; social.noteRank(p.uid, s.rank);
         s.send({ t: 'end', mode: room.mode, reason, ranks: out });
+        if (reason !== 'stopped') invites.onMatchEnd(p.uid).catch((e) => log('[invite] reward failed:', e.message)); // first finished online match of an invited player
       }
       for (const a of announcements) broadcastAll({ t: 'announce', ...a });
       log(`[room ${room.id}] ended (${reason}): ${out.map((r) => `${r.username}#${r.place}${r.change !== 'none' ? ' ' + r.change : ''}`).join(' ')}`);
@@ -171,16 +179,17 @@ export function createGameServer(opts) {
       const ban = await admin.activeBan(id.uid); // banned accounts never get a welcome (js/net.js shows the message)
       if (s.dead) return;
       if (ban) { s.send({ t: 'banned', ...banView(ban) }); log(`[admin] refused banned ${id.uid}`); s.ws.close(4003, 'banned'); return; }
-      s.admin = await admin.isAdmin(id.uid, id.username); s.ban = null;
+      s.admin = await admin.isAdmin(id.uid, id.username); s.ban = null; s.founder = await founders.is(id.uid);
       if (s.dead) return;
       const old = byUid.get(id.uid);
       if (old && old !== s) { old.send({ t: 'error', code: 'replaced', message: 'signed in from another place' }); old.replaced = true; cleanup(old); old.ws.close(4002, 'replaced'); }
       s.uid = id.uid; s.username = id.username; s.rank = await store.getRank(id.uid);
       if (s.dead) return;
       s.authed = true; byUid.set(s.uid, s);
-      s.send({ t: 'welcome', uid: s.uid, username: s.username, rank: s.rank, serverNow: Date.now(), ...rotationInfo(Date.now()), online: online(), admin: s.admin });
+      s.send({ t: 'welcome', uid: s.uid, username: s.username, rank: s.rank, serverNow: Date.now(), ...rotationInfo(Date.now()), online: online(), admin: s.admin, founder: s.founder, founderUntil: founders.until });
       announceOnline(); sendSping(s);
       parties.onConnect(s.uid);
+      invites.deliver(s.uid).catch((e) => log('[invite] deliver failed:', e.message));
       social.onConnect(s.uid, s.username).catch((e) => log('[social] connect failed:', e.message));
     } catch (e) {
       s.send({ t: 'error', code: 'auth_failed', message: 'authentication failed' });
@@ -216,6 +225,7 @@ export function createGameServer(opts) {
         return;
       case 'admin': return void admin.handle(s, msg);
       case 'in': if (s.room) s.room.input(s.bikeId, msg); return;
+      case 'invget': case 'invreset': case 'invuse': return void onInvite(s, msg);
       case 'pinvite': case 'paccept': case 'pdecline': case 'pkick': case 'ptransfer': case 'pleave': case 'plist': return void onParty(s, msg);
       default: return void onSocial(s, msg);
     }
@@ -258,6 +268,18 @@ export function createGameServer(opts) {
     }
   }
 
+  // Invite links (docs/MULTIPLAYER.md "Invite links"): invget / invreset -> invcode {code}; invuse {code} -> invres {ok, code | username, joined}.
+  async function onInvite(s, msg) {
+    if (!s.inviteLimiter.take()) return s.send(msg.t === 'invuse' ? { t: 'invres', ok: false, code: 'rate_limited' } : { t: 'error', code: 'rate_limited', message: 'slow down' });
+    try {
+      if (msg.t === 'invuse') return void s.send({ t: 'invres', ...(await invites.use(s.uid, msg.code)) });
+      s.send({ t: 'invcode', code: await (msg.t === 'invreset' ? invites.reset(s.uid) : invites.codeOf(s.uid)) });
+    } catch (e) {
+      log(`[invite] ${msg.t} failed:`, e.message);
+      s.send(msg.t === 'invuse' ? { t: 'invres', ok: false, code: 'unavailable' } : { t: 'error', code: 'unavailable', message: 'try again' });
+    }
+  }
+
   // Friends protocol (docs/MULTIPLAYER.md "Social"). Every intent is validated + rate limited per connection; results come back as `fres`.
   async function onSocial(s, msg) {
     const op = msg.t, res = (o) => s.send({ t: 'fres', op, ...(msg.uid ? { uid: msg.uid } : {}), ...o });
@@ -291,9 +313,16 @@ export function createGameServer(opts) {
     if (req.url.startsWith('/push/')) return void push.handler(req, res).catch((e) => { log('[push] crashed:', e.message); if (!res.headersSent) res.writeHead(500); res.end(); });
     if (req.url.split('?')[0] === '/maps') return void mapsHandler(req, res).catch((e) => { log('[maps] failed:', e.message); if (!res.headersSent) res.writeHead(503); res.end(); });
     res.setHeader('Access-Control-Allow-Origin', '*');
+    if (req.url.split('?')[0] === '/invite') { // sign-up page: who owns this invite code? (public, rate limited per IP; the code is already in the shared link)
+      const json = (st, o) => { res.writeHead(st, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(o)); };
+      if (!inviteLookups.hit(clientIp(req)).ok) return json(429, { ok: false });
+      const code = new URL(req.url, 'http://x').searchParams.get('code') || '';
+      if (!/^[\w-]{8,32}$/.test(code)) return json(400, { ok: false });
+      return void invites.who(code).then((username) => json(username ? 200 : 404, username ? { ok: true, username } : { ok: false }), () => json(503, { ok: false }));
+    }
     if (req.url.split('?')[0] === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      const o = { ok: true, online: online(), featured }, tok = new URL(req.url, 'http://x').searchParams.get('detail');
+      const o = { ok: true, online: online(), featured, founderUntil: founders.until }, tok = new URL(req.url, 'http://x').searchParams.get('detail');
       const h = (v) => createHash('sha256').update(String(v)).digest(); // equal-length digests for the constant-time compare
       if (opts.healthToken && tok && timingSafeEqual(h(tok), h(opts.healthToken)))
         Object.assign(o, { auth: auth.mode, store: store.kind, rooms: rooms.size, ...mm.stats(), uptime: Math.round(process.uptime()), loop: loopView(), roomStats: [...rooms.values()].map((r) => r.statsView()) });
@@ -306,16 +335,16 @@ export function createGameServer(opts) {
     server, maxPayload: MAX_ADMIN,
     verifyClient: ({ origin }) => !allowedOrigins.length || allowedOrigins.includes(origin),
   });
-  const ipConns = new Map(), connRate = new WindowLimiter(opts.connRatePerMin ?? 30, 60000), maxConns = opts.maxConnsPerIp ?? 20; // per client IP: open sockets + new sockets per minute
+  const inviteLookups = new WindowLimiter(20, 60000), ipConns = new Map(), connRate = new WindowLimiter(opts.connRatePerMin ?? 30, 60000), maxConns = opts.maxConnsPerIp ?? 20; // per client IP: open sockets + new sockets per minute
   wss.on('connection', (ws, req) => {
     const ip = clientIp(req);
     if ((ipConns.get(ip) || 0) >= maxConns || !connRate.hit(ip).ok) return ws.close(1013, 'too many connections');
     ipConns.set(ip, (ipConns.get(ip) || 0) + 1);
     const s = {
       ws, uid: null, username: '', rank: null, where: null, authed: false, helloPending: false, dead: false, alive: true, violations: 0,
-      room: null, bikeId: -1, colorIdx: 0, group: null, rtt: null, sping: null, loadout: [], admin: false, ban: null, iconPick: null,
-      get icon() { return this.iconPick === null ? (this.admin ? 'admin' : '') : this.iconPick === 'admin' && !this.admin ? '' : this.iconPick; }, // name icon: the player's pick, admin only while admin
-      limiter: new RateLimiter(20, 30), searchLimiter: new RateLimiter(0.7, 5), socialLimiter: new RateLimiter(1, 10), partyLimiter: new RateLimiter(2, 12), inLimiter: new RateLimiter(30, 30),
+      room: null, bikeId: -1, colorIdx: 0, group: null, rtt: null, sping: null, loadout: [], admin: false, founder: false, ban: null, iconPick: null,
+      get icon() { return sessionIcon(this.iconPick, this.admin, this.founder); }, // name icon: the player's pick, admin / founder only while the account has it
+      inviteLimiter: new RateLimiter(0.2, 5), limiter: new RateLimiter(20, 30), searchLimiter: new RateLimiter(0.7, 5), socialLimiter: new RateLimiter(1, 10), partyLimiter: new RateLimiter(2, 12), inLimiter: new RateLimiter(30, 30),
       send: (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); },
     };
     sessions.add(s);
@@ -354,7 +383,7 @@ export function createGameServer(opts) {
   }, 15000);
 
   return {
-    server, wss, mm, rooms, sessions, parties, admin, push, adminStore, mapStore, mapPool,
+    server, wss, mm, rooms, sessions, parties, invites, founders, admin, push, adminStore, mapStore, mapPool,
     listen: (port = opts.port ?? 8787) => new Promise((resolve) => server.listen(port, () => resolve(server.address().port))),
     async close() {
       clearInterval(loop); clearInterval(beat); clearInterval(spingTimer); clearTimeout(onlineTimer);
@@ -371,9 +400,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const env = process.env;
   const mode = resolveAuthMode(env);
   const allowedOrigins = (env.ALLOWED_ORIGINS || '').split(',').map((v) => v.trim()).filter(Boolean), production = env.NODE_ENV === 'production';
-  let auth, store, login, accounts, social, adminStore, catalogStore, mapStore, pushStore;
+  let auth, store, login, accounts, social, adminStore, catalogStore, mapStore, pushStore, createdAt;
   if (mode === 'firebase') {
     const fb = await createFirebaseAuth(env); auth = fb.auth; store = createFirestoreStore(fb.db); social = createFirestoreSocialStore(fb.db, fb.FieldPath);
+    createdAt = async (uid) => Date.parse((await fb.fbAuth.getUser(uid)).metadata.creationTime); // Firebase Auth, not client-writable Firestore docs
     adminStore = createFirestoreAdminStore(fb.db, fb.fbAuth); catalogStore = createFirestoreCatalogStore(fb.db); mapStore = createFirestoreMapStore(fb.db); pushStore = createFirestorePushStore(fb.db);
     login = createLoginHandler({ enabled: true, allowedOrigins, production, log: console.log, banOf: async (uid) => { const b = await adminStore.getBan(uid); return banActive(b) ? b : null; }, ...createFirebaseLoginDeps({ db: fb.db, auth: fb.fbAuth }, env) });
     accounts = createAccountsHandler({ enabled: true, allowedOrigins, production, log: console.log, publicUrl: env.PUBLIC_URL || undefined, mailer: createMailer(env, { production }), deps: createFirebaseAccountDeps({ db: fb.db, auth: fb.fbAuth }) });
@@ -385,7 +415,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   console.log(`[server] auth=${auth.mode} ranks=${store.kind}`);
   const app = createGameServer({
     auth, store, social, admin: adminStore, catalog: catalogStore, maps: mapStore, push: pushStore, adminUsernames: env.ADMIN_USERNAMES, timeScale: Number(env.TIME_SCALE) || 1, // TIME_SCALE is for tests only
-    countdownMs: Number(env.LOBBY_COUNTDOWN_MS) || undefined,
+    countdownMs: Number(env.LOBBY_COUNTDOWN_MS) || undefined, createdAt, founderUntil: parseFounderUntil(env.FOUNDER_UNTIL), inviteRewardCap: Number(env.INVITE_REWARD_CAP) || undefined,
     allowedOrigins, login, accounts, production, healthToken: env.HEALTH_TOKEN,
   });
   const port = await app.listen(Number(env.PORT) || 8787);

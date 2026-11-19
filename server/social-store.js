@@ -9,24 +9,36 @@
 //   listUsers(after, n)      -> [{ uid, username, key }] up to n users ordered by key (= lowercase username) after the cursor `after` ('' = start)
 //   noteUser(uid, username)  -> dev mode only: remembers who connected (Firestore has users/{uid} + usernames/{lowercase} already)
 //   deleteLinks(uid)         -> drops the friendship doc of a deleted account
+//   getInv(uid) / updInv(uids, fn) -> invite state per user {code, invitedBy, rewarded, done, pending:[{coins,name}]} (updInv = update() for these docs)
+//   getCode(code) -> uid | null   putCode(code, uid) -> false when taken   delCode(code)      (invite link codes, server/invites.js)
+//   firstSeen(uid)           -> dev mode only: ms the uid was first seen (the Founder rule needs an account creation time; production reads Firebase Auth)
 //   flush()
-// Firestore model: `friends/{uid}` = { friends:[uid], incoming:[uid], outgoing:[uid] } (Admin SDK only: firestore.rules has no rule for it, so clients are denied).
+// Firestore model: `friends/{uid}` = { friends:[uid], incoming:[uid], outgoing:[uid] }, `invites/{uid}` = the invite state, `invitecodes/{code}` = { uid } (Admin SDK only: firestore.rules has no rule for them, so clients are denied).
 import fs from 'node:fs';
 import path from 'node:path';
 
 const emptyLinks = () => ({ friends: [], incoming: [], outgoing: [] });
 const cleanList = (v) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string' && x))] : []);
 export const normalizeLinks = (raw) => (raw && typeof raw === 'object' ? { friends: cleanList(raw.friends), incoming: cleanList(raw.incoming), outgoing: cleanList(raw.outgoing) } : emptyLinks());
+export const emptyInv = () => ({ code: '', invitedBy: '', rewarded: 0, done: false, pending: [] });
+export const normalizeInv = (r) => {
+  const o = r && typeof r === 'object' ? r : {}, n = (v) => (Number.isInteger(v) && v > 0 ? v : 0);
+  return { code: typeof o.code === 'string' ? o.code : '', invitedBy: typeof o.invitedBy === 'string' ? o.invitedBy : '', rewarded: n(o.rewarded), done: o.done === true,
+    pending: (Array.isArray(o.pending) ? o.pending : []).filter((p) => p && n(p.coins) && typeof p.name === 'string').slice(0, 20).map((p) => ({ coins: p.coins, name: p.name })) };
+};
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 // Dev / tests: one JSON file (or memory only when `file` is falsy), same semantics as the Firestore store.
 export function createJsonSocialStore(file) {
-  const links = new Map(), users = new Map();
+  const links = new Map(), users = new Map(), inv = new Map(), codes = new Map(), seen = new Map();
   if (file) {
     try {
       const o = JSON.parse(fs.readFileSync(file, 'utf8'));
       for (const [uid, v] of Object.entries(o.links || {})) links.set(uid, normalizeLinks(v));
       for (const [uid, v] of Object.entries(o.users || {})) if (v && typeof v.username === 'string') users.set(uid, { username: v.username });
+      for (const [uid, v] of Object.entries(o.inv || {})) inv.set(uid, normalizeInv(v));
+      for (const [c, uid] of Object.entries(o.codes || {})) if (typeof uid === 'string') codes.set(c, uid);
+      for (const [uid, t] of Object.entries(o.seen || {})) if (Number.isFinite(t)) seen.set(uid, t);
     } catch (e) {
       if (e.code !== 'ENOENT') { console.warn(`[social] could not read ${file} (${e.message}); starting empty`); try { fs.renameSync(file, file + '.corrupt-' + Date.now()); } catch { /* ignore */ } }
     }
@@ -35,7 +47,7 @@ export function createJsonSocialStore(file) {
   const save = () => { if (!file) return chain; return (chain = chain.then(async () => {
     await fs.promises.mkdir(path.dirname(file), { recursive: true });
     const tmp = `${file}.${process.pid}.tmp`;
-    await fs.promises.writeFile(tmp, JSON.stringify({ links: Object.fromEntries(links), users: Object.fromEntries(users) }, null, 1));
+    await fs.promises.writeFile(tmp, JSON.stringify({ links: Object.fromEntries(links), users: Object.fromEntries(users), inv: Object.fromEntries(inv), codes: Object.fromEntries(codes), seen: Object.fromEntries(seen) }, null, 1));
     await fs.promises.rename(tmp, file);
   }).catch((e) => console.error('[social] save failed:', e.message))); };
   const get = (uid) => links.get(uid) || emptyLinks();
@@ -60,14 +72,27 @@ export function createJsonSocialStore(file) {
       return [...users].map(([uid, u]) => ({ uid, username: u.username, key: u.username.toLowerCase() })).filter((u) => u.key > after).sort((a, b) => (a.key < b.key ? -1 : 1)).slice(0, limit);
     },
     async noteUser(uid, username) { if (!users.has(uid) || users.get(uid).username !== username) { users.set(uid, { username }); save(); } },
-    async deleteUser(uid) { users.delete(uid); links.delete(uid); save(); }, // tests (simulates account deletion)
+    async deleteUser(uid) { users.delete(uid); links.delete(uid); inv.delete(uid); save(); }, // tests (simulates account deletion)
     async deleteLinks(uid) { links.delete(uid); save(); },
+    async getInv(uid) { return normalizeInv(inv.get(uid)); },
+    async updInv(uids, fn) { // atomic like update()
+      const m = new Map(uids.map((u) => [u, normalizeInv(inv.get(u))]));
+      const res = await fn(m);
+      if (res && res.ok === false) return res;
+      for (const [u, v] of m) inv.set(u, v);
+      save();
+      return res;
+    },
+    async getCode(code) { return codes.get(code) || null; },
+    async putCode(code, uid) { if (codes.has(code)) return false; codes.set(code, uid); save(); return true; },
+    async delCode(code) { codes.delete(code); save(); },
+    async firstSeen(uid) { if (!seen.has(uid)) { seen.set(uid, Date.now()); save(); } return seen.get(uid); },
     flush: () => chain,
   };
 }
 
 export function createFirestoreSocialStore(db, FieldPath) {
-  const col = db.collection('friends'), users = db.collection('users'), names = db.collection('usernames');
+  const col = db.collection('friends'), invCol = db.collection('invites'), codeCol = db.collection('invitecodes'), users = db.collection('users'), names = db.collection('usernames');
   return {
     kind: 'firestore',
     async getLinks(uid) { const s = await col.doc(uid).get(); return s.exists ? normalizeLinks(s.data()) : emptyLinks(); },
@@ -112,6 +137,22 @@ export function createFirestoreSocialStore(db, FieldPath) {
     },
     async noteUser() {},
     async deleteLinks(uid) { await col.doc(uid).delete(); },
+    async getInv(uid) { const s = await invCol.doc(uid).get(); return normalizeInv(s.exists ? s.data() : null); },
+    async updInv(uids, fn) {
+      const refs = uids.map((u) => invCol.doc(u));
+      return db.runTransaction(async (tx) => {
+        const snaps = await tx.getAll(...refs);
+        const m = new Map(uids.map((u, i) => [u, normalizeInv(snaps[i].exists ? snaps[i].data() : null)]));
+        const before = new Map([...m].map(([u, v]) => [u, structuredClone(v)]));
+        const res = await fn(m);
+        if (res && res.ok === false) return res;
+        uids.forEach((u, i) => { if (!same(before.get(u), m.get(u))) tx.set(refs[i], m.get(u)); });
+        return res;
+      });
+    },
+    async getCode(code) { const s = await codeCol.doc(code).get(); return s.exists && typeof s.data().uid === 'string' ? s.data().uid : null; },
+    async putCode(code, uid) { try { await codeCol.doc(code).create({ uid }); return true; } catch (e) { if (e && (e.code === 6 || /already exists/i.test(e.message))) return false; throw e; } },
+    async delCode(code) { await codeCol.doc(code).delete(); },
     flush: async () => {},
   };
 }

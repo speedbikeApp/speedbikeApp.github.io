@@ -8,7 +8,7 @@ import { net } from './online.js';
 import { party, PARTY_ERR, PARTY_GONE, partyEventText } from './party.js';
 import { isSignedIn } from './account-ui.js';
 import { setPartyHooks, render as renderFriends } from './friends-ui.js';
-import { showAnnounce } from './hud.js';
+import { showAnnounce, FOUNDER_ICON } from './hud.js';
 
 const $ = (id) => document.getElementById(id);
 let openUid = null;   // member whose TRANSFER / KICK menu is open (leader only)
@@ -31,6 +31,7 @@ export function renderParty() {
     if (clickable) { chip.type = 'button'; chip.dataset.uid = m.uid; chip.title = 'Party options'; }
     if (isLead) chip.append(crown());
     chip.append(el('span', 'n', m.username));
+    if (m.founder) chip.insertAdjacentHTML('beforeend', FOUNDER_ICON); // fixed markup
     if (!m.online) chip.title = 'Offline - removed after 30 s';
     row.appendChild(chip);
   }

@@ -2,9 +2,10 @@
 // User-provided strings are only ever written with textContent / .value. Passwords are never logged or stored here.
 import * as auth from './auth.js';
 import { setUsername, saveSoon, getSave } from './save.js';
-import { isAdmin } from './admin-core.js';
+import { isAdmin, isFounder, getFounderUntil, setFounder } from './admin-core.js';
 import { levelInfo } from './levels.js';
 import { setPlayerName } from './hud.js';
+import { readInviteParam, inviterName } from './invite.js';
 import { cloudUserChanged, flushCloud, initCloudSave, setOnApplied } from './cloudsave.js';
 
 const $ = (id) => document.getElementById(id);
@@ -14,6 +15,7 @@ let onBack = () => {}, openScreen = () => {};
 let signup = null, resendAt = 0, resendTimer = 0; // sign-up in progress: {email, password} live in memory only; resend cooldown
 let newAccount = () => {}, justRegistered = false; // chose the first username of a brand-new account: start the tutorial
 let toMain = false; // login / sign-up in progress: go to the main menu once a NAMED user arrives
+let inviter = ''; // username that invited this (signed-out) visitor, from ?invite=
 let resetToken = ''; // one-time token from ?reset=... of the mailed link
 const VIEW = { login: 'acLogin', register: 'acReg', code: 'acCode', forgotpw: 'acFgPw', forgotuser: 'acFgUser', reset: 'acReset' };
 const waking = (id) => ({ onStatus: (st) => { if (st === 'waking') setMsg($(id), 'Waking up the server... (can take up to a minute)', 'wait'); } });
@@ -23,6 +25,8 @@ export const accountName = () => (user ? user.username : '');
 
 function statusLine() {
   const s = auth.status(), mock = s.mode === 'mock' ? ' (DEV MOCK)' : '';
+  const fu = getFounderUntil(); $('mFounder').hidden = !!user || !(fu > Date.now());
+  if (!$('mFounder').hidden) $('mFounder').textContent = `SIGN UP BEFORE ${new Date(fu).toLocaleDateString()} FOR THE PERMANENT FOUNDER ♧ BADGE`;
   $('mAcct').textContent = user ? (user.username ? `SIGNED IN AS ${user.username}${mock}` : 'FINISH SIGN-UP: CHOOSE A USERNAME') : s.configured ? `GUEST${mock}` : 'GUEST - OFFLINE';
 }
 
@@ -165,15 +169,16 @@ export function renderAccount() {
   $('acPickBox').hidden = !s.configured || !pick || tab === 'reset';
   $('acIn').hidden = !s.configured || !user || pick || tab === 'reset';
   if (user) { $('acName').textContent = user.username; $('acMail').textContent = user.email; renderIconPick(); }
+  $('acInvBy').hidden = !inviter || !!user; $('acInvBy').textContent = `${inviter} INVITED YOU`;
   setTab(tab);
   statusLine();
 }
 
-// Icon next to the name (lobby, scoreboard, results): AUTO / NONE + the ones this player has (admin pencil, prestige star).
+// Icon next to the name (lobby, scoreboard, results): AUTO / NONE + the ones this player has (admin pencil, founder club, prestige star).
 let iconChanged = () => {}, refreshMenu = () => {};
 function renderIconPick() {
   const sel = $('acIcon'), p = levelInfo().prestige | 0, cur = getSave().profile.nameIcon;
-  const opts = [['auto', 'AUTO'], ['none', 'NONE'], ...(isAdmin() || cur === 'admin' ? [['admin', '✎ ADMIN']] : []), ...(p > 0 || cur === 'star' ? [['star', `✪${p} PRESTIGE`]] : [])];
+  const opts = [['auto', 'AUTO'], ['none', 'NONE'], ...(isAdmin() || cur === 'admin' ? [['admin', '✎ ADMIN']] : []), ...(isFounder() || cur === 'founder' ? [['founder', '♧ FOUNDER']] : []), ...(p > 0 || cur === 'star' ? [['star', `✪${p} PRESTIGE`]] : [])];
   sel.textContent = '';
   for (const [v, t] of opts) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); }
   sel.value = cur;
@@ -227,8 +232,13 @@ export async function initAccountUi(h) {
   $('acDelShow').addEventListener('click', () => { $('acDelShow').hidden = true; $('acDelForm').hidden = false; validateForm('acDelForm', false); $('acDelPw').focus(); });
   $('acDelCancel').addEventListener('click', () => { resetForms(); $('acDelShow').focus(); });
   statusLine();
+  const code = readInviteParam(); // ?invite=CODE (js/invite.js): the sign-up page says who invited you; the code is used after sign-in
   await auth.init();
   auth.onAuthChange(onUser);
+  if (!user) {
+    if (code) inviterName(code).then((n) => { if (n) { inviter = n; if (!user) { tab = 'register'; renderAccount(); try { openScreen(); } catch { /* ignore */ } } } });
+    fetch(auth.authServerUrl('/health')).then((r) => r.json()).then((j) => { setFounder(false, j.founderUntil ?? null); statusLine(); }).catch(() => {}); // cutoff for the main-menu line (signed in: welcome)
+  }
   resetToken = auth.resetTokenOf(globalThis.location?.search || '');
   if (resetToken) { setTab('reset'); renderAccount(); try { openScreen(); } catch { /* ignore */ } } // opened from the mailed link
 }

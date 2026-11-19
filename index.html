@@ -264,7 +264,8 @@
   /* ---- friends ---- */
   .fi { width: 10px; height: 12px; flex: none; color: #3aa0ff; filter: drop-shadow(0 0 3px #3aa0ff); vertical-align: middle; margin: 0 2px; }
   .hrow .fi { width: 9px; height: 11px; margin: 0; }
-  .ai { color: #fc3; text-shadow: 0 0 4px #fc3; margin: 0 2px; font-size: 1em; }
+  .ai { color: #fc3; text-shadow: 0 0 4px #fc3; margin: 0 2px; font-size: 1em; } .ai.fo { color: #4df; text-shadow: 0 0 4px #4df; }
+  #mFounder { font-size: 11px; letter-spacing: 2px; color: #4df; text-shadow: 0 0 6px #4df; text-align: center; } #acInvBy { font-size: 13px; letter-spacing: 2px; color: #fc3; text-align: center; margin-bottom: 6px; }
   #mFriends { min-width: 0; min-height: 40px; padding: 6px 14px; font-size: 14px; letter-spacing: 2px; display: flex; align-items: center; gap: 8px; }
   #mFriends .fi { width: 14px; height: 16px; }
   /* ---- admin ---- */
@@ -459,6 +460,7 @@
     <button id="mLogin" class="mbtn frame" type="button" hidden>LOGIN</button>
     <div id="coinLine"><span class="coins">SBCOINS <b id="mCoins">0</b></span> &nbsp; <span id="mName"></span></div>
     <div id="mAcct"></div>
+    <div id="mFounder" hidden></div>
     <button id="mProfile" class="frame" type="button" aria-label="Profile">
       <span class="pfDia"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="15" r="7" fill="currentColor"/><path d="M5 40c0-10 6-15 15-15s15 5 15 15z" fill="currentColor"/></svg></span>
       <span class="pfTxt"><b id="pfName"></b><span id="pfLvl"></span><span id="pfBar" class="xpbar"><i></i></span><small id="pfXp"></small><em id="pfPick" hidden>FREE UNLIMITED PICK!</em></span>
@@ -537,6 +539,7 @@
         <button class="mbtn frame" type="button" data-tab="req">REQUESTS <b id="frReqN" class="fbadge" hidden></b></button>
         <button class="mbtn frame" type="button" data-tab="add">ADD</button>
       </div>
+      <div id="frInv" class="mrow"><button id="frInvite" class="mbtn frame" type="button">INVITE LINK</button><button id="frInviteNew" class="mbtn frame" type="button" title="Make a new link; the old one stops working">NEW LINK</button></div>
       <div id="frList" class="frPane"></div>
       <div id="frReq" class="frPane" hidden></div>
       <div id="frAdd" class="frPane" hidden>
@@ -628,6 +631,7 @@
     <div id="acMock" class="acMock" hidden>DEV MOCK BACKEND - NOT REAL ACCOUNTS</div>
     <div id="acOff" class="acNote" hidden><b id="acOffMsg">Online accounts not configured</b><small>The game works fully offline. See README: Online accounts (Firebase setup).</small></div>
     <div id="acOut" class="acBox" hidden>
+      <div id="acInvBy" hidden></div>
       <div id="acTabs" class="mrow"><button class="mbtn frame sel" type="button" data-tab="login">LOGIN</button><button class="mbtn frame" type="button" data-tab="register">REGISTER</button></div>
       <form id="acLogin" class="acForm" novalidate>
         <label class="fld"><span>EMAIL OR USERNAME</span><input id="acLoginEmail" type="text" autocomplete="username" spellcheck="false" autocapitalize="off" maxlength="254"><small class="hint" aria-live="polite"></small></label>

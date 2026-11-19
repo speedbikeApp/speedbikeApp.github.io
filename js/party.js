@@ -9,7 +9,7 @@ export function createParty(now = () => (typeof performance !== 'undefined' ? pe
   const emit = () => { for (const fn of [...listeners]) { try { fn(); } catch (e) { if (typeof console !== 'undefined') console.error(e); } } };
   const cleanParty = (p) => (p && typeof p === 'object' && Array.isArray(p.members) && typeof p.leader === 'string' ? {
     id: p.id, leader: p.leader, max: Number(p.max) || PARTY_MAX,
-    members: p.members.filter((m) => m && typeof m.uid === 'string').map((m) => ({ uid: m.uid, username: String(m.username ?? '?'), rank: m.rank || null, online: m.online !== false })),
+    members: p.members.filter((m) => m && typeof m.uid === 'string').map((m) => ({ uid: m.uid, username: String(m.username ?? '?'), rank: m.rank || null, online: m.online !== false, ...(m.founder ? { founder: true } : {}) })),
   } : null);
   const api = {
     state: s,
@@ -64,6 +64,7 @@ export function partyEventText(e) {
   const n = e && e.username;
   switch (e && e.kind) {
     case 'invite': return `${n} invited you to a party`;
+    case 'invlink': return `${n} opened your invite link`;
     case 'joined': return `${n} joined the party`;
     case 'left': return `${n} left the party`;
     case 'kicked': return `${n} was kicked from the party`;

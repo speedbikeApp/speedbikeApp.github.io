@@ -21,7 +21,7 @@ import { awardXp } from './levels.js';
 import { getSave, addCoins, coinsForPlacement, abilityCharges, spendAbility, spendPassives, usableAbilities } from './save.js';
 import { social } from './social.js';
 import { party } from './party.js';
-import { setAdmin, isAdmin, createCaller } from './admin-core.js';
+import { setAdmin, isAdmin, setFounder, isFounder, createCaller } from './admin-core.js';
 import { levelInfo } from './levels.js';
 import { resyncCloud } from './cloudsave.js';
 import * as qt from './questtrack.js';
@@ -29,21 +29,22 @@ import * as qt from './questtrack.js';
 // ---------------------------------------------------------------- presence (menus)
 export const net = createNet({ url: () => serverUrl(globalThis.location ? globalThis.location.search : ''), getHello: () => buildHello(auth) });
 export const mp = { rank: null, online: null, featured: null, nextRotation: 0, manual: false }; // manual: an admin pinned the featured mode (no countdown)
-net.on('welcome', (m) => { setAdmin(m.admin === true); sendNameIcon(); party.setMe(m.uid); mp.rank = m.rank || null; mp.online = m.online ?? null; mp.featured = m.featured || null; mp.nextRotation = m.nextRotation || 0; mp.manual = m.manual === true; });
+net.on('welcome', (m) => { setAdmin(m.admin === true); setFounder(m.founder, m.founderUntil ?? null); sendNameIcon(); party.setMe(m.uid); mp.rank = m.rank || null; mp.online = m.online ?? null; mp.featured = m.featured || null; mp.nextRotation = m.nextRotation || 0; mp.manual = m.manual === true; });
 net.on('online', (m) => { mp.online = m.online; });
 net.on('rotation', (m) => { mp.featured = m.featured; mp.nextRotation = m.nextRotation; mp.manual = m.manual === true; });
 net.on('rank', (m) => { mp.rank = m.rank; });
 net.on('announce', (m) => showAnnounce(m.text, m.kind));
-net.on('status', (s) => { if (s.state !== 'online') { mp.online = null; } if (s.state === 'idle' || s.state === 'denied') { social.reset(); party.reset(); setAdmin(false); } });
+net.on('status', (s) => { if (s.state !== 'online') { mp.online = null; } if (s.state === 'idle' || s.state === 'denied') { social.reset(); party.reset(); setAdmin(false); setFounder(false); } });
 // Admin console (server/admin.js): `adminCall(op, args)` -> Promise<{ok,...}>; the server pushes `adminstate` when our rights change.
 const adminCaller = createCaller((m) => net.send(m));
 export const adminCall = adminCaller.call;
 net.on('ares', (m) => adminCaller.resolve(m));
 net.on('adminstate', (m) => { setAdmin(m.admin === true); sendNameIcon(); });
-/** The icon next to my name (account screen: profile.nameIcon 'auto' | 'none' | 'admin' | 'star') as the wire value. auto = admin, else the prestige star. */
+/** The icon next to my name (account screen: profile.nameIcon 'auto' | 'none' | 'admin' | 'founder' | 'star') as the wire value. auto = admin, else founder, else the prestige star. */
 export function nameIconWire() {
   const c = getSave().profile.nameIcon || 'auto', p = Math.min(99, levelInfo().prestige | 0), star = p > 0 ? 'star:' + p : '';
-  return c === 'none' ? '' : c === 'admin' ? (isAdmin() ? 'admin' : '') : c === 'star' ? star : isAdmin() ? 'admin' : star;
+  const adm = isAdmin() ? 'admin' : '', fo = isFounder() ? 'founder' : '';
+  return c === 'none' ? '' : c === 'admin' ? adm : c === 'founder' ? fo : c === 'star' ? star : adm || fo || star;
 }
 export function sendNameIcon() { if (net.state === 'online') net.send({ t: 'icon', icon: nameIconWire() }); }
 // An admin edited our account (name / coins / stats): re-read it. A deleted account signs out.

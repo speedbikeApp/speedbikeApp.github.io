@@ -25,7 +25,7 @@ export const defaults = () => ({
   version: VERSION,
   settings: { bloom: CFG.render.bloom.strength, masterVol: CFG.audio.master, musicVol: CFG.audio.music, sfxVol: CFG.audio.sfx, engineVol: 0.3,
     muted: false, aiDifficulty: CFG.ai.difficulty, quality: 'high', keys: defaultKeys(), spMap: 'random', fov: FOV_DEFAULT, notify: 'ask' },
-  profile: { username: DEFAULT_NAME, nameIcon: 'auto' }, // nameIcon: 'auto' | 'none' | 'admin' | 'star' (account screen)
+  profile: { username: DEFAULT_NAME, nameIcon: 'auto' }, // nameIcon: 'auto' | 'none' | 'admin' | 'founder' | 'star' (account screen)
   tutorial: 'new', // per device, not part of the synced progress
   coins: 0,
   level: 1, xp: 0, prestige: 0, prestigePicks: 0, // leveling (js/levels.js); prestigePicks = pending free unlimited picks
@@ -75,7 +75,7 @@ function clamp(d) {
   if (!(s.quality in CFG.quality)) s.quality = 'high';
   if (s.spMap !== 'random' && !Object.hasOwn(MAPS, s.spMap) && !(typeof s.spMap === 'string' && CUSTOM_ID_RE.test(s.spMap))) s.spMap = 'random'; // single-player map choice
   d.profile.username = sanitizeName(d.profile.username);
-  if (!['auto', 'none', 'admin', 'star'].includes(d.profile.nameIcon)) d.profile.nameIcon = 'auto'; // icon next to the name (account screen)
+  if (!['auto', 'none', 'admin', 'founder', 'star'].includes(d.profile.nameIcon)) d.profile.nameIcon = 'auto'; // icon next to the name (account screen)
   if (!TUTORIAL_STAGES.includes(d.tutorial)) d.tutorial = 'new';
   if (d.tutorial === 'new' && d.stats.matches > 0) d.tutorial = 'done'; // players from before the tutorial never get it forced
   const lv = getLevelTable();
@@ -312,10 +312,18 @@ export function buyPart(cat, id) {
   if (!p) return { ok: false, reason: 'unknown' };
   if (partOwned(cat, id)) return { ok: false, reason: 'owned' };
   if (p.ach) return { ok: false, reason: 'ach' };
+  if (p.invite) return { ok: false, reason: 'invite' };
   if (d.coins < p.price) return { ok: false, reason: 'coins' };
   d.coins -= p.price; d.unlocks.parts[cat].push(id);
   clamp(d); flushSave();
   return { ok: true };
+}
+// Give a part without paying (invite reward). true if it was new.
+export function grantPart(cat, id) {
+  const d = getSave();
+  if (!isPartId(cat, id) || partOwned(cat, id)) return false;
+  d.unlocks.parts[cat].push(id); clamp(d); flushSave();
+  return true;
 }
 // Equip an owned part. Returns {ok, reason?}.
 export function equipPart(cat, id) {

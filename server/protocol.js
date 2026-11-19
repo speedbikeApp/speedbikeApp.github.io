@@ -44,8 +44,8 @@ export function parseClientMessage(raw) {
     case 'queue':
       if (!isStr(o.mode, 16) || !MODES_ALL.includes(o.mode)) return bad('bad_mode', 'unknown mode');
       return ok({ t: 'queue', mode: o.mode, ...(o.loadout !== undefined ? { loadout: sanitizeLoadout(o.loadout) } : {}) });
-    case 'icon': // the icon shown next to the player's name: '' | 'admin' (index.js checks the admin right) | 'star:N' (prestige N, client progress like coins)
-      if (typeof o.icon !== 'string' || !/^(admin|star:[1-9]\d?)?$/.test(o.icon)) return bad('bad_message', 'bad icon');
+    case 'icon': // the icon shown next to the player's name: '' | 'admin' | 'founder' (index.js checks both rights) | 'star:N' (prestige N, client progress like coins)
+      if (typeof o.icon !== 'string' || !/^(admin|founder|star:[1-9]\d?)?$/.test(o.icon)) return bad('bad_message', 'bad icon');
       return ok({ t: 'icon', icon: o.icon });
     case 'loadout': // ability ids for the next match (lobby / party) or the final list during the first countdown of a match
       return ok({ t: 'loadout', abilities: sanitizeLoadout(o.abilities) });
@@ -73,6 +73,11 @@ export function parseClientMessage(raw) {
       if (!isUid(o.uid)) return bad('bad_message', 'bad uid');
       return ok({ t: o.t, uid: o.uid });
     case 'pleave': case 'plist':
+      return ok({ t: o.t });
+    case 'invuse': // opened an invite link (server/invites.js)
+      if (!isStr(o.code, 32) || !/^[\w-]{8,32}$/.test(o.code)) return bad('bad_message', 'bad invite code');
+      return ok({ t: 'invuse', code: o.code });
+    case 'invget': case 'invreset':
       return ok({ t: o.t });
     case 'frefresh': // after a username change; `username` is only honoured in dev-auth mode (index.js)
       return ok(isStr(o.username, 40) ? { t: 'frefresh', username: o.username } : { t: 'frefresh' });

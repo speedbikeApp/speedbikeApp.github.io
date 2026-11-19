@@ -17,6 +17,7 @@ import { initAccountUi, openAccount, accountEsc, isSignedIn } from './account-ui
 import { initMultiUi, onScreen as multiScreen, multiBack } from './multi-ui.js';
 import { sendNameIcon } from './online.js';
 import { initFriendsUi, onScreen as friendsScreen } from './friends-ui.js';
+import { initInvite, prefetchInvite } from './invite.js';
 import { initAdminUi, onScreen as adminScreen } from './admin-ui.js';
 import { initPush, enable as pushEnable, disable as pushDisable, notifyOn, shouldAsk } from './push.js';
 import { initPartyUi } from './party-ui.js';
@@ -53,7 +54,7 @@ export function showScreen(name, backdrop = 'home') {
   if (name === 'scrStats') renderStats();
   if (name === 'scrAccount') openAccount();
   if (name === 'scrMulti' || name === 'scrQueue' || name === 'scrLobby') multiScreen(name);
-  if (name === 'scrFriends') friendsScreen();
+  if (name === 'scrFriends') { friendsScreen(); prefetchInvite(); }
   if (name === 'scrAdmin') adminScreen();
   if (name === 'scrSettings') { syncSettingsUi(); $('sMore').hidden = settingsFrom !== 'main'; } // account / stats only from the main menu, not the pause menu
   if (name !== 'scrControls') cancelCapture();
@@ -220,7 +221,7 @@ export function initMenu(h) {
   initMultiUi({ show: showScreen, openAccount: () => showScreen('scrAccount') });
   initFriendsUi({ show: showScreen, openAccount: () => showScreen('scrAccount') });
   initAdminUi({ show: showScreen });
-  initPartyUi();
+  initPartyUi(); initInvite();
   initProfileUi({ show: showScreen });
   on('mGarage', () => showScreen('scrGarage'));
   on('gAbil', () => { saveSoon(); showScreen('scrAbilities'); });

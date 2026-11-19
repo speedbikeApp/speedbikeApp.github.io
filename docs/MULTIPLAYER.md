@@ -84,7 +84,7 @@ Client → server:
 - `{t:'ping', c}`; `{t:'spong', n}` answers the server's `{t:'sping', n}` (RTT measured by the server, see Lag compensation)
 - Connection limits: at most 20 open sockets and 30 new sockets per minute per client IP (`CF-Connecting-IP`); beyond that the socket is closed with code 1013 `too many connections`. `GET /health` returns `{ok, online, featured}` only; `?detail=<HEALTH_TOKEN>` adds the internals.
 Server → client:
-- `{t:'welcome', uid, username, rank, serverNow, featured, nextRotation, online}`
+- `{t:'welcome', uid, username, rank, serverNow, featured, nextRotation, online, admin, founder, founderUntil}` (`founder` = this account has the Founder badge, `founderUntil` = the cutoff in ms or null)
 - `{t:'queued', mode, position, inQueue}`
 - `{t:'lobby', mode, players:[{uid,username,rank,colorIdx}], countdownEndsAt, serverNow}` (sent on every change)
 - `{t:'start', mode, mapId, seed, tick0, you:<bikeId>, players:[{id,uid,username,rank,colorIdx,bot,loadout:[abilityId]}], cfgOverrides, map?}` (`map` = full definition, only when `mapId` is a custom map the client doesn't have: validate it with `validateMap` from js/mapdef.js; bots: `bot:true`, `uid:null`, `rank:null`; `loadout` = provisional, from the queue)
@@ -125,6 +125,17 @@ Server -> client:
 | `{t:'fevent', kind:'request'\|'accepted', uid, username}` | toast: somebody asked us / accepted our request |
 
 Friend icon in matches: `start.players[]` and `end.ranks[]` carry `uid`; `js/hud.js` shows the blue person icon next to a name when `social.isFriend(uid)` (viewer's friends only), in the top-left scoreboard and on the results screen.
+
+## Invite links & Founder badge (`server/invites.js`, `server/founder.js`; client `js/invite.js`)
+- Link = `<game address>?invite=CODE` (client: `location.origin + location.pathname`). `CODE` = 12 random URL-safe chars (`crypto.randomBytes`), one standing code per player mapped to the uid; resettable (the old code dies at once). The client keeps `?invite=` in sessionStorage through sign-up / sign-in, removes it from the address bar and sends `invuse` after the welcome.
+- Client → server (rate limited, ~1 per 5 s, burst 5): `{t:'invget'}` -> `{t:'invcode', code}`; `{t:'invreset'}` -> `{t:'invcode', code}` (new code); `{t:'invuse', code}` -> `{t:'invres', ok:true, username, joined}` or `{t:'invres', ok:false, code}` with code = `unknown | own | already_friends | limit_friends | target_limit_friends | rate_limited | unavailable` (the client shows a short toast, never an error screen).
+- `invuse` makes both players friends at once (`Social.befriend`: the link is the inviter's consent, opening it the other's), sets `invitedBy` (first link wins). If the inviter is online and idle (not queued / in a match, nor the opener) it then runs `Parties.invite` + `Parties.accept` (`joined:true`); otherwise the inviter gets `{t:'pevent', kind:'invlink', username}` when online.
+- `GET /invite?code=CODE` (public, 20 / min / IP) -> `{ok:true, username}` | 404 `{ok:false}`: the sign-up page says "X invited you" before sign-in.
+- Reward: when an invited player finishes (not `left`, not an admin stop) their FIRST online match after using the link, if the inviter has fewer than `INVITE_REWARD_CAP` (default 20, env) rewarded invites, both get `{t:'invreward', coins:500, name:<the other player>}` (`INVITE.rewardCoins` in `server/invites.js`). Rewards for a player who is offline wait in `pending` and are sent after the welcome. At the cap neither side is paid. The client adds the coins and unlocks the glow colour `invited` (never for sale, hidden in the garage until owned).
+- Storage (social store): JSON file keys `inv` (uid -> `{code, invitedBy, rewarded, done, pending:[{coins,name}]}`), `codes` (code -> uid), `seen` (dev only: first time a uid connected); Firestore `invites/{uid}`, `invitecodes/{code}` = `{uid}` (Admin SDK only, like `friends/`).
+- Founder: an account created before env `FOUNDER_UNTIL` (ISO date) is a founder for good; unset = every account (pre-launch). The creation time is Firebase Auth `metadata.creationTime` (`getUser`, cached per uid; the Firestore `createdAt` fields are client-writable and not used); dev auth: first time the social store saw the uid. `welcome.founder` / `founderUntil`; `GET /health` also returns `founderUntil` (null when unset) for the main-menu line "SIGN UP BEFORE <date> FOR THE PERMANENT FOUNDER ♧ BADGE" (shown to signed-out players, only until the cutoff).
+- Name icon wire value (`{t:'icon', icon}`, `lobby` / `start` / `end` players): `'' | 'admin' | 'founder' | 'star:N'`. The server shows `admin` / `founder` only while the account has it; AUTO (client) = admin, else founder, else prestige star. `friends[].founder` and `party.members[].founder` mark founders in the friend and party lists. Bots never have an icon.
+- Needs a Render redeploy (new server messages, Firestore collections `invites`, `invitecodes`).
 
 ## Party (`server/party.js`, client `js/party.js` + `js/party-ui.js`)
 - Up to **4** friends play together. **In-memory only** (server restart = parties gone). A party always has >= 2 members; when one is left it **dissolves**.

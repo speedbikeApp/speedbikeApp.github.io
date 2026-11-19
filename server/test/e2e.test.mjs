@@ -58,7 +58,7 @@ function client(uid, username = uid.toUpperCase()) {
 const health = await (await fetch(`http://127.0.0.1:${port}/health?detail=tok`)).json();
 assert.equal(health.ok, true); assert.equal(health.auth, 'dev');
 const pub = await (await fetch(`http://127.0.0.1:${port}/health`)).json(), bad = await (await fetch(`http://127.0.0.1:${port}/health?detail=nope`)).json();
-assert.deepEqual(Object.keys(pub).sort(), ['featured', 'ok', 'online'], 'public health leaks nothing else'); assert.deepEqual(Object.keys(bad).sort(), ['featured', 'ok', 'online']);
+assert.deepEqual(Object.keys(pub).sort(), ['featured', 'founderUntil', 'ok', 'online'], 'public health leaks nothing else'); assert.deepEqual(Object.keys(bad).sort(), ['featured', 'founderUntil', 'ok', 'online']);
 assert.equal(health.loop.intervalMs, 16, 'coarse scheduler'); assert.ok(Array.isArray(health.roomStats));
 {
   const raw = client('nobody'); await raw.open; raw.send({ t: 'queue', mode: 'standard' });

@@ -53,6 +53,6 @@ assert.throws(() => resolveAuthMode({ DEV_AUTH: '1', NODE_ENV: 'production' }), 
 // bots have uid null: no friend / party request can target one
 for (const t of ['fadd', 'faccept', 'fdecline', 'fcancel', 'fremove', 'pinvite', 'paccept', 'pkick', 'ptransfer']) assert.equal(parse(JSON.stringify({ t, uid: null })).ok, false, t + ' with a null uid');
 // name icon
-for (const icon of ['', 'admin', 'star:1', 'star:99']) assert.equal(parse(JSON.stringify({ t: 'icon', icon })).ok, true, icon);
-for (const icon of ['star:0', 'star:100', 'Admin', '<b>', null, 5]) assert.equal(parse(JSON.stringify({ t: 'icon', icon })).ok, false, String(icon));
+for (const icon of ['', 'admin', 'founder', 'star:1', 'star:99']) assert.equal(parse(JSON.stringify({ t: 'icon', icon })).ok, true, icon);
+for (const icon of ['star:0', 'star:100', 'Admin', 'Founder', '<b>', null, 5]) assert.equal(parse(JSON.stringify({ t: 'icon', icon })).ok, false, String(icon));
 console.log('protocol tests ok');

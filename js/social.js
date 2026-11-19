@@ -2,7 +2,7 @@
 // friends-ui.js renders it and hud.js asks isFriend(uid) for the blue person icon. The server is the only authority: this is a read-only mirror.
 //   friends:  Map uid -> {uid, username, rank, online}      incoming / outgoing: Map uid -> {uid, username, rank}
 const toMap = (list, online) => new Map((Array.isArray(list) ? list : []).filter((p) => p && typeof p.uid === 'string').map((p) => [p.uid, {
-  uid: p.uid, username: String(p.username ?? '?'), rank: p.rank || null, ...(online ? { online: !!p.online } : {}),
+  uid: p.uid, username: String(p.username ?? '?'), rank: p.rank || null, ...(online ? { online: !!p.online, ...(p.founder ? { founder: true } : {}) } : {}),
 }]));
 
 export function createSocial() {

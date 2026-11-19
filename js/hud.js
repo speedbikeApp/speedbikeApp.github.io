@@ -22,8 +22,9 @@ let baseBikes = [], meId = 0, onlineHud = false, onlineResult = null; // online:
 export const FRIEND_ICON = '<svg class="fi" viewBox="0 0 12 14" aria-label="friend"><title>Friend</title><circle cx="6" cy="4" r="3" fill="currentColor"/><path d="M0.5 14c0-3.6 2.4-5.6 5.5-5.6s5.5 2 5.5 5.6z" fill="currentColor"/></svg>';
 // Admin marker (pencil) shown next to an admin's name wherever FRIEND_ICON is; the server flags players with admin:true.
 export const ADMIN_ICON = '<span class="ai" title="Admin" aria-label="admin">✎</span>';
-/** The icon next to a player's name (server-checked wire value): 'admin' -> ✎, 'star:N' -> ✪N (prestige), else nothing. */
-export function nameIconHtml(icon) { if (icon === 'admin') return ADMIN_ICON; const m = /^star:([1-9]\d?)$/.exec(icon || ''); return m ? `<span class="ai" title="Prestige ${m[1]}">✪${m[1]}</span>` : ''; }
+export const FOUNDER_ICON = '<span class="ai fo" title="Founder" aria-label="founder">♧</span>';
+/** The icon next to a player's name (server-checked wire value): 'admin' -> ✎, 'founder' -> ♧, 'star:N' -> ✪N (prestige), else nothing. */
+export function nameIconHtml(icon) { if (icon === 'admin') return ADMIN_ICON; if (icon === 'founder') return FOUNDER_ICON; const m = /^star:([1-9]\d?)$/.exec(icon || ''); return m ? `<span class="ai" title="Prestige ${m[1]}">✪${m[1]}</span>` : ''; }
 const friendIcon = (uid) => (uid && social.isFriend(uid) ? FRIEND_ICON : '');
 const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 

@@ -4,7 +4,9 @@ import { levelInfo, nextMilestone, prestige, prestigeChoices, pickPrestigeUnlimi
 import { ABILITIES } from './abilities.js';
 import { abilityIcon } from './icons.js';
 import { glowHex } from './parts.js';
-import { showAnnounce } from './hud.js';
+import { showAnnounce, FOUNDER_ICON } from './hud.js';
+import { isFounder } from './admin-core.js';
+import { net } from './online.js';
 import { active as tutorialActive } from './tutorial.js';
 
 const $ = (id) => document.getElementById(id);
@@ -12,7 +14,7 @@ const star = '<span class="star">✪</span>';
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 let show = () => {};
 
-const lvlHtml = (i) => `${i.prestige > 0 ? `${star}${i.prestige} ` : ''}LEVEL ${i.level}`;
+const lvlHtml = (i) => `${isFounder() ? FOUNDER_ICON + ' ' : ''}${i.prestige > 0 ? `${star}${i.prestige} ` : ''}LEVEL ${i.level}`;
 const pct = (i) => Math.round((i.xp / i.need) * 100) + '%';
 
 /** Re-read the save into the card and (if open) the profile / pick screens. Cheap; call after anything that changes progress. */
@@ -75,5 +77,6 @@ export function initProfileUi(h) {
     show(getSave().prestigePicks > 0 ? 'scrPick' : 'scrProfile');
   });
   new MutationObserver(refreshProfile).observe($('tutSkip'), { attributes: true, attributeFilter: ['hidden'] });
+  net.on('welcome', refreshProfile); net.on('status', refreshProfile); // the founder mark comes with the welcome
   refreshProfile();
 }

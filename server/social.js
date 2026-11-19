@@ -8,7 +8,7 @@ const TTL = 60000; // how long a resolved name / rank of an OFFLINE user is reus
 const pubRank = (r) => (r && typeof r === 'object' ? { tier: r.tier, div: r.div, wins: r.wins } : null);
 const without = (list, v) => { const i = list.indexOf(v); if (i >= 0) list.splice(i, 1); };
 
-// deps: { store (social store), getRank(uid) -> rank, liveRank(uid) -> rank | undefined, isOnline(uid), send(uid, msg), log, now }
+// deps: { store (social store), getRank(uid) -> rank, liveRank(uid) -> rank | undefined, isOnline(uid), send(uid, msg), isFounder(uid) -> Promise<bool> (optional), log, now }
 export class Social {
   constructor(deps) {
     this.d = { log: () => {}, now: () => Date.now(), ...deps };
@@ -56,7 +56,7 @@ export class Social {
     const { map, missing } = await this.resolveNames(all);
     if (missing.length) { await this.prune(uid, missing); links = await this.d.store.getLinks(uid); }
     const mk = async (u) => ({ uid: u, username: map.get(u) || '?', rank: await this.rankOf(u) });
-    const friends = await Promise.all(links.friends.filter((u) => map.has(u)).map(async (u) => ({ ...(await mk(u)), online: this.d.isOnline(u) })));
+    const friends = await Promise.all(links.friends.filter((u) => map.has(u)).map(async (u) => ({ ...(await mk(u)), online: this.d.isOnline(u), ...(await this.d.isFounder?.(u) ? { founder: true } : {}) })));
     const incoming = await Promise.all(links.incoming.filter((u) => map.has(u)).map(mk));
     const outgoing = await Promise.all(links.outgoing.filter((u) => map.has(u)).map(mk));
     if (this.sets.has(uid)) this.sets.set(uid, new Set(links.friends));
@@ -149,6 +149,19 @@ export class Social {
       return { ok: true, state: 'friends' };
     });
     if (res.ok && !res.already) this.#event(from, 'accepted', me);
+    return res;
+  }
+  async befriend(a, b) { // friends at once: the invite link is the inviter's consent, opening it the other's (server/invites.js). Pending requests either way are dropped.
+    const res = await this.#run(a, b, (m) => {
+      const x = m.get(a), y = m.get(b);
+      if (x.friends.includes(b)) return { ok: false, code: 'already_friends' };
+      if (x.friends.length >= LIMITS.friends) return { ok: false, code: 'target_limit_friends' }; // a = the inviter
+      if (y.friends.length >= LIMITS.friends) return { ok: false, code: 'limit_friends' };
+      for (const k of ['incoming', 'outgoing']) { without(x[k], b); without(y[k], a); }
+      x.friends.push(b); y.friends.push(a);
+      return { ok: true, state: 'friends' };
+    });
+    if (res.ok) this.#event(a, 'accepted', b);
     return res;
   }
   decline(me, from) {
