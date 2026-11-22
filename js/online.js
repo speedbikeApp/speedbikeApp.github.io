@@ -40,11 +40,11 @@ const adminCaller = createCaller((m) => net.send(m));
 export const adminCall = adminCaller.call;
 net.on('ares', (m) => adminCaller.resolve(m));
 net.on('adminstate', (m) => { setAdmin(m.admin === true); sendNameIcon(); });
-/** The icon next to my name (account screen: profile.nameIcon 'auto' | 'none' | 'admin' | 'founder' | 'star') as the wire value. auto = admin, else founder, else the prestige star. */
+/** The icon next to my name (account screen: profile.nameIcon 'auto' | 'none' | 'admin' | 'founder' | 'star') as the wire value. auto = admin, else the prestige star, else founder. */
 export function nameIconWire() {
   const c = getSave().profile.nameIcon || 'auto', p = Math.min(99, levelInfo().prestige | 0), star = p > 0 ? 'star:' + p : '';
   const adm = isAdmin() ? 'admin' : '', fo = isFounder() ? 'founder' : '';
-  return c === 'none' ? '' : c === 'admin' ? adm : c === 'founder' ? fo : c === 'star' ? star : adm || fo || star;
+  return c === 'none' ? '' : c === 'admin' ? adm : c === 'founder' ? fo : c === 'star' ? star : adm || star || fo;
 }
 export function sendNameIcon() { if (net.state === 'online') net.send({ t: 'icon', icon: nameIconWire() }); }
 // An admin edited our account (name / coins / stats): re-read it. A deleted account signs out.
