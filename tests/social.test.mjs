@@ -50,4 +50,11 @@ s.reset(); assert.equal(s.state.ready, false);
 assert.equal(REL_ACTION.none.act, 'fadd'); assert.equal(REL_ACTION.incoming.act, 'faccept'); assert.equal(REL_ACTION.friend.act, null);
 for (const code of ['self', 'not_found', 'limit_friends', 'target_limit_incoming', 'rate_limited']) assert.ok(FRIEND_ERR[code]);
 if (FRIEND_ICON) assert.ok(FRIEND_ICON.includes('<svg') && !FRIEND_ICON.includes('<script'));
+{ // a friend's icon: in the snapshot, and live
+  const { createSocial: make } = await import('../js/social.js'), S = make();
+  S.apply({ t: 'friends', friends: [{ uid: 'a', username: 'A', icon: '' }] });
+  assert.equal(S.state.friends.get('a').icon, '');
+  S.apply({ t: 'ficon', uid: 'a', icon: 'star:2' }); assert.equal(S.state.friends.get('a').icon, 'star:2');
+  S.apply({ t: 'fpresence', uid: 'a', online: true, icon: 'founder' }); assert.equal(S.state.friends.get('a').icon, 'founder');
+}
 console.log('social client tests passed');

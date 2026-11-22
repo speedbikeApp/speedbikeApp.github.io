@@ -4,24 +4,26 @@ import { levelInfo, nextMilestone, prestige, prestigeChoices, pickPrestigeUnlimi
 import { ABILITIES } from './abilities.js';
 import { abilityIcon } from './icons.js';
 import { glowHex } from './parts.js';
-import { showAnnounce, FOUNDER_ICON } from './hud.js';
-import { isFounder } from './admin-core.js';
-import { net } from './online.js';
+import { showAnnounce, nameIconHtml } from './hud.js';
+import { net, nameIconWire, sendNameIcon } from './online.js';
 import { active as tutorialActive } from './tutorial.js';
 
 const $ = (id) => document.getElementById(id);
-const star = '<span class="star">✪</span>';
 const hex = (n) => '#' + n.toString(16).padStart(6, '0');
 let show = () => {};
 
-const lvlHtml = (i) => `${isFounder() ? FOUNDER_ICON + ' ' : ''}${i.prestige > 0 ? `${star}${i.prestige} ` : ''}LEVEL ${i.level}`;
+function setName(node, name) { // the name + the icon picked on the account screen
+  const n = document.createElement('span'); n.className = 'n'; n.textContent = name;
+  node.replaceChildren(n); node.insertAdjacentHTML('beforeend', nameIconHtml(nameIconWire())); // fixed markup only
+}
 const pct = (i) => Math.round((i.xp / i.need) * 100) + '%';
 
 /** Re-read the save into the card and (if open) the profile / pick screens. Cheap; call after anything that changes progress. */
 export function refreshProfile() {
   const d = getSave(), i = levelInfo(d);
-  $('pfName').textContent = d.profile.username;
-  $('pfLvl').innerHTML = lvlHtml(i);
+  setName($('pfName'), d.profile.username);
+  $('pfLvl').textContent = `LEVEL ${i.level}`;
+  sendNameIcon();
   $('pfBar').firstElementChild.style.width = pct(i);
   $('pfXp').textContent = i.canPrestige ? 'MAX LEVEL' : `${i.xp} / ${i.need} XP`;
   $('pfPick').hidden = i.prestigePicks <= 0;
@@ -32,8 +34,9 @@ export function refreshProfile() {
 
 function renderProfile(msg = '') {
   const d = getSave(), i = levelInfo(d), m = nextMilestone(i.level, i.max);
-  $('prName').textContent = d.profile.username;
-  $('prLvl').innerHTML = lvlHtml(i);
+  setName($('prName'), d.profile.username);
+  $('prLvl').textContent = `LEVEL ${i.level}`;
+  $('prPres').textContent = i.prestige > 0 ? `PRESTIGE ${i.prestige}` : '';
   $('prBar').firstElementChild.style.width = pct(i);
   $('prXp').textContent = i.canPrestige ? 'MAX LEVEL' : `${i.xp} / ${i.need} XP`;
   $('prNext').textContent = i.canPrestige ? 'MAX LEVEL REACHED' : m ? `NEXT REWARD - LEVEL ${m.level}: ${m.tier.toUpperCase()} DROP` : '';
@@ -77,6 +80,6 @@ export function initProfileUi(h) {
     show(getSave().prestigePicks > 0 ? 'scrPick' : 'scrProfile');
   });
   new MutationObserver(refreshProfile).observe($('tutSkip'), { attributes: true, attributeFilter: ['hidden'] });
-  net.on('welcome', refreshProfile); net.on('status', refreshProfile); // the founder mark comes with the welcome
+  for (const t of ['welcome', 'status', 'adminstate']) net.on(t, refreshProfile); // the rights to the admin / founder icon come with these
   refreshProfile();
 }

@@ -78,6 +78,7 @@ Owner: PM. Server and client are built in parallel against THIS document. If som
 Client → server:
 - `{t:'hello', token}` or dev `{t:'hello', dev:true, uid, username}`
 - `{t:'queue', mode, loadout?:[abilityId]}` / `{t:'leaveQueue'}`
+- `{t:'ready'}` in a lobby with 2+ humans: skip the countdown. The match starts on the next tick once every human there has sent it (a newcomer has to send it too); ignored anywhere else.
 - `{t:'loadout', abilities:[abilityId]}` (ability ids for the next match, e.g. a party member who never sent `queue`; DURING the first countdown of a match it is the final loadout: the server applies it and relays `loadout` to everybody)
 - `{t:'in', kind, side?, ability?, ctick}` (game inputs during a match; `kind` = turn | boost | jump | ability (needs `ability:<id>`) | swap (accepted, ignored: the selected slot is local); `ctick` = the client's estimated server tick when the key was pressed, used for lag compensation)
 - `{t:'leave'}` (leave match = counts as loss)
@@ -86,7 +87,7 @@ Client → server:
 Server → client:
 - `{t:'welcome', uid, username, rank, serverNow, featured, nextRotation, online, admin, founder, founderUntil}` (`founder` = this account has the Founder badge, `founderUntil` = the cutoff in ms or null)
 - `{t:'queued', mode, position, inQueue}`
-- `{t:'lobby', mode, players:[{uid,username,rank,colorIdx}], countdownEndsAt, serverNow}` (sent on every change)
+- `{t:'lobby', mode, canReady?, players:[{uid,username,rank,colorIdx,icon?,ready?}], countdownEndsAt, serverNow}` (sent on every change; `canReady` = 2+ humans, show READY; bots are then always `ready`)
 - `{t:'start', mode, mapId, seed, tick0, you:<bikeId>, players:[{id,uid,username,rank,colorIdx,bot,loadout:[abilityId]}], cfgOverrides, map?}` (`map` = full definition, only when `mapId` is a custom map the client doesn't have: validate it with `validateMap` from js/mapdef.js; bots: `bot:true`, `uid:null`, `rank:null`; `loadout` = provisional, from the queue)
 - `{t:'loadout', id, abilities}` (first countdown only: a player's final loadout)
 - `ev` / `snap` / `crash` / `round` / `end` (above)
@@ -120,6 +121,7 @@ Server -> client:
 | `{t:'friends', friends:[{uid,username,rank,online}], incoming:[{uid,username,rank}], outgoing:[...]}` | full snapshot: after `welcome`, after any change to our links, on `flist`. `rank` = `{tier,div,wins}` |
 | `{t:'fpresence', uid, online}` | a friend came online / went offline |
 | `{t:'frank', uid, rank}` / `{t:'fname', uid, username}` | a friend's rank / username changed |
+| `{t:'ficon', uid, icon}` | a friend's name icon changed (also on `fpresence` as `icon?` when they connect) |
 | `{t:'fresults', q, results:[{uid,username,rank,rel}]}` | search answer; `rel` = `none` / `outgoing` / `incoming` / `friend` |
 | `{t:'fres', op, uid?, ok, state?, code?}` | result of an intent. `state` = `sent` / `friends` / `none`. `code`: `self not_found already_friends already_sent limit_friends target_limit_friends limit_outgoing target_limit_incoming no_request rate_limited unavailable` |
 | `{t:'fevent', kind:'request'\|'accepted', uid, username}` | toast: somebody asked us / accepted our request |
@@ -134,7 +136,7 @@ Friend icon in matches: `start.players[]` and `end.ranks[]` carry `uid`; `js/hud
 - Reward: when an invited player finishes (not `left`, not an admin stop) their FIRST online match after using the link, if the inviter has fewer than `INVITE_REWARD_CAP` (default 20, env) rewarded invites, both get `{t:'invreward', coins:500, name:<the other player>}` (`INVITE.rewardCoins` in `server/invites.js`). Rewards for a player who is offline wait in `pending` and are sent after the welcome. At the cap neither side is paid. The client adds the coins and unlocks the glow colour `invited` (never for sale, hidden in the garage until owned).
 - Storage (social store): JSON file keys `inv` (uid -> `{code, invitedBy, rewarded, done, pending:[{coins,name}]}`), `codes` (code -> uid), `seen` (dev only: first time a uid connected); Firestore `invites/{uid}`, `invitecodes/{code}` = `{uid}` (Admin SDK only, like `friends/`).
 - Founder: an account created before env `FOUNDER_UNTIL` (ISO date) is a founder for good; unset = every account (pre-launch). The creation time is Firebase Auth `metadata.creationTime` (`getUser`, cached per uid; the Firestore `createdAt` fields are client-writable and not used); dev auth: first time the social store saw the uid. `welcome.founder` / `founderUntil`; `GET /health` also returns `founderUntil` (null when unset) for the main-menu line "SIGN UP BEFORE <date> FOR THE PERMANENT FOUNDER ♧ BADGE" (shown to signed-out players, only until the cutoff).
-- Name icon wire value (`{t:'icon', icon}`, `lobby` / `start` / `end` players): `'' | 'admin' | 'founder' | 'star:N'`. The server shows `admin` / `founder` only while the account has it; AUTO (client) = admin, else prestige star, else founder. `friends[].founder` and `party.members[].founder` mark founders in the friend and party lists. Bots never have an icon.
+- Name icon wire value (`{t:'icon', icon}`, `lobby` / `start` / `end` players): `'' | 'admin' | 'founder' | 'star:N'`. The server shows `admin` / `founder` only while the account has it; AUTO (client) = admin, else prestige star, else founder. `friends[].icon` and `party.members[].icon` carry the same value for the friend and party lists, pushed at most every 300 ms per player when it changes; an offline friend keeps their last one (memory only, never `admin`). Without `icon` the lists fall back to `friends[].founder` / `party.members[].founder`. Bots never have an icon.
 - Needs a Render redeploy (new server messages, Firestore collections `invites`, `invitecodes`).
 
 ## Party (`server/party.js`, client `js/party.js` + `js/party-ui.js`)

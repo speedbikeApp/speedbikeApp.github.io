@@ -49,7 +49,7 @@ export function parseClientMessage(raw) {
       return ok({ t: 'icon', icon: o.icon });
     case 'loadout': // ability ids for the next match (lobby / party) or the final list during the first countdown of a match
       return ok({ t: 'loadout', abilities: sanitizeLoadout(o.abilities) });
-    case 'leaveQueue': case 'leave':
+    case 'leaveQueue': case 'leave': case 'ready':
       return ok({ t: o.t });
     case 'in': {
       if (!isStr(o.kind, 8) || !INPUT_KINDS.includes(o.kind)) return bad('bad_message', 'bad input kind');

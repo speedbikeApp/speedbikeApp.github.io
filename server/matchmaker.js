@@ -7,6 +7,7 @@
 // are at most one per (mode, party-or-solo); two parties may share a party lobby.
 // Solo lobbies (with a makeBot hook): ONE human is enough. If nobody else joins within soloWaitMs, bots join one at a time (botJoinMs apart,
 // l.bots) and the match starts when the lobby is full. A second human switches the lobby to the normal countdown (bots that already joined stay).
+// With 2+ humans each can press READY (l.ready); when all of them did, the next tick starts the match without the rest of the countdown.
 export const LOBBY_MAX = 4, LOBBY_MIN = 2, LOBBY_COUNTDOWN_MS = 30000, SOLO_WAIT_MS = 5000, BOT_JOIN_MS = [1000, 3000];
 
 export class Matchmaker {
@@ -56,6 +57,7 @@ export class Matchmaker {
     if (w.type === 'lobby') {
       const l = w.lobby;
       l.players.splice(l.players.indexOf(p), 1);
+      l.ready.delete(p); if (l.players.length < LOBBY_MIN) l.ready.clear();
       p.where = null; p.group = null;
       if (l.players.length < (this.#solo(l) ? 1 : LOBBY_MIN)) { // dissolve: whoever is left goes back to the FRONT of the queue (parties stay together)
         this.lobbies.splice(this.lobbies.indexOf(l), 1);
@@ -78,9 +80,17 @@ export class Matchmaker {
     for (const l of [...this.lobbies]) {
       let arrived = false;
       while (l.plan?.length && now >= l.plan[0]) { l.plan.shift(); l.bots.push(this.makeBot(l.players, l.bots)); arrived = true; }
-      if (this.#seats(l) >= LOBBY_MAX || (now >= l.endsAt && l.players.length >= (this.#solo(l) ? 1 : LOBBY_MIN))) this.#start(l);
+      if (this.#seats(l) >= LOBBY_MAX || this.#allReady(l) || (now >= l.endsAt && l.players.length >= (this.#solo(l) ? 1 : LOBBY_MIN))) this.#start(l);
       else if (arrived) this.#sendLobby(l);
     }
+  }
+
+  // READY: skip the countdown. tick() starts the match, never leave(): a leader cancelling takes the members out one by one, and that
+  // must not start a match with the ones not taken out yet.
+  ready(p) {
+    const l = p.where?.type === 'lobby' ? p.where.lobby : null;
+    if (!l || l.players.length < LOBBY_MIN || l.ready.has(p)) return;
+    l.ready.add(p); this.#sendLobby(l);
   }
 
   // Admin: start a waiting lobby now (free seats become bots in onStart, same as the countdown running out).
@@ -94,7 +104,7 @@ export class Matchmaker {
   forceStartQueue(mode) {
     const q = this.queues.get(mode);
     if (!q || !q.length) return false;
-    const party = q[0].players.some((p) => p.group != null), l = { id: ++this.seq, mode, party, players: [], bots: [], plan: null, endsAt: 0, forced: true };
+    const party = q[0].players.some((p) => p.group != null), l = { id: ++this.seq, mode, party, players: [], bots: [], plan: null, ready: new Set(), endsAt: 0, forced: true };
     this.lobbies.push(l);
     for (let i = 0; i < q.length && l.players.length < LOBBY_MAX;) {
       if (q[i].players.some((p) => p.group != null) !== party || q[i].players.length > LOBBY_MAX - l.players.length) { i++; continue; }
@@ -138,7 +148,7 @@ export class Matchmaker {
     for (const party of [false, true]) {
       const mine = (e) => e.players.some((p) => p.group != null) === party; // a lone leftover of a dissolved party (group cleared) is a solo again
       let l = this.lobbies.find((x) => x.mode === mode && x.party === party);
-      if (!l && q.filter(mine).reduce((n, e) => n + e.players.length, 0) >= (party || !this.makeBot ? LOBBY_MIN : 1)) { l = { id: ++this.seq, mode, party, players: [], bots: [], plan: null, endsAt: 0 }; this.lobbies.push(l); }
+      if (!l && q.filter(mine).reduce((n, e) => n + e.players.length, 0) >= (party || !this.makeBot ? LOBBY_MIN : 1)) { l = { id: ++this.seq, mode, party, players: [], bots: [], plan: null, ready: new Set(), endsAt: 0 }; this.lobbies.push(l); }
       if (!l) continue;
       let joined = false;
       for (let i = 0; i < q.length && this.#seats(l) < LOBBY_MAX;) { // first entries that fit (a party that does not fit waits for the next lobby)
@@ -154,6 +164,7 @@ export class Matchmaker {
     this.#notifyQueue(mode);
   }
 
+  #allReady(l) { return l.players.length >= LOBBY_MIN && l.players.every((p) => l.ready.has(p)); }
   #solo(l) { return !l.party && !!this.makeBot; }
   #seats(l) { return l.players.length + l.bots.length; }
   // One human in a solo lobby: schedule the bot arrivals (first after soloWaitMs, or a join gap if some bots are already in); endsAt = the last one.
@@ -173,8 +184,9 @@ export class Matchmaker {
   }
 
   #sendLobby(l) {
-    const msg = { t: 'lobby', mode: l.mode, players: [...l.players.map((p) => ({ uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, ...(p.icon ? { icon: p.icon } : {}) })),
-      ...l.bots.map((b) => ({ uid: null, username: b.username, rank: b.rank, colorIdx: b.colorIdx }))], countdownEndsAt: l.endsAt, serverNow: this.now() };
+    const canReady = l.players.length >= LOBBY_MIN; // bots always count as ready, or the one that never presses would give them away
+    const msg = { t: 'lobby', mode: l.mode, ...(canReady ? { canReady } : {}), players: [...l.players.map((p) => ({ uid: p.uid, username: p.username, rank: p.rank, colorIdx: p.colorIdx, ...(p.icon ? { icon: p.icon } : {}), ...(canReady && l.ready.has(p) ? { ready: true } : {}) })),
+      ...l.bots.map((b) => ({ uid: null, username: b.username, rank: b.rank, colorIdx: b.colorIdx, ...(canReady ? { ready: true } : {}) }))], countdownEndsAt: l.endsAt, serverNow: this.now() };
     for (const p of l.players) p.send(msg);
   }
 

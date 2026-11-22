@@ -106,6 +106,7 @@ export function multiBack(name) {
 export const inFlow = () => !!flow;
 
 function renderLobby(m) {
+  let mine = false, waiting = 0;
   $('lMode').textContent = MODE_LABEL[m.mode] || String(m.mode).toUpperCase();
   const list = $('lList'); list.textContent = '';
   const myUid = net.welcome ? net.welcome.uid : null;
@@ -114,11 +115,21 @@ function renderLobby(m) {
     if (!p) { row.className = 'lrow empty'; row.textContent = '- WAITING -'; list.appendChild(row); continue; }
     row.className = 'lrow' + (p.uid === myUid ? ' me' : '');
     const dot = document.createElement('i'); dot.className = 'dot'; dot.style.setProperty('--c', '#' + CFG.players[(p.colorIdx | 0) % CFG.players.length].color.toString(16).padStart(6, '0'));
-    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = p.username;
-    if (p.icon) nm.insertAdjacentHTML('beforeend', ' ' + nameIconHtml(p.icon)); // fixed markup only (nameIconHtml parses the value)
+    const nm = document.createElement('span'); nm.className = 'nm';
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = p.username; nm.append(n); // a long name is cut, never the icon
+    if (p.icon) nm.insertAdjacentHTML('beforeend', nameIconHtml(p.icon)); // fixed markup only (nameIconHtml parses the value)
     const bd = document.createElement('span'); bd.innerHTML = badgeHtml(p.rank || defaultRank());
-    row.append(dot, nm, bd); list.appendChild(row);
+    row.append(dot, nm);
+    if (m.canReady && !p.ready) waiting++;
+    if (m.canReady && p.ready) {
+      const r = document.createElement('span'); r.className = 'rdy'; r.textContent = '✔'; r.title = 'Ready'; r.setAttribute('aria-label', 'ready'); row.append(r);
+      if (p.uid === myUid) mine = true;
+    }
+    row.append(bd); list.appendChild(row);
   }
+  // canReady comes from the server: one without READY answers the message with an error, which would close the lobby screen
+  $('lReady').hidden = !m.canReady; $('lReady').disabled = mine;
+  $('lReady').innerHTML = mine ? `READY ✔<small>WAITING FOR ${waiting} MORE</small>` : 'READY<small>SKIP THE WAIT</small>'; // fixed markup + a count
   const remain = (m.countdownEndsAt || 0) - (m.serverNow || 0);
   lobbyDeadline = performance.now() + Math.max(0, remain);
   setLobbyCount();
@@ -132,6 +143,7 @@ export function initMultiUi(h) {
   click('mpAccount', () => openAccountScreen());
   click('qCancel', cancelFlow);
   click('lLeave', cancelFlow);
+  click('lReady', () => { if (flow === 'lobby') net.send({ t: 'ready' }); });
   $('mpModes').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-mp]'); if (!b || b.disabled) return;
     checkVersion().then(() => { if (!isStale()) queueMode(b.dataset.mp === 'featured' ? featuredId() : b.dataset.mp); else renderMulti(); });

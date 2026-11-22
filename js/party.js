@@ -9,7 +9,7 @@ export function createParty(now = () => (typeof performance !== 'undefined' ? pe
   const emit = () => { for (const fn of [...listeners]) { try { fn(); } catch (e) { if (typeof console !== 'undefined') console.error(e); } } };
   const cleanParty = (p) => (p && typeof p === 'object' && Array.isArray(p.members) && typeof p.leader === 'string' ? {
     id: p.id, leader: p.leader, max: Number(p.max) || PARTY_MAX,
-    members: p.members.filter((m) => m && typeof m.uid === 'string').map((m) => ({ uid: m.uid, username: String(m.username ?? '?'), rank: m.rank || null, online: m.online !== false, ...(m.founder ? { founder: true } : {}) })),
+    members: p.members.filter((m) => m && typeof m.uid === 'string').map((m) => ({ uid: m.uid, username: String(m.username ?? '?'), rank: m.rank || null, online: m.online !== false, ...(m.founder ? { founder: true } : {}), ...(typeof m.icon === 'string' ? { icon: m.icon } : {}) })),
   } : null);
   const api = {
     state: s,

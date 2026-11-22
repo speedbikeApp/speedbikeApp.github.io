@@ -4,7 +4,7 @@ import * as auth from './auth.js';
 import { setUsername, saveSoon, getSave } from './save.js';
 import { isAdmin, isFounder, getFounderUntil, setFounder } from './admin-core.js';
 import { levelInfo } from './levels.js';
-import { setPlayerName } from './hud.js';
+import { setPlayerName, nameIconHtml } from './hud.js';
 import { readInviteParam, inviterName } from './invite.js';
 import { cloudUserChanged, flushCloud, initCloudSave, setOnApplied } from './cloudsave.js';
 
@@ -175,13 +175,20 @@ export function renderAccount() {
 }
 
 // Icon next to the name (lobby, scoreboard, results): AUTO / NONE + the ones this player has (admin pencil, founder club, prestige star).
-let iconChanged = () => {}, refreshMenu = () => {};
+let iconChanged = () => {}, autoIcon = () => '', refreshMenu = () => {};
 function renderIconPick() {
-  const sel = $('acIcon'), p = levelInfo().prestige | 0, cur = getSave().profile.nameIcon;
-  const opts = [['auto', 'AUTO'], ['none', 'NONE'], ...(isAdmin() || cur === 'admin' ? [['admin', '✎ ADMIN']] : []), ...(isFounder() || cur === 'founder' ? [['founder', '♧ FOUNDER']] : []), ...(p > 0 || cur === 'star' ? [['star', `✪${p} PRESTIGE`]] : [])];
-  sel.textContent = '';
-  for (const [v, t] of opts) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); }
-  sel.value = cur;
+  const box = $('acIcon'), p = Math.min(99, levelInfo().prestige | 0), cur = getSave().profile.nameIcon;
+  const opts = [['auto', 'AUTO', autoIcon()], ['none', 'NONE', ''], ...(isAdmin() || cur === 'admin' ? [['admin', 'ADMIN', 'admin']] : []),
+    ...(isFounder() || cur === 'founder' ? [['founder', 'FOUNDER', 'founder']] : []), ...(p > 0 || cur === 'star' ? [['star', 'PRESTIGE', p > 0 ? 'star:' + p : '']] : [])];
+  const focused = box.contains(document.activeElement) && document.activeElement.dataset.icon;
+  box.textContent = '';
+  for (const [v, t, icon] of opts) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'mbtn frame' + (v === cur ? ' sel' : '');
+    b.dataset.icon = v; b.setAttribute('aria-pressed', v === cur); b.setAttribute('aria-label', t);
+    b.innerHTML = `<span class="big" aria-hidden="true">${nameIconHtml(icon) || '–'}</span><small>${t}</small>`; // fixed markup only
+    box.appendChild(b);
+    if (v === focused) b.focus();
+  }
 }
 
 /** Called by menu.js when the screen opens. */
@@ -209,8 +216,11 @@ function onUser(u) {
 export async function initAccountUi(h) {
   newAccount = h.newAccount || newAccount; onBack = h.back; openScreen = h.open || openScreen; setOnApplied(h.refresh || (() => {})); initCloudSave();
   $('acBack').addEventListener('click', () => onBack());
-  iconChanged = h.iconChanged || iconChanged; refreshMenu = h.refresh || refreshMenu;
-  $('acIcon').addEventListener('change', (e) => { getSave().profile.nameIcon = e.target.value; saveSoon(); iconChanged(); });
+  iconChanged = h.iconChanged || iconChanged; autoIcon = h.autoIcon || autoIcon; refreshMenu = h.refresh || refreshMenu;
+  $('acIcon').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-icon]'); if (!b) return;
+    getSave().profile.nameIcon = b.dataset.icon; saveSoon(); renderIconPick(); iconChanged();
+  });
   for (const b of document.querySelectorAll('#acOut [data-tab]')) b.addEventListener('click', () => { setTab(b.dataset.tab); });
   for (const id of Object.keys(FORMS)) {
     const form = $(id);

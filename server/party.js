@@ -8,7 +8,7 @@ export const PARTY = { max: 4, inviteTtlMs: 60000, graceMs: 30000, maxInvitesPer
 const pubRank = (r) => (r && typeof r === 'object' ? { tier: r.tier, div: r.div, wins: r.wins } : null);
 const fail = (code) => ({ ok: false, code });
 
-// deps: { send(uid,msg), isOnline(uid), isFriend(a,b), isBusy(uid) (queued / in lobby / in a match), info(uid) -> {username, rank, founder?} | null,
+// deps: { send(uid,msg), isOnline(uid), isFriend(a,b), isBusy(uid) (queued / in lobby / in a match), info(uid) -> {username, rank, founder?, icon?} | null,
 //         onMemberOut(uid, party) (left / kicked / timed out: pull them out of queue / lobby), onDisband(uid) (the party is gone), log, now }
 export class Parties {
   constructor(deps) {
@@ -27,8 +27,8 @@ export class Parties {
       id: P.id, leader: P.leader, max: PARTY.max,
       members: P.members.map((m) => {
         const i = this.d.info(m.uid);
-        if (i) { m.username = i.username; m.rank = pubRank(i.rank); m.founder = !!i.founder; }
-        return { uid: m.uid, username: m.username, rank: m.rank, online: this.d.isOnline(m.uid), ...(m.founder ? { founder: true } : {}) };
+        if (i) { m.username = i.username; m.rank = pubRank(i.rank); m.founder = !!i.founder; m.icon = i.icon; }
+        return { uid: m.uid, username: m.username, rank: m.rank, online: this.d.isOnline(m.uid), ...(m.founder ? { founder: true } : {}), ...(m.icon !== undefined ? { icon: m.icon } : {}) };
       }),
     };
   }
@@ -39,6 +39,8 @@ export class Parties {
   }
   #event(uids, kind, username) { for (const u of uids) this.d.send(u, { t: 'pevent', kind, username }); }
   #nameOf(uid) { return this.d.info(uid)?.username || this.byUid.get(uid)?.members.find((m) => m.uid === uid)?.username || '?'; }
+
+  refresh(uid) { const P = this.partyOf(uid); if (P) this.#push(P); } // a member changed the icon next to their name
 
   // ---- connection lifecycle ----
   onConnect(uid) { // (re)connected: resend our party + invites, clear the grace timer

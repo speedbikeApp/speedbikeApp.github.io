@@ -6,7 +6,7 @@ import { social, REL_ACTION, FRIEND_ERR } from './social.js';
 import { isSignedIn } from './account-ui.js';
 import { defaultRank } from './ranks.js';
 import { badgeHtml } from './rankview.js';
-import { showAnnounce, FOUNDER_ICON } from './hud.js';
+import { showAnnounce, memberIconHtml } from './hud.js';
 
 const $ = (id) => document.getElementById(id);
 let show = () => {}, openAccountScreen = () => {};
@@ -45,7 +45,7 @@ function friendRow(f) {
   const row = el('div', `frRow ${f.online ? 'on' : 'off'}${openUid === f.uid ? ' open' : ''}`);
   const nm = button(f.username, '', 'menu', f.uid); nm.className = 'nm'; nm.disabled = false; nm.title = 'Friend options';
   row.append(el('span', 'st', f.online ? '[ONLINE]' : '[OFFLINE]'), nm);
-  if (f.founder) { const fo = el('span'); fo.innerHTML = FOUNDER_ICON; row.append(fo.firstChild); } // fixed markup
+  row.insertAdjacentHTML('beforeend', memberIconHtml(f)); // fixed markup only
   row.append(rankSpan(f.rank));
   frag.appendChild(row);
   if (openUid === f.uid) {

@@ -173,4 +173,33 @@ console.log('matchmaker tests ok');
   clock = 100000; mm.setMakeBot(makeBot); assert.equal(a.where.type, 'lobby'); assert.equal(last(a, 'lobby').countdownEndsAt, 103000);
   mm.tick(103000); assert.equal(started.length, 1); assert.equal(started[0].bots.length, 3);
 }
+{ // READY: every human pressed it -> starts on the next tick
+  started.length = 0; clock = 0;
+  const mm = mk(), [a, b, c] = ['a', 'b', 'c'].map(player);
+  mm.ready(a); assert.equal(started.length, 0, 'ready outside a lobby does nothing');
+  mm.queue(a, 'standard'); mm.queue(b, 'standard');
+  assert.equal(last(a, 'lobby').canReady, true);
+  mm.ready(a); mm.tick(1); assert.equal(started.length, 0, 'one of two is not enough');
+  assert.equal(last(b, 'lobby').players[0].ready, true); assert.equal(last(b, 'lobby').players[1].ready, undefined);
+  const n = b.msgs.length; mm.ready(a); assert.equal(b.msgs.length, n, 'pressing again sends nothing');
+  mm.queue(c, 'standard'); mm.ready(b); mm.tick(2); assert.equal(started.length, 0, 'a newcomer must press it too');
+  mm.ready(c); mm.tick(3); assert.equal(started.length, 1); assert.equal(started[0].players.length, 3);
+}
+{ // READY: the one who is not ready leaves -> the rest start; a party pulled out one by one does not
+  started.length = 0; clock = 0;
+  const mm = mk(), [a, b, c, d, e] = ['a', 'b', 'c', 'd', 'e'].map(player);
+  mm.queue(a, 'standard'); mm.queue(b, 'standard'); mm.queue(c, 'standard');
+  mm.ready(a); mm.ready(b); mm.leave(c); mm.tick(1); assert.equal(started.length, 1);
+  mm.queueGroup([c, d, e], 'deathmatch', 'P'); mm.ready(d); mm.ready(e);
+  mm.leave(c); mm.leave(d); mm.leave(e); mm.tick(2); assert.equal(started.length, 1, 'leader cancel never starts a match');
+}
+{ // READY in a solo lobby: not for one human, bots look ready, a stale ready does not survive being alone
+  started.length = 0; clock = 0;
+  const mm = mk({ makeBot: (h, bs) => ({ username: 'Bot' + bs.length, colorIdx: 3, rank: null }) }), [a, b, c] = ['a', 'b', 'c'].map(player);
+  mm.queue(a, 'standard'); mm.ready(a); mm.tick(5000);
+  assert.equal(started.length, 0); assert.equal(last(a, 'lobby').canReady, undefined); assert.equal(last(a, 'lobby').players[1].ready, undefined);
+  mm.queue(b, 'standard'); assert.equal(last(b, 'lobby').players.find((p) => p.uid === null).ready, true, 'bots look ready');
+  mm.ready(a); mm.leave(b); assert.equal(last(a, 'lobby').canReady, undefined);
+  mm.queue(c, 'standard'); assert.equal(last(c, 'lobby').players.find((p) => p.uid === 'a').ready, undefined, 'asked again');
+}
 console.log('solo lobby tests ok');

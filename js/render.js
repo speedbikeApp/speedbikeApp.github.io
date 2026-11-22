@@ -305,7 +305,7 @@ function updateChase(b, px, pz, dt, k) {
   const target = Math.atan2(b.dx, b.dz);
   if (cam.yaw === null) { cam.yaw = target; cam.y = b.y; }
   let d = target - cam.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-  cam.yaw += d * damp(4 / CFG.cameraSwing, dt);                 // ~98% done in cameraSwing
+  cam.yaw += d * damp(4 / (CFG.cameraSwing * (1 + CFG.cameraSmooth * 5)), dt); // ~98% done in cameraSwing (up to 6x that: SMOOTH CORNERS)
   // Falling off an edge: the camera sinks only slowly (hovers near the platform) and looks down at the falling bike.
   // Jumps only lift the camera part way (less bobbing); after a fall it eases back to the normal offset above the bike.
   const yT = b.jumpT >= 0 ? b.jumpG + (b.y - b.jumpG) * 0.6 : b.y;

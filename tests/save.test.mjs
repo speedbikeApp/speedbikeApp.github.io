@@ -89,4 +89,8 @@ const { CFG } = await import('../js/config.js');
   assert.equal(JSON.parse(store.get(S.KEY)).settings.bloom, 0.5);
   S.setSetting('bloom', 99); assert.equal(S.getSave().settings.bloom, 3); S.flushSave();
 }
+{ // SMOOTH CORNERS: off by default and for older saves, kept within 0..1
+  const { parseSave } = await import('../js/save.js'), of = (settings) => parseSave(JSON.stringify({ settings })).settings.smoothTurn;
+  assert.equal(of({}), 0); assert.equal(of({ smoothTurn: 0.4 }), 0.4); assert.equal(of({ smoothTurn: 7 }), 1); assert.equal(of({ smoothTurn: 'x' }), 0);
+}
 console.log('save tests ok');

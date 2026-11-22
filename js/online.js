@@ -29,7 +29,7 @@ import * as qt from './questtrack.js';
 // ---------------------------------------------------------------- presence (menus)
 export const net = createNet({ url: () => serverUrl(globalThis.location ? globalThis.location.search : ''), getHello: () => buildHello(auth) });
 export const mp = { rank: null, online: null, featured: null, nextRotation: 0, manual: false }; // manual: an admin pinned the featured mode (no countdown)
-net.on('welcome', (m) => { setAdmin(m.admin === true); setFounder(m.founder, m.founderUntil ?? null); sendNameIcon(); party.setMe(m.uid); mp.rank = m.rank || null; mp.online = m.online ?? null; mp.featured = m.featured || null; mp.nextRotation = m.nextRotation || 0; mp.manual = m.manual === true; });
+net.on('welcome', (m) => { setAdmin(m.admin === true); setFounder(m.founder, m.founderUntil ?? null); sentIcon = null; sendNameIcon(); party.setMe(m.uid); mp.rank = m.rank || null; mp.online = m.online ?? null; mp.featured = m.featured || null; mp.nextRotation = m.nextRotation || 0; mp.manual = m.manual === true; });
 net.on('online', (m) => { mp.online = m.online; });
 net.on('rotation', (m) => { mp.featured = m.featured; mp.nextRotation = m.nextRotation; mp.manual = m.manual === true; });
 net.on('rank', (m) => { mp.rank = m.rank; });
@@ -41,17 +41,23 @@ export const adminCall = adminCaller.call;
 net.on('ares', (m) => adminCaller.resolve(m));
 net.on('adminstate', (m) => { setAdmin(m.admin === true); sendNameIcon(); });
 /** The icon next to my name (account screen: profile.nameIcon 'auto' | 'none' | 'admin' | 'founder' | 'star') as the wire value. auto = admin, else the prestige star, else founder. */
-export function nameIconWire() {
-  const c = getSave().profile.nameIcon || 'auto', p = Math.min(99, levelInfo().prestige | 0), star = p > 0 ? 'star:' + p : '';
+export function nameIconWire(c = getSave().profile.nameIcon || 'auto') {
+  const p = Math.min(99, levelInfo().prestige | 0), star = p > 0 ? 'star:' + p : '';
   const adm = isAdmin() ? 'admin' : '', fo = isFounder() ? 'founder' : '';
   return c === 'none' ? '' : c === 'admin' ? adm : c === 'founder' ? fo : c === 'star' ? star : adm || star || fo;
 }
-export function sendNameIcon() { if (net.state === 'online') net.send({ t: 'icon', icon: nameIconWire() }); }
+let sentIcon = null; // per connection
+/** Tell the server my icon if it changed. Cheap: called whenever the profile card redraws (a pick, a prestige, the cloud save arriving). */
+export function sendNameIcon() {
+  if (net.state !== 'online') return;
+  const icon = nameIconWire();
+  if (icon !== sentIcon) { sentIcon = icon; net.send({ t: 'icon', icon }); }
+}
 // An admin edited our account (name / coins / stats): re-read it. A deleted account signs out.
 net.on('resync', (m) => { if (m.username) auth.refreshUser().catch(() => {}); resyncCloud(m.force === true).catch(() => {}); });
 net.on('error', (m) => { if (m.code === 'deleted') auth.logout().catch(() => {}); });
 // Social (friends) mirror: the same persistent socket carries friend lists + presence (server/social.js). Extra listeners: friends-ui.js ('fres', 'fresults', 'fevent').
-for (const t of ['friends', 'fpresence', 'frank', 'fname']) net.on(t, (m) => social.apply(m));
+for (const t of ['friends', 'fpresence', 'frank', 'fname', 'ficon']) net.on(t, (m) => social.apply(m));
 // Party mirror (server/party.js): `party` snapshots + `pinvites`; the UI (party-ui.js) also listens for 'pres' / 'pevent'. The server pulls members into the queue / match.
 for (const t of ['party', 'pinvites']) net.on(t, (m) => party.apply(m));
 

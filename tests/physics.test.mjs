@@ -51,4 +51,25 @@ const mk = (...bikes) => { const s = createState(); s.bikes.push(...bikes); retu
   for (let i = 0; i < 60 && !ev.length; i++) ev = step(s, dt);
   assert.equal(ev.length, 2);
 }
+{ // landing inside a wall kills, also off its zero-thickness centre line; riding beside it and jumping over it still works
+  const W = { ...(await import('../js/physics.js')), ...(await import('../js/state.js')) };
+  const ride = (off, { axis = 'x', dir = 1, jump = true, protect = 0, wall } = {}) => {
+    const S = W.createState(), flip = (x, z) => (axis === 'x' ? [x * dir, z] : [z, x * dir]);
+    const [x, z] = flip(-12, off), [dx, dz] = flip(1, 0);
+    const b = W.createBike(0, 0, x, z, dx, dz), o = W.createBike(1, 0, -45, -45, 1, 0);
+    const [a0, a1] = [flip(...(wall ? wall[0] : [-3, 0])), flip(...(wall ? wall[1] : [40, 0]))];
+    o.alive = false; o.trail = [{ x1: a0[0], z1: a0[1], x2: a1[0], z2: a1[1], y0: 0, h: 2, owner: 1 }];
+    S.bikes = [b, o]; b.spawnProt = protect;
+    if (jump) W.startJump(b);
+    for (let i = 0; i < 240 && b.alive; i++) W.step(S, 1 / 120);
+    return b.alive;
+  };
+  for (const axis of ['x', 'z']) for (const dir of [1, -1]) {
+    for (const off of [0.001, 0.14, 0.45, -0.45]) assert.equal(ride(off, { axis, dir }), false, `landed inside at ${off} (${axis} ${dir})`);
+    for (const off of [0.6, -0.6, 1]) assert.equal(ride(off, { axis, dir }), true, `landed beside at ${off} (${axis} ${dir})`);
+    assert.equal(ride(0.3, { axis, dir, jump: false }), true, 'riding up close beside a wall is unchanged');
+    assert.equal(ride(0, { axis, dir, wall: [[-6, -8], [-6, 8]] }), true, 'a jump over a crossing wall still works');
+    assert.equal(ride(0.3, { axis, dir, jump: false, protect: 1 }), false, 'protection ran out inside a wall');
+  }
+}
 console.log('physics tests passed');

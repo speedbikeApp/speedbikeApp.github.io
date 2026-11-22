@@ -2,7 +2,7 @@
 // friends-ui.js renders it and hud.js asks isFriend(uid) for the blue person icon. The server is the only authority: this is a read-only mirror.
 //   friends:  Map uid -> {uid, username, rank, online}      incoming / outgoing: Map uid -> {uid, username, rank}
 const toMap = (list, online) => new Map((Array.isArray(list) ? list : []).filter((p) => p && typeof p.uid === 'string').map((p) => [p.uid, {
-  uid: p.uid, username: String(p.username ?? '?'), rank: p.rank || null, ...(online ? { online: !!p.online, ...(p.founder ? { founder: true } : {}) } : {}),
+  uid: p.uid, username: String(p.username ?? '?'), rank: p.rank || null, ...(online ? { online: !!p.online, ...(p.founder ? { founder: true } : {}), ...(typeof p.icon === 'string' ? { icon: p.icon } : {}) } : {}),
 }]));
 
 export function createSocial() {
@@ -18,7 +18,8 @@ export function createSocial() {
       if (!m || typeof m.t !== 'string') return false;
       switch (m.t) {
         case 'friends': s.friends = toMap(m.friends, true); s.incoming = toMap(m.incoming); s.outgoing = toMap(m.outgoing); s.ready = true; break;
-        case 'fpresence': { const f = s.friends.get(m.uid); if (!f) return true; f.online = !!m.online; break; }
+        case 'fpresence': { const f = s.friends.get(m.uid); if (!f) return true; f.online = !!m.online; if (typeof m.icon === 'string') f.icon = m.icon; break; }
+        case 'ficon': { const f = s.friends.get(m.uid); if (!f || typeof m.icon !== 'string') return true; f.icon = m.icon; break; }
         case 'frank': { const f = other(m.uid); if (!f) return true; f.rank = m.rank || null; break; }
         case 'fname': { const f = other(m.uid); if (!f || typeof m.username !== 'string') return true; f.username = m.username; break; }
         default: return false;

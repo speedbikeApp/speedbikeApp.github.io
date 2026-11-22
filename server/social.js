@@ -8,13 +8,14 @@ const TTL = 60000; // how long a resolved name / rank of an OFFLINE user is reus
 const pubRank = (r) => (r && typeof r === 'object' ? { tier: r.tier, div: r.div, wins: r.wins } : null);
 const without = (list, v) => { const i = list.indexOf(v); if (i >= 0) list.splice(i, 1); };
 
-// deps: { store (social store), getRank(uid) -> rank, liveRank(uid) -> rank | undefined, isOnline(uid), send(uid, msg), isFounder(uid) -> Promise<bool> (optional), log, now }
+// deps: { store (social store), getRank(uid) -> rank, liveRank(uid) -> rank | undefined, isOnline(uid), send(uid, msg), isFounder(uid) -> Promise<bool> (optional), liveIcon(uid) -> icon | undefined (optional), log, now }
 export class Social {
   constructor(deps) {
     this.d = { log: () => {}, now: () => Date.now(), ...deps };
     this.names = new Map();   // uid -> { username, at }
     this.ranks = new Map();   // uid -> { rank, at }
     this.sets = new Map();    // uid (connected) -> Set(friend uids), for presence fan-out without a read
+    this.icons = new Map();   // uid -> the last icon they chose (memory only; unknown after a restart until they connect)
   }
 
   // ---- resolution helpers ----
@@ -38,6 +39,12 @@ export class Social {
     if (r) this.ranks.set(uid, { rank: r, at: now });
     return pubRank(r);
   }
+  iconOf(uid) { // offline: the last one, but never admin (the rights may be gone by now)
+    const live = this.d.liveIcon?.(uid);
+    if (live !== undefined) return live;
+    const last = this.icons.get(uid);
+    return last === 'admin' ? '' : last;
+  }
   friendsOf(uid) { return [...(this.sets.get(uid) || [])]; }
   isFriend(a, b) { return !!this.sets.get(a)?.has(b); } // a must be connected (the set is kept for connected users only)
 
@@ -56,7 +63,11 @@ export class Social {
     const { map, missing } = await this.resolveNames(all);
     if (missing.length) { await this.prune(uid, missing); links = await this.d.store.getLinks(uid); }
     const mk = async (u) => ({ uid: u, username: map.get(u) || '?', rank: await this.rankOf(u) });
-    const friends = await Promise.all(links.friends.filter((u) => map.has(u)).map(async (u) => ({ ...(await mk(u)), online: this.d.isOnline(u), ...(await this.d.isFounder?.(u) ? { founder: true } : {}) })));
+    const friend = async (u) => {
+      const f = { ...(await mk(u)), online: this.d.isOnline(u), ...(await this.d.isFounder?.(u) ? { founder: true } : {}) }, icon = this.iconOf(u);
+      return icon === undefined ? f : { ...f, icon };
+    };
+    const friends = await Promise.all(links.friends.filter((u) => map.has(u)).map(friend));
     const incoming = await Promise.all(links.incoming.filter((u) => map.has(u)).map(mk));
     const outgoing = await Promise.all(links.outgoing.filter((u) => map.has(u)).map(mk));
     if (this.sets.has(uid)) this.sets.set(uid, new Set(links.friends));
@@ -73,7 +84,8 @@ export class Social {
     this.names.set(uid, { username, at: this.d.now() });
     const links = await this.d.store.getLinks(uid);
     this.sets.set(uid, new Set(links.friends));
-    for (const f of links.friends) if (this.d.isOnline(f)) this.d.send(f, { t: 'fpresence', uid, online: true });
+    const icon = this.d.liveIcon?.(uid); // an icon picked while the links were loading had nobody to go to yet
+    for (const f of links.friends) if (this.d.isOnline(f)) this.d.send(f, { t: 'fpresence', uid, online: true, ...(icon !== undefined ? { icon } : {}) });
     await this.push(uid);
   }
   onDisconnect(uid) { // call after the uid's last session is gone
@@ -84,6 +96,10 @@ export class Social {
   noteRank(uid, rank) {
     this.ranks.set(uid, { rank, at: this.d.now() });
     for (const f of this.friendsOf(uid)) if (this.d.isOnline(f)) this.d.send(f, { t: 'frank', uid, rank: pubRank(rank) });
+  }
+  noteIcon(uid, icon) {
+    this.icons.set(uid, icon);
+    for (const f of this.friendsOf(uid)) if (this.d.isOnline(f)) this.d.send(f, { t: 'ficon', uid, icon });
   }
   // The account's username may have changed (client asks after the account panel rename): re-read it (dev auth: `devName`), tell friends.
   async refreshName(uid, devName) {

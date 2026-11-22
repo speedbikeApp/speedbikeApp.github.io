@@ -41,4 +41,9 @@ assert.equal(p.activeInvites().length, 0); assert.equal(p.inParty(), false);
 
 for (const c of ['not_friend', 'party_full', 'not_leader', 'member_busy', 'busy', 'offline', 'no_invite']) assert.ok(PARTY_ERR[c], c);
 assert.match(partyEventText({ kind: 'invite', username: 'Al' }), /Al invited you/); assert.equal(partyEventText({ kind: 'zzz' }), '');
+{ // the chosen icon is mirrored, '' (NONE) included
+  const { createParty: make } = await import('../js/party.js'), P = make();
+  P.apply({ t: 'party', party: { id: 1, leader: 'a', members: [{ uid: 'a', username: 'A', founder: true, icon: '' }, { uid: 'b', username: 'B', icon: 'star:3' }, { uid: 'c', username: 'C' }] } });
+  assert.deepEqual(P.state.party.members.map((m) => m.icon), ['', 'star:3', undefined]);
+}
 console.log('party client tests passed');

@@ -69,6 +69,7 @@ export function createGameServer(opts) {
     store: socialStore, log, getRank: (uid) => store.getRank(uid),
     liveRank: (uid) => byUid.get(uid)?.rank, isOnline: (uid) => !!byUid.get(uid)?.authed,
     send: (uid, m) => byUid.get(uid)?.send(m), isFounder: (uid) => founders.is(uid),
+    liveIcon: (uid) => { const s = byUid.get(uid); return s?.authed && s.iconPick !== null ? s.icon : undefined; },
   });
 
   // Admin console (server/admin.js): ops are registered by module; PLAYERS in admin-players.js. Other modules: `admin.register(op, handler)` (exposed on the returned object).
@@ -76,7 +77,8 @@ export function createGameServer(opts) {
   const kick = (uid, msg) => { const s = byUid.get(uid); if (!s) return; s.send(msg); cleanup(s); s.ws.close(4003, String(msg.code || msg.t)); };
   registerItemOps({ admin, catalog, log });
   registerPushOps({ admin, push, log }); // GARAGE tab (server/admin-items.js)
-  registerPlayerOps({ admin, catalog, adminStore, socialStore, social, rankStore: store, send: (uid, m) => byUid.get(uid)?.send(m), kick, sessionOf: (uid) => byUid.get(uid), log });
+  const sendFromAdmin = (uid, m) => { const s = byUid.get(uid); if (!s) return; s.send(m); if (m.t === 'adminstate') shareIcon(s); }; // gaining / losing admin changes the icon others see
+  registerPlayerOps({ admin, catalog, adminStore, socialStore, social, rankStore: store, send: sendFromAdmin, kick, sessionOf: (uid) => byUid.get(uid), log });
 
   registerMapOps({ admin, mapStore, pool: mapPool, log }); // MAPS tab
 
@@ -85,7 +87,7 @@ export function createGameServer(opts) {
   const parties = new Parties({
     log, send: (uid, m) => byUid.get(uid)?.send(m), isOnline: (uid) => !!byUid.get(uid)?.authed, isFriend: (a, b) => social.isFriend(a, b),
     isBusy: (uid) => { const s = byUid.get(uid); return !!s && (!!s.where || !!s.room); },
-    info: (uid) => { const s = byUid.get(uid); return s && s.authed ? { username: s.username, rank: s.rank, founder: s.founder } : null; },
+    info: (uid) => { const s = byUid.get(uid); return s && s.authed ? { username: s.username, rank: s.rank, founder: s.founder, icon: s.icon } : null; },
     onMemberOut: (uid) => { const s = byUid.get(uid); if (s && queued(s)) { mm.leave(s); s.send({ t: 'unqueued', reason: 'party' }); } },
     onDisband: (uid) => { const s = byUid.get(uid); if (s && s.where) s.group = null; }, // a lone leftover in a queue / lobby is a normal ranked solo again
   });
@@ -162,6 +164,17 @@ export function createGameServer(opts) {
   }
 
   // ---- connection handling ----
+  // Tell party + friends about a changed icon. Coalesced: up to 100 friends get each change and `icon` has only the general rate limit.
+  function shareIcon(s) {
+    if (s.iconTimer) return;
+    s.iconTimer = setTimeout(() => {
+      s.iconTimer = null;
+      const icon = s.icon;
+      if (s.dead || icon === s.sharedIcon) return;
+      s.sharedIcon = icon; parties.refresh(s.uid); social.noteIcon(s.uid, icon);
+    }, 300);
+    s.iconTimer.unref?.();
+  }
   function cleanup(s) {
     if (s.dead) return;
     s.dead = true; sessions.delete(s);
@@ -217,9 +230,10 @@ export function createGameServer(opts) {
       case 'ping': return s.send({ t: 'pong', c: msg.c, serverNow: Date.now() });
       case 'queue': if (banActive(s.ban)) { s.send({ t: 'banned', ...banView(s.ban) }); return void s.ws.close(4003, 'banned'); }
         if (msg.loadout) s.loadout = msg.loadout; return void onQueue(s, msg.mode);
-      case 'icon': s.iconPick = msg.icon; return;
+      case 'icon': s.iconPick = msg.icon; return void shareIcon(s);
       case 'loadout': if (s.room) s.room.setLoadout(s.bikeId, msg.abilities); else s.loadout = msg.abilities; return;
       case 'leaveQueue': return void onLeaveQueue(s);
+      case 'ready': return void mm.ready(s);
       case 'leave':
         if (s.room) { s.room.leave(s.bikeId); s.room = null; s.where = null; } else mm.leave(s);
         return;

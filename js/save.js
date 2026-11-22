@@ -24,7 +24,7 @@ export const FOV_DEFAULT = CFG.camera.fov, FOV_MIN = 65, FOV_MAX = 105;
 export const defaults = () => ({
   version: VERSION,
   settings: { bloom: CFG.render.bloom.strength, masterVol: CFG.audio.master, musicVol: CFG.audio.music, sfxVol: CFG.audio.sfx, engineVol: 0.3,
-    muted: false, aiDifficulty: CFG.ai.difficulty, quality: 'high', keys: defaultKeys(), spMap: 'random', fov: FOV_DEFAULT, notify: 'ask' },
+    muted: false, aiDifficulty: CFG.ai.difficulty, quality: 'high', keys: defaultKeys(), spMap: 'random', fov: FOV_DEFAULT, smoothTurn: 0, notify: 'ask' },
   profile: { username: DEFAULT_NAME, nameIcon: 'auto' }, // nameIcon: 'auto' | 'none' | 'admin' | 'founder' | 'star' (account screen)
   tutorial: 'new', // per device, not part of the synced progress
   coins: 0,
@@ -69,6 +69,7 @@ function clamp(d) {
   s.masterVol = c01(s.masterVol); s.musicVol = c01(s.musicVol); s.sfxVol = c01(s.sfxVol);
   s.engineVol = c01(s.engineVol); s.keys = validateKeys(s.keys);
   s.bloom = Math.min(3, Math.max(0, s.bloom));
+  s.smoothTurn = c01(s.smoothTurn);
   s.fov = Math.round(Math.min(FOV_MAX, Math.max(FOV_MIN, Number(s.fov) || FOV_DEFAULT)));
   if (!['ask', 'on', 'off'].includes(s.notify)) s.notify = 'ask';
   s.aiDifficulty = Math.min(2, Math.max(0, Math.round(s.aiDifficulty)));

@@ -15,7 +15,7 @@ import { setPlayerName } from './hud.js';
 import * as tutorial from './tutorial.js';
 import { initAccountUi, openAccount, accountEsc, isSignedIn } from './account-ui.js';
 import { initMultiUi, onScreen as multiScreen, multiBack } from './multi-ui.js';
-import { sendNameIcon } from './online.js';
+import { nameIconWire } from './online.js';
 import { initFriendsUi, onScreen as friendsScreen } from './friends-ui.js';
 import { initInvite, prefetchInvite } from './invite.js';
 import { initAdminUi, onScreen as adminScreen } from './admin-ui.js';
@@ -70,6 +70,7 @@ export function applySettings() {
   const s = getSave().settings;
   setBloom(s.bloom);
   CFG.camera.fov = s.fov; // render.js reads it every frame
+  CFG.cameraSmooth = s.smoothTurn;
   setMaxDpr(CFG.quality[s.quality]);
   audio.setMasterVolume(s.masterVol); audio.setMusicVolume(s.musicVol); audio.setSfxVolume(s.sfxVol); audio.setMuted(s.muted); audio.setEngineVolume(s.engineVol);
   setBindings(s.keys);
@@ -176,6 +177,7 @@ function syncSettingsUi() {
   $('sName').disabled = isSignedIn(); $('sName').title = isSignedIn() ? 'Set by your account (ACCOUNT screen)' : '';
   $('sBloom').value = s.bloom; $('vBloom').textContent = s.bloom === 0 ? 'OFF' : s.bloom.toFixed(2);
   $('sFov').value = s.fov; $('vFov').textContent = s.fov;
+  $('sSmooth').value = pct(s.smoothTurn); $('vSmooth').textContent = s.smoothTurn ? pct(s.smoothTurn) : 'OFF';
   for (const [id, v, k] of [['sMaster', s.masterVol, 'vMaster'], ['sMusic', s.musicVol, 'vMusic'], ['sSfx', s.sfxVol, 'vSfx'], ['sEngine', s.engineVol, 'vEngine']]) {
     $(id).value = pct(v); $(k).textContent = k === 'vEngine' && !v ? 'OFF' : pct(v);
   }
@@ -229,7 +231,7 @@ export function initMenu(h) {
   initQuestsUi({ show: showScreen });
   on('sAccount', () => { acFromSettings = true; showScreen('scrAccount'); });
   const acBack = () => { const s = acFromSettings; acFromSettings = false; showScreen(s ? 'scrSettings' : 'scrMain'); };
-  initAccountUi({ iconChanged: sendNameIcon, newAccount: () => h.onTutorial(true), back: acBack, open: () => showScreen('scrAccount'), refresh: () => { if (['scrMain', 'scrAbilities', 'scrGarage', 'scrStats', 'scrQuests', 'scrProfile'].includes(current)) showScreen(current); } });
+  initAccountUi({ iconChanged: refreshProfile, autoIcon: () => nameIconWire('auto'), newAccount: () => h.onTutorial(true), back: acBack, open: () => showScreen('scrAccount'), refresh: () => { if (['scrMain', 'scrAbilities', 'scrGarage', 'scrStats', 'scrQuests', 'scrProfile'].includes(current)) showScreen(current); } });
   // Esc: close the delete confirmation first, else back to the main menu (capture phase: runs before the pause handler)
   addEventListener('keydown', (e) => { if (e.code === 'Escape' && current === 'scrAccount') { e.preventDefault(); if (!accountEsc()) acBack(); } });
   on('gBack', () => { saveSoon(); showScreen('scrMain'); });
@@ -272,6 +274,7 @@ export function initMenu(h) {
     if (v !== name.value) name.value = v;
   });
   $('sFov').addEventListener('input', (e) => { const v = setSetting('fov', +e.target.value); CFG.camera.fov = v; $('vFov').textContent = v; });
+  $('sSmooth').addEventListener('input', (e) => { const v = setSetting('smoothTurn', +e.target.value / 100); CFG.cameraSmooth = v; $('vSmooth').textContent = v ? pct(v) : 'OFF'; });
   $('sBloom').addEventListener('input', (e) => {
     const v = setSetting('bloom', +e.target.value); setBloom(v); $('vBloom').textContent = v === 0 ? 'OFF' : v.toFixed(2);
   });

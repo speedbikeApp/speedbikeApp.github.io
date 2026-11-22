@@ -15,6 +15,7 @@ export function segBlocks(y, s, yTop = y) {
 
 // Airborne = in a jump arc or falling off an edge (no turning, no new jump).
 export const isAirborne = (b) => b.jumpT >= 0 || !!b.falling;
+const trailSafe = (b) => isProtected(b) || b.spawnProt > 0;
 const Y_TOL = 0.05; // a platform top this much above the bike (or less) is a step, not a wall
 
 // Jump height at t seconds into the arc. H = rise above the start height y0, ts stretches the timing (Rocket Jump).
@@ -115,7 +116,9 @@ export function canTurn(b) {
 }
 
 // Returns undefined (no hit), null (wall) or owner id of the trail hit.
-function hit(state, b, x0, z0, yPrev = b.y) {
+// inside = the bike is coming down (or its protection just ran out): a wall along its path then counts with its real width, not
+// just its centre line. Not used while simply riding, so last-moment turns right next to a wall stay possible.
+function hit(state, b, x0, z0, yPrev, inside) {
   const map = mapOf(state), half = map.half;
   if (map.walls && (Math.abs(b.x) >= half || Math.abs(b.z) >= half)) return null;
   // movement box; start point excluded so touching our own previous segment's corner isn't a hit
@@ -123,14 +126,16 @@ function hit(state, b, x0, z0, yPrev = b.y) {
   if (b.dx > 0) ax += EPS; else if (b.dx < 0) bx -= EPS;
   if (b.dz > 0) az += EPS; else if (b.dz < 0) bz -= EPS;
   const yLo = Math.min(yPrev, b.y), yHi = Math.max(yPrev, b.y); // vertical sweep over the tick
-  if (isProtected(b) || b.spawnProt > 0) return undefined; // Protector / spawn protection: trails are harmless (walls still kill)
+  if (trailSafe(b)) return undefined; // Protector / spawn protection: trails are harmless (walls still kill)
+  const r = inside ? CFG.trailThickness / 2 + CFG.bikeHalfWidth : 0;
   for (const o of state.bikes) {
     const last = o.trail[o.trail.length - 1];
     for (const s of o.trail) {
       if (s === last && o === b) continue; // own newest segment
       if (!segBlocks(yLo, s, yHi)) continue; // above / below this segment (jump), swept over the tick
-      if (ax <= Math.max(s.x1, s.x2) && bx >= Math.min(s.x1, s.x2) &&
-          az <= Math.max(s.z1, s.z2) && bz >= Math.min(s.z1, s.z2)) return s.owner;
+      const rx = b.dz !== 0 && s.x1 === s.x2 ? r : 0, rz = b.dx !== 0 && s.z1 === s.z2 ? r : 0; // only sideways, only a wall along our path
+      if (ax <= Math.max(s.x1, s.x2) + rx && bx >= Math.min(s.x1, s.x2) - rx &&
+          az <= Math.max(s.z1, s.z2) + rz && bz >= Math.min(s.z1, s.z2) - rz) return s.owner;
     }
   }
   return undefined;
@@ -143,7 +148,7 @@ export function step(state, dt) {
   const map = mapOf(state), moved = [];
   for (const b of state.bikes) {
     if (!b.alive) continue;
-    const yPrev = b.y;
+    const yPrev = b.y, wasSafe = trailSafe(b);
     updateAbilities(b, dt);
     // Trail follows the arc: start a new segment (at the current head, like a turn) once y drifted a step from the
     // newest segment's base, and after landing so the grounded trail sits on the ground. Done before moving so the
@@ -155,12 +160,14 @@ export function step(state, dt) {
     b.x += b.dx * d; b.z += b.dz * d; b.sinceTurn = (b.sinceTurn || 0) + d;
     const s = b.trail[b.trail.length - 1];
     s.x2 = b.x; s.z2 = b.z;
-    moved.push([b, x0, z0, settle(b, map, yPrev, dt), yPrev]);
+    const cause = settle(b, map, yPrev, dt);
+    const inside = (wasSafe && !trailSafe(b)) || (b.y < yPrev && (isAirborne(b) || b.justLanded));
+    moved.push([b, x0, z0, cause, yPrev, inside]);
   }
   const events = [];
-  for (const [b, x0, z0, cause, yPrev] of moved) { // all checked before any removal => head-on kills both
+  for (const [b, x0, z0, cause, yPrev, inside] of moved) { // all checked before any removal => head-on kills both
     if (cause) { events.push({ victim: b.id, killer: null, cause }); continue; }
-    const k = hit(state, b, x0, z0, yPrev);
+    const k = hit(state, b, x0, z0, yPrev, inside);
     if (k !== undefined) events.push({ victim: b.id, killer: k });
   }
   for (const e of events) {

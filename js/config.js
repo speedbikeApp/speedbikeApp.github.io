@@ -8,6 +8,7 @@ export const CFG = {
   trailThickness: 0.3,
   gravity: 45,                    // u/s^2 while falling off a platform (not during a jump arc)
   bikeHeight: 2.1,                // collision height of a bike: it occupies [y, y+bikeHeight] vertically (= rendered bike+rider top: helmet 1.72+0.23 local x bikeScale 1.1 = 2.15)
+  bikeHalfWidth: 0.35,            // body half width: closer than this + half a wall's thickness when coming down = landed inside the wall
   // Boost: pressing burns the whole meter as a one-shot burst (mult x speed for `duration` s), then it refills over `recharge` s.
   boost: { mult: 1.5, duration: 1.5, recharge: 6.5 },
   // Jump arc: smooth parabola, rise (ease-out) for `rise` s up to `height`, then fall (ease-in) for `fall` s (float = 0).
@@ -42,6 +43,7 @@ export const CFG = {
   inputBufferMs: 100,
   minTurnGap: 1,                  // min units travelled on a segment before the next turn (safe lane width)
   cameraSwing: 0.15,              // seconds to swing to new heading
+  cameraSmooth: 0,                // SMOOTH CORNERS setting 0..1 (0 = snappy, 1 = the swing takes 6x as long)
   // low chase cam: high/close enough to see over the bike's own 2-high trail, bike sits lower-middle of screen
   // lower + closer + wider = the floor rushes past faster (feel of speed, fixlist 3; gameplay speed unchanged)
   camera: { back: 6, up: 5.8, lookAhead: 12, wideLook: 0.5, lookY: 0, fov: 82, fovBoost: 16, fovLerp: 6,
