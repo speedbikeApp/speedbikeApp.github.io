@@ -59,4 +59,15 @@ for f in tests/*.mjs; do node "$f"; done
 ## Deploy to GitHub Pages
 Push this folder to a public GitHub repo, then Settings → Pages → Deploy from branch → `main` / root.
 
+## Work from another PC (upload / download)
+First time on a new PC (needs git and Node.js):
+1. `git clone https://github.com/speedbikeApp/speedbikeApp.github.io.git "Speed Bike"`
+2. Inside that folder: `powershell -ExecutionPolicy Bypass -File tools\download.ps1` (also installs the server packages).
+3. Copy `tasks/`, `server/data/` and `server/.env` by hand if you need them; they are never on GitHub.
+
+Every time:
+- **Before you start**, download: `powershell -ExecutionPolicy Bypass -File tools\download.ps1`. It refuses if this PC has work that is not uploaded, so nothing is overwritten.
+- **When you stop**, upload: `powershell -ExecutionPolicy Bypass -File tools\upload.ps1 "what changed"`. It commits everything except `tasks/`, bumps the version, merges what other PCs uploaded and pushes. If two PCs changed the same lines it stops, pushes nothing and keeps your commit locally.
+- Uploading updates the live website within a minute. The game server is not redeployed: do that on Render when `server/` or `js/physics.js` changed.
+
 See `BRIEF.md` for the design spec and `NOTES.md` for architecture.
